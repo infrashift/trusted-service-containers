@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/infrashift/trusted-service-containers/schemas/versions.schema.json",
+  "title": "trusted-service-containers versions.json",
+  "description": "Sovereign source of truth for both the mirror and build tracks. Validated in pr-gate BEFORE the policy runs, so a malformed entry produces a readable error at PR time rather than a cryptic matrix failure ten minutes later. The policy re-validates the same invariants: JSON Schema catches shape, rego catches meaning.",
+  "type": "object",
+  "required": ["schemaVersion", "sources", "toolchains", "bases", "images"],
+  "additionalProperties": true,
+
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "Always a full sha256 digest. Pins are by digest, never by tag alone."
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "A 40-hex commit SHA. A tag is NOT a pin: tags move and can be force-pushed; commits cannot."
+    },
+    "anchoredRegex": {
+      "type": "string",
+      "pattern": "^\\^.*\\$$",
+      "description": "Must be anchored with ^ and $. An unanchored track such as 3\\.90\\. also matches 13.90.7, permitting far more than it appears to."
+    },
+    "archMap": {
+      "type": "object",
+      "properties": {
+        "amd64": { "type": "object", "required": ["digest"], "properties": { "digest": { "$ref": "#/$defs/digest" } } },
+        "arm64": { "type": "object", "required": ["digest"], "properties": { "digest": { "$ref": "#/$defs/digest" } } }
+      }
+    }
+  },
+
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "destinationRegistry": { "type": "string", "pattern": "^ghcr\\.io/infrashift/trusted-service-containers$" },
+
+    "sources": {
+      "type": "object",
+      "description": "Git sources for the build track. Images reference these by key, which is what makes Dapr's three images structurally incapable of drifting apart -- there is nowhere to write a second version.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["track", "ref"],
+        "properties": {
+          "track": { "$ref": "#/$defs/anchoredRegex" },
+          "ref": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "commit": { "$ref": "#/$defs/commit" },
+          "shortCommit": { "type": "string", "pattern": "^[0-9a-f]{7,12}$" },
+          "lockstep": { "type": "array", "items": { "type": "string" }, "minItems": 2 },
+          "note": { "type": "string" },
+          "repos": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["url", "commit"],
+              "properties": {
+                "url": { "type": "string", "format": "uri" },
+                "commit": { "$ref": "#/$defs/commit" }
+              }
+            }
+          }
+        },
+        "anyOf": [
+          { "required": ["commit"] },
+          { "required": ["repos"] }
+        ]
+      }
+    },
+
+    "toolchains": {
+      "type": "object",
+      "additionalProperties": {
+        "allOf": [{ "$ref": "#/$defs/archMap" }],
+        "type": "object",
+        "required": ["image", "tag", "amd64", "arm64"],
+        "properties": { "image": { "type": "string" }, "tag": { "type": "string" }, "note": { "type": "string" } }
+      }
+    },
+
+    "bases": {
+      "type": "object",
+      "additionalProperties": {
+        "allOf": [{ "$ref": "#/$defs/archMap" }],
+        "type": "object",
+        "required": ["image", "role", "trustClass", "amd64", "arm64"],
+        "properties": {
+          "image": { "type": "string", "pattern": "^ghcr\\.io/infrashift/trusted-base-images/trusted/" },
+          "role": { "enum": ["runtime", "ca-trust-donor"] },
+          "trustClass": { "const": "internal" },
+          "verifyKey": { "type": "string" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+
+    "images": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["kind", "upstreamTrust", "enforcement", "updated", "reason"],
+        "properties": {
+          "kind": { "enum": ["mirror", "build"] },
+          "upstreamTrust": { "enum": ["dhi", "none", "internal"] },
+          "enforcement": { "enum": ["enforce", "observe"] },
+          "updated": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+          "reason": { "type": "string", "minLength": 10 }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "kind": { "const": "mirror" } }, "required": ["kind"] },
+            "then": {
+              "required": ["upstreamRepo", "platforms", "variants"],
+              "properties": {
+                "upstreamRepo": { "type": "string" },
+                "attestationRepo": { "type": ["string", "null"] },
+                "keyring": { "type": ["string", "null"] },
+                "requiredPredicates": { "type": "array", "items": { "type": "string" } },
+                "platforms": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                "variants": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": ["tag", "track", "digest"],
+                    "properties": {
+                      "tag": { "type": "string", "minLength": 1 },
+                      "track": { "$ref": "#/$defs/anchoredRegex" },
+                      "digest": { "$ref": "#/$defs/digest" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "build" } }, "required": ["kind"] },
+            "then": {
+              "required": ["source", "toolchain", "base", "caSource", "arches", "containerfile", "build", "crosscheck", "runtime"],
+              "properties": {
+                "upstreamTrust": { "const": "internal" },
+                "source": { "type": "string" },
+                "repo": { "type": "string" },
+                "toolchain": { "type": "string" },
+                "base": { "type": "string" },
+                "caSource": { "type": "string" },
+                "arches": { "type": "array", "items": { "enum": ["amd64", "arm64"] }, "minItems": 1 },
+                "containerfile": { "type": "string", "pattern": "^Containerfiles/.+\\.Containerfile$" },
+                "build": {
+                  "type": "object",
+                  "required": ["cgo", "mainPackage", "binary", "installPath", "ldflagsVars"],
+                  "properties": {
+                    "cgo": { "const": false, "description": "Every service in this repo is a static CGO_ENABLED=0 Go binary. CGO=1 on a Debian builder produces glibc-2.41 binaries that cannot run on ubi9's glibc 2.34." },
+                    "trimpath": { "type": "boolean" },
+                    "goToolchain": { "type": "string" },
+                    "mainPackage": { "type": "string" },
+                    "binary": { "type": "string" },
+                    "installPath": { "type": "string", "pattern": "^/usr/bin/" },
+                    "compatSymlink": { "type": "string", "pattern": "^/" },
+                    "extraLdflags": { "type": "string" },
+                    "commitForm": { "enum": ["full", "short"] },
+                    "ldflagsVars": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } },
+                    "note": { "type": "string" }
+                  }
+                },
+                "crosscheck": {
+                  "allOf": [{ "$ref": "#/$defs/archMap" }],
+                  "type": "object",
+                  "required": ["image", "binaryPath", "trustClass", "reproducibilityTier"],
+                  "properties": {
+                    "image": { "type": "string" },
+                    "binaryPath": { "type": "string", "pattern": "^/" },
+                    "trustClass": { "enum": ["none", "docker-official"] },
+                    "reproducibilityTier": {
+                      "enum": ["flag-matched", "best-effort"],
+                      "description": "flag-matched means upstream pins its toolchain and uses -trimpath, so a byte-identical result is realistic and a MISMATCH is worth investigating. best-effort means a mismatch is expected and proves nothing."
+                    },
+                    "releaseTarballSha256": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" } },
+                    "note": { "type": "string" }
+                  }
+                },
+                "runtime": {
+                  "type": "object",
+                  "required": ["ports", "entrypoint", "user"],
+                  "properties": {
+                    "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+                    "volumes": { "type": "array", "items": { "type": "string", "pattern": "^/" } },
+                    "entrypoint": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                    "cmd": { "type": "array", "items": { "type": "string" } },
+                    "user": { "const": 1001 },
+                    "tzdata": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

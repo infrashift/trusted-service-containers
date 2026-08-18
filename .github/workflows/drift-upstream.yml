@@ -1,0 +1,90 @@
+name: Upstream Drift
+
+# Watches every upstream this repo pins -- DHI and Docker Hub images on the
+# mirror track, git tags on the build track -- and proposes moves that stay
+# INSIDE each entry's declared track.
+#
+# A track is an anchored regex bounding where a pin may legally go. This
+# workflow never edits one: widening `^3\.90\.[0-9]+-ubi$` to `^3\.[0-9]+\.` is
+# a one-character-class edit that silently converts every future minor release
+# from a reviewed decision into an automated bump, which is why versions.json
+# sits behind @infrashift/security-admins.
+
+on:
+  schedule:
+    - cron: '47 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: drift-upstream
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Detect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      id-token: write       # Docker OIDC, so the DHI legs can be listed
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned tools
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl
+
+      # Without these the DHI entries cannot be listed at all, and the run
+      # reports them under "Needs attention" rather than silently skipping.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ vars.DOCKERHUB_ORGANIZATION }}
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_ORGANIZATION }}
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+
+      - name: Detect upstream drift
+        id: drift
+        env:
+          DRIFT_REPORT: /tmp/drift-upstream.md
+        run: ./scripts/drift-upstream.sh
+
+      - name: Validate the proposal before publishing it
+        # A drift proposal that would not survive the repo gate is worse than
+        # none: it sends a human to review a change CI will reject anyway.
+        if: steps.drift.outputs.changed == '1'
+        run: |
+          set -euo pipefail
+          sudo BIN=/usr/local/bin ./scripts/install-tools.sh opa
+          python3 -m pip install --quiet jsonschema
+          python3 scripts/validate-schema.py
+          opa eval --data .github/pdp/policies.rego --data .github/pdp/exceptions.yaml \
+            --input <(jq -n --arg now "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --slurpfile v versions.json \
+              '{evaluated_at:$now,
+                gitleaks:{status:"ran",findings:[],config_bytes:2994,uses_default_ruleset:true},
+                versions:$v[0]}') \
+            --format json 'data.tsc.pdp.repo_decision' \
+          | jq -e '.result[0].expressions[0].value.allow' >/dev/null \
+          || { echo "::error::the proposed versions.json would fail the repo gate"; exit 1; }
+
+      - name: Propose
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BRANCH: automation/upstream-drift
+          LABEL: upstream-drift
+          TITLE: 'Upstream drift: newer releases available within track'
+          REPORT: /tmp/drift-upstream.md
+          CHANGED: ${{ steps.drift.outputs.changed }}
+          ALARMS: ${{ steps.drift.outputs.alarms }}
+        run: ./scripts/propose-drift.sh

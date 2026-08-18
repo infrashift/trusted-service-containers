@@ -1,0 +1,78 @@
+# Secret-scanning configuration.
+#
+# NEVER leave this file empty. gitleaks treats an empty config as "zero rules":
+# it scans successfully, finds nothing, and exits 0 -- indistinguishable from a
+# clean scan. The reference repo (trusted-base-oci-images) shipped this file at
+# 0 bytes while its pipeline wrote a literal "gitleaks_passed": true into a
+# signed attestation, in a repo that had three live cosign private keys in it.
+#
+# Three independent guards prevent a repeat:
+#   1. [extend] useDefault below.
+#   2. A size + content assertion in CI and in Ops.mk, before gitleaks runs.
+#   3. GITLEAKS_CONFIG_EMPTY / GITLEAKS_DEFAULTS_DISABLED in policies.rego,
+#      which read the MEASURED byte count rather than a hardcoded boolean.
+
+title = "trusted-service-containers"
+
+[extend]
+useDefault = true
+
+# --- Repository-specific rules ---------------------------------------------
+
+[[rules]]
+id          = "cosign-sigstore-private-key"
+description = "Cosign / Sigstore private key block"
+regex       = '''-----BEGIN (ENCRYPTED )?SIGSTORE PRIVATE KEY-----'''
+keywords    = ["SIGSTORE PRIVATE KEY"]
+tags        = ["key", "cosign", "critical"]
+
+[[rules]]
+id          = "pem-private-key-block"
+description = "Any PEM-encoded private key block"
+regex       = '''-----BEGIN (RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY( BLOCK)?-----'''
+keywords    = ["PRIVATE KEY"]
+tags        = ["key", "critical"]
+
+# The reference published a live sigstore-audience OIDC token as a public
+# attestation, at provenance.internalParameters.oidcToken.
+[[rules]]
+id          = "jwt-token"
+description = "JWT (e.g. a sigstore-audience OIDC token pasted into a predicate)"
+regex       = '''eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}'''
+keywords    = ["eyJ"]
+tags        = ["token", "jwt"]
+
+[[rules]]
+id          = "github-pat"
+description = "GitHub personal access token"
+regex       = '''\b(ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{22,}\b'''
+keywords    = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"]
+tags        = ["token", "github"]
+
+[[rules]]
+id          = "dockerhub-pat"
+description = "Docker Hub personal access token"
+regex       = '''\bdckr_pat_[A-Za-z0-9_-]{20,}\b'''
+keywords    = ["dckr_pat_"]
+tags        = ["token", "docker"]
+
+# --- Allowlist -------------------------------------------------------------
+# Narrow and justified. Each entry is somewhere a scanner would otherwise be
+# right to complain.
+
+[allowlist]
+description = "Public keys, generated output, and policy test fixtures"
+paths = [
+  # Public halves of the signing keypairs. Not secrets -- downstream consumers
+  # need them to verify, and they say PUBLIC KEY, not PRIVATE KEY.
+  '''\.github/pdp/public-keys/.*\.pub$''',
+  '''\.github/pdp/keyring/.*\.pub$''',
+  '''^docs/(dist|node_modules|\.astro)/''',
+  '''^schemas/.*\.json$''',
+  '''^\.github/pdp/policies_test\.rego$''',
+]
+regexes = [
+  # Placeholder digests in schemas, docs, and fixtures.
+  '''sha256:0{64}''',
+  '''sha256:<fill>''',
+]

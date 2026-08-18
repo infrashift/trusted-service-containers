@@ -1,0 +1,30 @@
+# Private key material. NEVER commit. The sibling repo has live cosign private
+# keys sitting in its working tree; generate ours in /dev/shm and shred them.
+*.key
+*.pem
+cosign.key
+!*.pub
+
+# Local evidence / scratch output
+evidence/
+oci-image/
+src/
+*.sig
+*.sig1
+*.sig2
+decision.json
+repo-decision.json
+opa-input*.json
+gitleaks.json
+checksums.sha256
+sbom-*.json
+cve-*.json
+crosscheck.json
+provenance.json
+subject.json
+upstream-verification.json
+build-matrix.json
+
+# Tooling
+.DS_Store
+node_modules/

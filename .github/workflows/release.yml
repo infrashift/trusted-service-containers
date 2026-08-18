@@ -1,0 +1,332 @@
+name: Release Images
+
+# Promotion, not rebuilding. Every image that reaches trusted/ or quarantine/
+# is byte-identical to what the build actor produced and the review actor
+# verified -- asserted a third time here.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  # =========================================================================
+  gate-check:
+    name: Gate
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: read
+    outputs:
+      pr_number: ${{ steps.ids.outputs.pr_number }}
+      head_sha: ${{ steps.ids.outputs.head_sha }}
+      short_sha: ${{ steps.ids.outputs.short_sha }}
+      date_tag: ${{ steps.ids.outputs.date_tag }}
+    steps:
+      - name: Derive identifiers
+        id: ids
+        env:
+          PR_NUM: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::malformed head sha"; exit 1; }
+          {
+            echo "pr_number=$PR_NUM"
+            echo "head_sha=$HEAD_SHA"
+            # Tags carry the MERGE commit: that is the commit on main that the
+            # released bits correspond to.
+            echo "short_sha=${MERGE_SHA:0:7}"
+            echo "date_tag=$(date -u +'%Y%m%d')"
+          } >> "$GITHUB_OUTPUT"
+
+  # =========================================================================
+  resolve-review:
+    name: Resolve Build & Review Runs
+    needs: gate-check
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      has_build: ${{ steps.resolve.outputs.has_build }}
+      build_run_id: ${{ steps.resolve.outputs.build_run_id }}
+      review_run_id: ${{ steps.resolve.outputs.review_run_id }}
+    steps:
+      - name: Find the build and review runs for this commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ needs.gate-check.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+
+          RUNS=$(gh api "/repos/${REPO}/actions/workflows/build.yml/runs?head_sha=${HEAD_SHA}&per_page=50")
+          TOTAL=$(jq -r '.total_count' <<<"$RUNS")
+
+          if [[ "$TOTAL" -eq 0 ]]; then
+            # A legitimate no-op: the PR touched no image-affecting path, so
+            # build.yml never ran. Exit cleanly rather than failing the release.
+            echo "no build run for ${HEAD_SHA}; this PR changed no image-affecting paths"
+            echo "has_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BUILD_RUN=$(jq -r '[.workflow_runs[] | select(.conclusion == "success")] | sort_by(.run_number) | last | .id // empty' <<<"$RUNS")
+          if [[ -z "$BUILD_RUN" ]]; then
+            # Runs exist but none succeeded. That is a real failure, not a no-op:
+            # promoting on the back of a failed build would be silent.
+            echo "::error::${TOTAL} build run(s) for ${HEAD_SHA} but none succeeded; refusing to release"
+            exit 1
+          fi
+          echo "build_run_id=$BUILD_RUN" >> "$GITHUB_OUTPUT"
+          echo "has_build=true" >> "$GITHUB_OUTPUT"
+          echo "build run: $BUILD_RUN"
+
+          # Pin the exact review run that reviewed THIS build, by matching the
+          # buildRunId recorded inside a review verdict. Matching on head_sha
+          # alone would accept a review of a different build of the same commit.
+          REVIEW_RUN=""
+          for rid in $(gh api "/repos/${REPO}/actions/workflows/review.yml/runs?per_page=20" \
+                        --jq '[.workflow_runs[] | select(.conclusion == "success")] | sort_by(.run_number) | reverse | .[].id'); do
+            tmp=$(mktemp -d)
+            if gh run download "$rid" --repo "$REPO" --pattern 'review-*' --dir "$tmp" >/dev/null 2>&1; then
+              if grep -Rqs "\"buildRunId\": *\"${BUILD_RUN}\"" "$tmp"; then
+                REVIEW_RUN="$rid"; rm -rf "$tmp"; break
+              fi
+            fi
+            rm -rf "$tmp"
+          done
+          [[ -n "$REVIEW_RUN" ]] || { echo "::error::no successful review run found for build run ${BUILD_RUN}"; exit 1; }
+          echo "review_run_id=$REVIEW_RUN" >> "$GITHUB_OUTPUT"
+          echo "review run: $REVIEW_RUN"
+
+  # =========================================================================
+  matrix-setup:
+    name: Load Matrix
+    needs: [gate-check, resolve-review]
+    if: needs.resolve-review.outputs.has_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      matrix: ${{ steps.load.outputs.matrix }}
+      manifest_matrix: ${{ steps.load.outputs.manifest_matrix }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: build-matrix
+          run-id: ${{ needs.resolve-review.outputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-validate the matrix at the trust boundary
+        id: load
+        run: |
+          set -euo pipefail
+          # BYTE-IDENTICAL to build.yml and review.yml. Third and last boundary.
+          if ! jq -e '
+            type == "array" and length > 0 and length <= 64 and
+            all(.[];
+              type == "object" and
+              (.kind        | IN("mirror","build")) and
+              (.service     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
+              (.variant     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
+              (.leg         | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,127}$")) and
+              (.trust_class | IN("dhi","none","internal")) and
+              (.leg == (.service + "-" + .variant)) and
+              (if .kind == "build"
+               then ((keys_unsorted|sort) == ["arch","kind","leg","service","trust_class","variant"]
+                     and (.arch | IN("amd64","arm64")))
+               else ((keys_unsorted|sort) == ["kind","leg","service","trust_class","variant"])
+               end)
+            )' build-matrix.json > /dev/null; then
+            echo "::error::build-matrix.json failed schema validation at the release boundary"
+            exit 1
+          fi
+          {
+            echo "matrix=$(jq -c '.' build-matrix.json)"
+            # Mirror legs are excluded STRUCTURALLY, not by an if: inside the
+            # job. A mirrored index must never be taken apart and reassembled.
+            echo "manifest_matrix=$(jq -c '[.[] | select(.kind == "build") | {service, leg}] | unique' build-matrix.json)"
+          } >> "$GITHUB_OUTPUT"
+
+  # =========================================================================
+  release:
+    name: Release ${{ matrix.leg }}${{ matrix.arch && format(' ({0})', matrix.arch) || '' }}
+    needs: [gate-check, resolve-review, matrix-setup]
+    runs-on: ubuntu-latest
+    environment: Release-Actor
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # required for the keyless Rekor pass
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix-setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        with:
+          cosign-release: v2.6.1
+
+      - name: Install pinned tools
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote and dual-sign
+        env:
+          LEG: ${{ matrix.leg }}
+          SERVICE: ${{ matrix.service }}
+          VARIANT: ${{ matrix.variant }}
+          KIND: ${{ matrix.kind }}
+          ARCH: ${{ matrix.arch }}
+          PR_NUM: ${{ needs.gate-check.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate-check.outputs.head_sha }}
+          SHORT_SHA: ${{ needs.gate-check.outputs.short_sha }}
+          DATE_TAG: ${{ needs.gate-check.outputs.date_tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: ./scripts/release-leg.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: release-result-${{ matrix.leg }}${{ matrix.arch && format('-{0}', matrix.arch) || '' }}
+          path: |
+            release-result.json
+            release-attestation.json
+          if-no-files-found: warn
+
+  # =========================================================================
+  manifest:
+    name: Manifest ${{ matrix.service }}
+    needs: [gate-check, resolve-review, matrix-setup, release]
+    if: needs.matrix-setup.outputs.manifest_matrix != '[]'
+    runs-on: ubuntu-latest
+    environment: Release-Actor
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix-setup.outputs.manifest_matrix) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        with:
+          cosign-release: v2.6.1
+
+      - name: Install pinned tools
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl
+
+      - name: Install buildah
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq buildah
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble and dual-sign manifest lists
+        env:
+          SERVICE: ${{ matrix.service }}
+          LEG: ${{ matrix.leg }}
+          SHORT_SHA: ${{ needs.gate-check.outputs.short_sha }}
+          DATE_TAG: ${{ needs.gate-check.outputs.date_tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: ./scripts/release-manifest.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: manifest-result-${{ matrix.service }}
+          path: manifest-result.json
+          if-no-files-found: ignore
+
+  # =========================================================================
+  summary:
+    name: Release Summary
+    needs: [gate-check, resolve-review, release, manifest]
+    if: always() && needs.gate-check.result == 'success' && needs.resolve-review.outputs.has_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: release-result-*
+          path: results/
+        continue-on-error: true
+
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: manifest-result-*
+          path: manifests/
+        continue-on-error: true
+
+      - name: Report
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          {
+            echo "## Release"
+            echo
+            FILES=(results/*/release-result.json)
+            if [[ ${#FILES[@]} -eq 0 ]]; then
+              echo "No images were promoted."
+            else
+              echo "| Leg | Arch | Verdict | Namespace | Tags |"
+              echo "|---|---|---|---|---|"
+              for f in "${FILES[@]}"; do
+                jq -r '"| `\(.leg)` | \(.arch // "-") | **\(.verdict)** | `\(.namespace)` | \(.tags | map("`" + . + "`") | join(", ")) |"' "$f"
+              done
+            fi
+            MFILES=(manifests/*/manifest-result.json)
+            if [[ ${#MFILES[@]} -gt 0 ]]; then
+              echo
+              echo "### Multi-arch manifest lists"
+              echo
+              echo "| Service | Digest | Tags |"
+              echo "|---|---|---|"
+              for f in "${MFILES[@]}"; do
+                jq -r '"| `\(.service)` | `\(.digest[0:19])…` | \(.tags | map("`" + . + "`") | join(", ")) |"' "$f"
+              done
+            fi
+            echo
+            QN=$(printf '%s\n' "${FILES[@]}" | xargs -r -I{} jq -r 'select(.namespace=="quarantine") | .leg' {} 2>/dev/null | wc -l)
+            if [[ "$QN" -gt 0 ]]; then
+              echo "> ${QN} leg(s) landed in \`quarantine\`. They are fully mirrored, scanned, signed and consumable by exact commit tag — quarantine is a documented state, not a discard. The clean upstream-shaped tag under \`trusted/\` is what is withheld."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on the PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ needs.gate-check.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR" --repo "$REPO" --body-file "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true

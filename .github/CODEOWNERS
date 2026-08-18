@@ -1,0 +1,57 @@
+# Ownership is the last line of defence when a change is textually innocuous but
+# semantically a policy change. The canonical example lives in versions.json:
+# widening a track from ^3\.90\.[0-9]+-ubi$ to ^3\.[0-9]+\.[0-9]+-ubi$ is a
+# one-character-class edit, indistinguishable at a glance from a routine digest
+# bump, that silently converts every future minor release from a reviewed
+# decision into an automated bump.
+#
+# NOTE: two teams on one line means EITHER may approve, not both. GitHub has no
+# "one approval from each team" primitive. Genuine dual control here comes from
+# Required Reviewers on the Review-Actor and Release-Actor environments, not
+# from this file.
+#
+# All three teams must exist and have repository access, or CODEOWNERS matches
+# nothing and "require review from Code Owners" becomes a silent no-op. Verify
+# with: gh api orgs/infrashift/teams/<slug> --jq .slug
+
+*                                   @infrashift/platform-engineers
+
+# --- Trust decisions -------------------------------------------------------
+# versions.json carries trust classes, track constraints, digest pins and
+# source commits. Every one of those is a security decision.
+/versions.json                      @infrashift/security-admins
+/schemas/                           @infrashift/security-admins
+
+/.github/pdp/                       @infrashift/security-admins
+/.github/pdp/policies.rego          @infrashift/security-admins
+/.github/pdp/policies_test.rego     @infrashift/security-admins
+/.github/pdp/keyring/               @infrashift/security-admins
+/.github/pdp/public-keys/           @infrashift/security-admins
+
+# Exceptions are the ONLY CVE-shaped knob in the system. Platform engineers
+# raise them; security admins must also be able to review.
+/.github/pdp/exceptions.yaml        @infrashift/security-admins @infrashift/platform-engineers
+
+# --- Pipeline engines ------------------------------------------------------
+/.github/workflows/                 @infrashift/devops-leads @infrashift/security-admins
+/.github/actions/                   @infrashift/devops-leads @infrashift/security-admins
+/scripts/                           @infrashift/devops-leads
+
+# A Containerfile change alters what lands inside a trusted image.
+/Containerfiles/                    @infrashift/devops-leads @infrashift/security-admins
+# Baked-in service config ships in the image and is therefore part of it.
+/rootfs/                            @infrashift/devops-leads @infrashift/security-admins
+
+/Ops.mk                             @infrashift/devops-leads
+
+# --- Repository security posture -------------------------------------------
+/.github/CODEOWNERS                 @infrashift/security-admins
+/.gitleaks.toml                     @infrashift/security-admins
+/.gitignore                         @infrashift/security-admins
+/SETUP-ENVIRONMENTS.md              @infrashift/security-admins
+
+# --- Documentation ---------------------------------------------------------
+/docs/                              @infrashift/platform-engineers
+/.ai/                               @infrashift/platform-engineers
+/CLAUDE.md                          @infrashift/platform-engineers
+/README.md                          @infrashift/platform-engineers

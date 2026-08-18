@@ -1,0 +1,696 @@
+{
+  "schemaVersion": 2,
+  "destinationRegistry": "ghcr.io/infrashift/trusted-service-containers",
+  "_comment": [
+    "Sovereign source of truth. No digest may be hardcoded anywhere else.",
+    "Digests marked sha256:0000... require an authenticated dhi.io login to resolve;",
+    "see SETUP-ENVIRONMENTS.md step 7. Every other digest was resolved live on",
+    "2026-08-18 and should be re-checked with `make -f Ops.mk verify-pins`.",
+    "CODEOWNERS puts this file under @infrashift/security-admins: a `track` widening",
+    "is a one-character edit that silently converts every future release from a",
+    "reviewed decision into an automated bump."
+  ],
+  "sources": {
+    "ory": {
+      "track": "^v26\\.[0-9]+\\.[0-9]+$",
+      "ref": "v26.2.0",
+      "note": "All four Ory services release in lockstep off a shared tag. A partial bump is a bug; drift-upstream.yml must propose all four together.",
+      "repos": {
+        "kratos": {
+          "url": "https://github.com/ory/kratos",
+          "commit": "9d7085948039ffb8960160d4979f71527b5cf4d5"
+        },
+        "hydra": {
+          "url": "https://github.com/ory/hydra",
+          "commit": "0b84568fffccf151dc5e6c7955fdfb738555bf4b"
+        },
+        "keto": {
+          "url": "https://github.com/ory/keto",
+          "commit": "e4393662cd2e744deeb79de77669e07b6ccf51f3"
+        },
+        "oathkeeper": {
+          "url": "https://github.com/ory/oathkeeper",
+          "commit": "c84dbe07ecbf6f10154f04ec49b137a115155289"
+        }
+      }
+    },
+    "nats": {
+      "track": "^v2\\.14\\.[0-9]+$",
+      "ref": "v2.14.5",
+      "url": "https://github.com/nats-io/nats-server",
+      "commit": "d3bc0453384d00d37991b084263e59af828fa90d",
+      "shortCommit": "d3bc04533",
+      "shortCommitNote": "goreleaser stamps {{.ShortCommit}}, whose length is git's DYNAMIC abbreviation for the full repo. Verified empirically: the released v2.14.5 binary embeds 9 characters. It cannot be derived from our build, because fetch-source.sh makes a --depth 1 clone and git then abbreviates to the 7-char minimum. Pinning it as data is the only way to reproduce the vendor's binary; drift PRs must update it alongside `commit`.",
+      "note": "Moved up from the 2.11 line the user ran previously. Upstream pins GOTOOLCHAIN and uses -trimpath, so this is the one service where a byte-identical cross-check is realistic."
+    },
+    "dapr": {
+      "track": "^v1\\.18\\.[0-9]+$",
+      "ref": "v1.18.3",
+      "url": "https://github.com/dapr/dapr",
+      "commit": "2dcf2e3548faf3c740b3d29ee300e2132db65cff",
+      "lockstep": [
+        "daprd",
+        "dapr-placement",
+        "dapr-scheduler"
+      ],
+      "note": "One source repo produces all three images. Moved up from 1.14.4, which is outside Dapr's N-2 support window. Scheduler is included because from 1.15+ actor reminders and workflows require it."
+    }
+  },
+  "toolchains": {
+    "go1.26": {
+      "image": "docker.io/library/golang",
+      "tag": "1.26-trixie",
+      "amd64": {
+        "digest": "sha256:23fdfd3a6abc97c81e32a724cdd1cf541c06c416eb04d717815f4ed7c75623d0"
+      },
+      "arm64": {
+        "digest": "sha256:a0c0dd6888e2a1df54a00fcafe855e3035dcf9b5733cdf803d6ccf70a56df809"
+      },
+      "note": "Also the donor for /usr/share/zoneinfo, which ubi9-micro does not ship."
+    }
+  },
+  "bases": {
+    "ubi9-micro": {
+      "image": "ghcr.io/infrashift/trusted-base-images/trusted/ubi9-micro",
+      "role": "runtime",
+      "trustClass": "internal",
+      "verifyKey": ".github/pdp/public-keys/upstream/trusted-base-images-release.pub",
+      "amd64": {
+        "digest": "sha256:b2485542880b0f6482469c60934e97eb0446b09959e96106907481816e74c230"
+      },
+      "arm64": {
+        "digest": "sha256:dab2fd48fdccb15aab566a629ab2f086f45014723a86f2ce7c49395d4d765290"
+      },
+      "note": "VERIFIED 2026-08-18: ships NO CA trust bundle, NO tzdata, and NO UID 1001 in /etc/passwd. It DOES have bash, coreutils and glibc, so RUN works. Registry path is trusted-base-images, not trusted-base-oci-images (the sibling's directory name differs from its git remote). arm64 is published as arm64/v8; always pin by digest."
+    },
+    "ubi9-minimal": {
+      "image": "ghcr.io/infrashift/trusted-base-images/trusted/ubi9-minimal",
+      "role": "ca-trust-donor",
+      "trustClass": "internal",
+      "verifyKey": ".github/pdp/public-keys/upstream/trusted-base-images-release.pub",
+      "amd64": {
+        "digest": "sha256:8073bce76a1842ce7559e6870f88b7473ff14d0ee2f0af0d49fe44749a17e4bf"
+      },
+      "arm64": {
+        "digest": "sha256:b458b9a9b9c90f7d579a353cb4c3f7e9e71f90698a2521a657197b7c32644e5a"
+      },
+      "note": "Donor for /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem only. Assert the copied bundle is >100000 bytes so a truncated one fails loudly."
+    }
+  },
+  "images": {
+    "traefik": {
+      "kind": "mirror",
+      "upstreamTrust": "dhi",
+      "upstreamRepo": "dhi.io/traefik",
+      "attestationRepo": "registry.scout.docker.com/DISCOVER_AT_BOOTSTRAP/traefik",
+      "keyring": ".github/pdp/keyring/dhi-latest.pub",
+      "requiredPredicates": [
+        "https://cyclonedx.org/bom/v1.6",
+        "https://slsa.dev/provenance/v1"
+      ],
+      "enforcement": "enforce",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "variants": {
+        "runtime": {
+          "tag": "3-debian13",
+          "track": "^3-debian13$",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "dev": {
+          "tag": "3-debian13-dev",
+          "track": "^3-debian13-dev$",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin. DHI repoints 3-debian13 itself, so the tag string never changes and only the digest moves; track is therefore an exact match."
+    },
+    "postgres": {
+      "kind": "mirror",
+      "upstreamTrust": "dhi",
+      "upstreamRepo": "dhi.io/postgres",
+      "attestationRepo": "registry.scout.docker.com/DISCOVER_AT_BOOTSTRAP/postgres",
+      "keyring": ".github/pdp/keyring/dhi-latest.pub",
+      "requiredPredicates": [
+        "https://cyclonedx.org/bom/v1.6",
+        "https://slsa.dev/provenance/v1"
+      ],
+      "enforcement": "enforce",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "variants": {
+        "runtime": {
+          "tag": "16-debian",
+          "track": "^16-debian$",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "dev": {
+          "tag": "16-debian-dev",
+          "track": "^16-debian-dev$",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin, runtime + dev."
+    },
+    "nexus3": {
+      "kind": "mirror",
+      "upstreamTrust": "none",
+      "upstreamRepo": "docker.io/sonatype/nexus3",
+      "attestationRepo": null,
+      "keyring": null,
+      "requiredPredicates": [],
+      "enforcement": "observe",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "variants": {
+        "runtime": {
+          "tag": "3.90.5-ubi",
+          "track": "^3\\.90\\.[0-9]+-ubi$",
+          "digest": "sha256:3d6454ebafb3e807782c15dc9a500b83013107128e35db5da219fda05c07b68c"
+        }
+      },
+      "updated": "2026-08-18",
+      "reason": "Tracks the 3.90 patch line only; 3.91.0-ubi and 3.91.1-ubi already exist upstream, so a naive newest-tag check would jump a minor on its first run. Trust class none: public Docker Hub image with unsigned BuildKit attestations only. Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml -- a ~700MB JVM image will very likely quarantine."
+    },
+    "kratos": {
+      "kind": "build",
+      "source": "ory",
+      "repo": "kratos",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "enforce",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/kratos.Containerfile",
+      "build": {
+        "cgo": false,
+        "tags": [
+          "json1"
+        ],
+        "trimpath": false,
+        "mainPackage": ".",
+        "binary": "kratos",
+        "installPath": "/usr/bin/kratos",
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {
+          "version": "github.com/ory/kratos/driver/config.Version",
+          "commit": "github.com/ory/kratos/driver/config.Commit",
+          "date": "github.com/ory/kratos/driver/config.Date"
+        }
+      },
+      "crosscheck": {
+        "image": "docker.io/oryd/kratos",
+        "binaryPath": "/usr/bin/kratos",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "v26.2.0-amd64-distroless",
+          "digest": "sha256:a5e61d8b6ba113523b65a21577489041c5401f1b5afb62a43f154c44d5e91eaa"
+        },
+        "arm64": {
+          "tag": "v26.2.0-arm64-distroless",
+          "digest": "sha256:39b0ba42818ba03ea5b039546574e445e7b43226ff0d33d3de81ae990b6cde61"
+        },
+        "note": "The -distroless tag, NOT the bare v26.2.0 tag. The bare tag is the Alpine/musl CGO_ENABLED=1 -tags=sqlite,hsm,json1 build (User 10000, 3.6MB base layer) and is not comparable to ours. Ory's cosign signature has Cert:false/Chain:false and no published public key, so we pin by digest and do not claim to verify it."
+      },
+      "runtime": {
+        "ports": [
+          4433,
+          4434
+        ],
+        "volumes": [
+          "/var/lib/sqlite"
+        ],
+        "entrypoint": [
+          "kratos"
+        ],
+        "cmd": [
+          "serve"
+        ],
+        "user": 1001,
+        "tzdata": true
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin. No official UBI-based Ory image exists; built from source onto ubi9-micro."
+    },
+    "hydra": {
+      "kind": "build",
+      "source": "ory",
+      "repo": "hydra",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "enforce",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/hydra.Containerfile",
+      "build": {
+        "cgo": false,
+        "tags": [
+          "json1"
+        ],
+        "trimpath": false,
+        "mainPackage": ".",
+        "binary": "hydra",
+        "installPath": "/usr/bin/hydra",
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {
+          "version": "github.com/ory/hydra/v2/driver/config.Version",
+          "commit": "github.com/ory/hydra/v2/driver/config.Commit",
+          "date": "github.com/ory/hydra/v2/driver/config.Date"
+        }
+      },
+      "crosscheck": {
+        "image": "docker.io/oryd/hydra",
+        "binaryPath": "/usr/bin/hydra",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "v26.2.0-amd64-distroless",
+          "digest": "sha256:abb3de0757000d860ee3da274ff5bdeb2b8d031b4aed89f2fb1b5b22affe7690"
+        },
+        "arm64": {
+          "tag": "v26.2.0-arm64-distroless",
+          "digest": "sha256:41850339546e7aa8adaff78b3a386adaf38e08bc991101e8f602e83562f18acd"
+        }
+      },
+      "runtime": {
+        "ports": [
+          4444,
+          4445
+        ],
+        "volumes": [],
+        "entrypoint": [
+          "hydra"
+        ],
+        "cmd": [
+          "serve",
+          "all"
+        ],
+        "user": 1001,
+        "tzdata": true
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin. Note the module path carries /v2. Hydra has no .docker/Dockerfile-build (it has Dockerfile-local-build); the ldflags paths come from .goreleaser.yml."
+    },
+    "keto": {
+      "kind": "build",
+      "source": "ory",
+      "repo": "keto",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "enforce",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/keto.Containerfile",
+      "build": {
+        "cgo": false,
+        "tags": [
+          "json1"
+        ],
+        "trimpath": false,
+        "mainPackage": ".",
+        "binary": "keto",
+        "installPath": "/usr/bin/keto",
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {
+          "version": "github.com/ory/keto/internal/driver/config.Version",
+          "commit": "github.com/ory/keto/internal/driver/config.Commit",
+          "date": "github.com/ory/keto/internal/driver/config.Date"
+        },
+        "note": "Keto's .docker/Dockerfile-build sets CGO_ENABLED=1, but that is the dev build. The released -distroless image is CGO-free and keto's sqlite driver is modernc.org/sqlite (pure Go), so CGO is not needed. Verify `keto migrate up` works before trusting this."
+      },
+      "crosscheck": {
+        "image": "docker.io/oryd/keto",
+        "binaryPath": "/usr/bin/keto",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "v26.2.0-amd64-distroless",
+          "digest": "sha256:b58d58f610f69cd73e0ae0482dbbfece45b450ac146574851fe06262ba4b40be"
+        },
+        "arm64": {
+          "tag": "v26.2.0-arm64-distroless",
+          "digest": "sha256:9e6a7c6f19ef38e38bb8477bde692bfa5b5a8bbf737c8308aa8b0714bbaf2f90"
+        }
+      },
+      "runtime": {
+        "ports": [
+          4466,
+          4467
+        ],
+        "volumes": [],
+        "entrypoint": [
+          "keto"
+        ],
+        "cmd": [
+          "serve"
+        ],
+        "user": 1001,
+        "tzdata": true
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin."
+    },
+    "oathkeeper": {
+      "kind": "build",
+      "source": "ory",
+      "repo": "oathkeeper",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "enforce",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/oathkeeper.Containerfile",
+      "build": {
+        "cgo": false,
+        "tags": [
+          "json1"
+        ],
+        "trimpath": false,
+        "mainPackage": ".",
+        "binary": "oathkeeper",
+        "installPath": "/usr/bin/oathkeeper",
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {
+          "version": "github.com/ory/oathkeeper/x.Version",
+          "commit": "github.com/ory/oathkeeper/x.Commit",
+          "date": "github.com/ory/oathkeeper/x.Date"
+        },
+        "note": "Oathkeeper stamps into package x, NOT driver/configuration. Confirmed from .goreleaser.yml at v26.2.0. Getting this wrong is silent: the binary compiles and reports `dev`."
+      },
+      "crosscheck": {
+        "image": "docker.io/oryd/oathkeeper",
+        "binaryPath": "/usr/bin/oathkeeper",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "v26.2.0-amd64-distroless",
+          "digest": "sha256:af1c08d4ca731166f46f29ba60d1e850ef115e4511d5131c8a895b39367415e4"
+        },
+        "arm64": {
+          "tag": "v26.2.0-arm64-distroless",
+          "digest": "sha256:291e39c9fcb1cbb1184d7c8cce303da158e69c9d147357cfb82abbc13e558d60"
+        }
+      },
+      "runtime": {
+        "ports": [
+          4455,
+          4456
+        ],
+        "volumes": [],
+        "entrypoint": [
+          "oathkeeper"
+        ],
+        "cmd": [
+          "serve"
+        ],
+        "user": 1001,
+        "tzdata": true
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin. Upstream's .docker/Dockerfile-build has a bug (COPY oryx/go.sum proto/go.sum); we do not use it."
+    },
+    "nats": {
+      "kind": "build",
+      "source": "nats",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "enforce",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "archNote": "Upstream also publishes arm/v6, arm/v7, 386, ppc64le, s390x and loong64. We build linux/amd64 and linux/arm64 only.",
+      "containerfile": "Containerfiles/nats.Containerfile",
+      "build": {
+        "cgo": false,
+        "trimpath": true,
+        "goToolchain": "go1.26.5",
+        "mainPackage": ".",
+        "binary": "nats-server",
+        "installPath": "/usr/bin/nats-server",
+        "compatSymlink": "/nats-server",
+        "extraLdflags": "-w",
+        "commitForm": "short",
+        "ldflagsVars": {
+          "version": "github.com/nats-io/nats-server/v2/server.serverVersion",
+          "commit": "github.com/nats-io/nats-server/v2/server.gitCommit"
+        },
+        "note": "Flags mirror upstream .goreleaser.yml exactly: -trimpath, CGO_ENABLED=0, GOTOOLCHAIN=go1.26.5, -w (not -s -w). serverVersion takes the tag; gitCommit takes goreleaser's .ShortCommit."
+      },
+      "crosscheck": {
+        "image": "docker.io/library/nats",
+        "binaryPath": "/usr/local/bin/nats-server",
+        "trustClass": "docker-official",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "2.14.5-alpine3.22",
+          "digest": "sha256:bacc5a40233588bd10201a2576903d9bfcc3bf84261ed324e522df2666e5eefd"
+        },
+        "arm64": {
+          "tag": "2.14.5-alpine3.22",
+          "digest": "sha256:205044f329047936e25b9946d4f8af0d13eb5af83993bb66b61a857631e94408"
+        },
+        "releaseTarballSha256": {
+          "amd64": "5e3b603d47c447bda1f77f9ac16dbf91c90aac4ff3681f8fbbc7201e4ed99355",
+          "arm64": "673a98d3faa79dde3f9ebf16d6dfac36a5f694e7ad2015e4954dd7939c85cd4c"
+        },
+        "note": "Second, independent anchor: the official image does not compile the binary, it downloads the GitHub release tarball and verifies these sha256 values inline in nats-docker/2.14.x/alpine3.22/Dockerfile. Both were confirmed to match on 2026-08-18, and the binary inside the official image is byte-identical to the released tarball. TIER DOWNGRADED from flag-matched to best-effort after empirical testing: we reproduced every observable build input -- Go 1.26.5, identical dep set, -trimpath, CGO_ENABLED=0, GOAMD64=v1, DefaultGODEBUG, mod=v2.14.5, vcs.revision/time/modified=false, and the 9-char short commit -- and the binary still differs. Whatever remains is not visible in `go version -m`. Do not treat a NATS mismatch as alarming until someone identifies the residual input."
+      },
+      "runtime": {
+        "ports": [
+          4222,
+          8222,
+          6222
+        ],
+        "volumes": [
+          "/var/lib/nats"
+        ],
+        "entrypoint": [
+          "nats-server"
+        ],
+        "cmd": [
+          "--config",
+          "/etc/nats/nats-server.conf"
+        ],
+        "user": 1001,
+        "tzdata": true,
+        "configFile": "rootfs/nats/etc/nats/nats-server.conf",
+        "configNote": "Ours, not upstream's. nats-docker ships a cluster block with hardcoded credentials ruser/T0pS3cr3t. All three ports are >1024 so non-root binding is fine."
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin on the 2.14 line, moved up from the 2.11-alpine image previously in use."
+    },
+    "daprd": {
+      "kind": "build",
+      "source": "dapr",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "enforce",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "archNote": "Upstream index is a Docker manifest list that also contains windows/amd64 and linux/arm/v7. Cross-check pins per-platform tags so extraction never depends on runtime manifest-list resolution.",
+      "containerfile": "Containerfiles/daprd.Containerfile",
+      "build": {
+        "cgo": false,
+        "mainPackage": "./cmd/daprd",
+        "binary": "daprd",
+        "installPath": "/usr/bin/daprd",
+        "compatSymlink": "/daprd",
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {
+          "commit": "github.com/dapr/dapr/pkg/buildinfo.gitcommit",
+          "gitversion": "github.com/dapr/dapr/pkg/buildinfo.gitversion",
+          "version": "github.com/dapr/dapr/pkg/buildinfo.version",
+          "kitVersion": "github.com/dapr/kit/logger.DaprVersion"
+        }
+      },
+      "crosscheck": {
+        "image": "docker.io/daprio/daprd",
+        "binaryPath": "/daprd",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "1.18.3-linux-amd64",
+          "digest": "sha256:d06339fe9dcc4c7180d914d3d7b60b7e3324dc065955fedafe1bf434d266631d"
+        },
+        "arm64": {
+          "tag": "1.18.3-linux-arm64",
+          "digest": "sha256:faa4e053377c37c88ad39c176f8b26fc22617232857f54a8d2b5be6dea6be5d6"
+        }
+      },
+      "runtime": {
+        "ports": [
+          3500,
+          50001,
+          50002,
+          9090
+        ],
+        "volumes": [],
+        "entrypoint": [
+          "/usr/bin/daprd"
+        ],
+        "cmd": [],
+        "user": 1001,
+        "tzdata": true,
+        "userNote": "Upstream runs 65532:65532 and the Dapr Helm chart pins runAsUser: 65532. We use 1001 per repo convention, so a Helm deployment needs an override. The /daprd compat symlink exists because the injector may emit command: [\"/daprd\"].",
+        "portNote": "Ports are from documentation, not from the pinned source. VERIFY against cmd/daprd options before relying on them."
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin. Moved up from 1.14.4, which is outside Dapr's N-2 support window."
+    },
+    "dapr-placement": {
+      "kind": "build",
+      "source": "dapr",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "enforce",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/dapr-placement.Containerfile",
+      "build": {
+        "cgo": false,
+        "mainPackage": "./cmd/placement",
+        "binary": "placement",
+        "installPath": "/usr/bin/placement",
+        "compatSymlink": "/placement",
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {
+          "commit": "github.com/dapr/dapr/pkg/buildinfo.gitcommit",
+          "gitversion": "github.com/dapr/dapr/pkg/buildinfo.gitversion",
+          "version": "github.com/dapr/dapr/pkg/buildinfo.version",
+          "kitVersion": "github.com/dapr/kit/logger.DaprVersion"
+        }
+      },
+      "crosscheck": {
+        "image": "docker.io/daprio/placement",
+        "binaryPath": "/placement",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "1.18.3-linux-amd64",
+          "digest": "sha256:6f7e0b1b3325d1687d24500a19885bbfdb20d64cb63f0705ada8d78eff045b8e"
+        },
+        "arm64": {
+          "tag": "1.18.3-linux-arm64",
+          "digest": "sha256:c9fbd7f4bac60356efa5464ef5cb25060d7b1e57628e2945fd4a907c7fde5f9c"
+        },
+        "note": "daprio/placement is the dedicated single-binary image. daprio/dapr is the kitchen-sink image carrying all six control-plane binaries and is the wrong cross-check source."
+      },
+      "runtime": {
+        "ports": [
+          50005,
+          8201,
+          8080,
+          9090
+        ],
+        "volumes": [],
+        "entrypoint": [
+          "/usr/bin/placement"
+        ],
+        "cmd": [],
+        "user": 1001,
+        "tzdata": true,
+        "portNote": "From documentation. VERIFY against cmd/placement options."
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin. Built from the same source checkout as daprd and dapr-scheduler; sources.dapr.lockstep prevents drift."
+    },
+    "dapr-scheduler": {
+      "kind": "build",
+      "source": "dapr",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "enforce",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/dapr-scheduler.Containerfile",
+      "build": {
+        "cgo": false,
+        "mainPackage": "./cmd/scheduler",
+        "binary": "scheduler",
+        "installPath": "/usr/bin/scheduler",
+        "compatSymlink": "/scheduler",
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {
+          "commit": "github.com/dapr/dapr/pkg/buildinfo.gitcommit",
+          "gitversion": "github.com/dapr/dapr/pkg/buildinfo.gitversion",
+          "version": "github.com/dapr/dapr/pkg/buildinfo.version",
+          "kitVersion": "github.com/dapr/kit/logger.DaprVersion"
+        }
+      },
+      "crosscheck": {
+        "image": "docker.io/daprio/scheduler",
+        "binaryPath": "/scheduler",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "1.18.3-linux-amd64",
+          "digest": "sha256:4d128ec1cb0c8045f0a69fea11eb1977a6922c285a14115df52f6d84b491d7f0"
+        },
+        "arm64": {
+          "tag": "1.18.3-linux-arm64",
+          "digest": "sha256:4d686122dc3d5e818908ef6f822816065708b4da9a8e28af1de0049f31bb9384"
+        }
+      },
+      "runtime": {
+        "ports": [
+          50006,
+          8080,
+          9090
+        ],
+        "volumes": [
+          "/var/lib/dapr/scheduler"
+        ],
+        "entrypoint": [
+          "/usr/bin/scheduler"
+        ],
+        "cmd": [],
+        "user": 1001,
+        "tzdata": true,
+        "portNote": "From documentation. VERIFY against cmd/scheduler options.",
+        "volumeNote": "The scheduler keeps an embedded etcd store; confirm the default data dir at the pinned tag before relying on this path."
+      },
+      "updated": "2026-08-18",
+      "reason": "Initial pin. Required from Dapr 1.15+ for actor reminders and workflows; the user is migrating from 1.14 where it did not exist."
+    }
+  }
+}

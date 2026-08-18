@@ -1,0 +1,43 @@
+# CVE exception register.
+#
+# An entry here moves a finding from `blocking` to `waived`. It never HIDES it:
+# waived findings appear in the PR comment table and in the signed review
+# verdict, carrying this entry's id, owner, expiry and justification.
+#
+# Every field is required. An entry missing `expires` or `justification` -- or
+# carrying a justification under 40 characters -- waives NOTHING and is reported
+# as EXCEPTION_INVALID so the author finds out why.
+#
+# Maximum window: 90 days from `issued`, for every image, regardless of trust
+# class. Expiry is evaluated against the workflow's `evaluated_at`, never a wall
+# clock inside the policy, so a decision made today replays identically in a
+# year -- which is what makes a signed verdict worth signing.
+#
+# `cves` is a list so one reviewed decision can cover a batch sharing one
+# rationale. nexus3 will need this; forcing one entry per CVE produces fifty
+# near-identical records nobody reads.
+#
+# An exception is an accepted risk with an owner and a date. It is not a way to
+# make a red check go green. Before adding one, read
+# .ai/skills/exception-handling.md and check whether a newer upstream release
+# on the declared track clears the finding instead.
+
+exceptions: []
+
+# --- Example. Delete before the first real entry. --------------------------
+#
+# - id: EXC-2026-0001
+#   image: nexus3            # must match a key in versions.json
+#   variant: "*"             # "*" or an exact variant name; no implicit any
+#   package: "*"             # "*" or an exact package name
+#   cves:
+#     - CVE-0000-00001
+#     - CVE-0000-00002
+#   issued:  "2026-08-18T00:00:00Z"
+#   expires: "2026-11-16T00:00:00Z"
+#   owner:   "@ryancraig"
+#   ticket:  "https://github.com/infrashift/trusted-service-containers/issues/12"
+#   justification: >-
+#     Present in Nexus plugin jars that are not loaded under our deployment
+#     profile; confirmed unreachable via the blobstore path. Sonatype fix
+#     targeted for the 3.91 line. Re-triage on the next 3.90.x bump.

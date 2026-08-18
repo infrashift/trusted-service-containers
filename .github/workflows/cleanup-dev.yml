@@ -1,0 +1,99 @@
+name: Cleanup Dev Images
+
+# Removes the development-namespace versions a PR created, once that PR has
+# been released. Deliberately narrow: development/ only, individual versions
+# only, and only versions whose every tag belongs to this PR.
+
+on:
+  workflow_run:
+    workflows: ["Release Images"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number whose development images should be removed'
+        required: true
+        type: string
+      dry_run:
+        description: 'List what would be deleted without deleting it'
+        required: false
+        default: true
+        type: boolean
+
+permissions: {}
+
+jobs:
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Download release results
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: release-result-*
+          path: results/
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Resolve the PR number
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pr_number }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_PRS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+        run: |
+          set -euo pipefail
+          PR=""
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            PR="$INPUT_PR"
+          else
+            # From the release result's explicit `pullRequest` field. The
+            # reference repo read `.version` here -- a distro key, not a PR
+            # number -- so its cleanup matched nothing and silently did nothing.
+            PR=$(jq -r '.pullRequest // empty' results/*/release-result.json 2>/dev/null | head -1 || true)
+            if [[ -z "$PR" ]]; then
+              PR=$(jq -r '.[0].number // empty' <<<"$RUN_PRS" || true)
+            fi
+            if [[ -z "$PR" ]]; then
+              PR=$(gh api "/repos/${REPO}/actions/runs/${RUN_ID}" --jq '.pull_requests[0].number // empty' || true)
+            fi
+          fi
+          if [[ ! "$PR" =~ ^[0-9]+$ ]]; then
+            echo "::warning::could not resolve a PR number; nothing to clean up"
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "pr_number=$PR" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "resolved PR #${PR}"
+
+      - name: Delete development versions
+        if: steps.pr.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUM: ${{ steps.pr.outputs.pr_number }}
+          # A manual run defaults to dry-run so an operator sees the blast
+          # radius before anything is removed. The automatic post-release path
+          # deletes for real.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+        run: ./scripts/cleanup-dev.sh | tee /tmp/cleanup.log
+
+      - name: Summarise
+        if: always() && steps.pr.outputs.skip == 'false'
+        run: |
+          { echo "## Development cleanup"; echo; echo '```'; cat /tmp/cleanup.log 2>/dev/null || echo "(no output)"; echo '```'; } \
+            >> "$GITHUB_STEP_SUMMARY"

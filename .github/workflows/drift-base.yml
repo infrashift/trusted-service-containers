@@ -1,0 +1,63 @@
+name: Base Image Drift
+
+# Watches the UBI base images this repo builds on, published by the sibling
+# repo infrashift/trusted-base-images.
+#
+# Polled from here on a schedule rather than pushed by the sibling. A
+# repository_dispatch would be lower-latency but needs a cross-repo write token
+# stored in the sibling -- a standing credential, which is precisely what the
+# three-actor environment isolation exists to avoid. Polling needs nothing.
+
+on:
+  schedule:
+    # 06:17 UTC daily. Offset from drift-upstream so the two never contend for
+    # the same branch or issue.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: drift-base
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Detect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # push the proposal branch
+      issues: write         # upsert the tracking issue
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned tools
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl
+
+      # The base packages are anonymously readable today (verified), so no
+      # credential is needed to resolve them. Logging in anyway keeps this
+      # working if the sibling ever makes them private.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect base drift
+        id: drift
+        env:
+          DRIFT_REPORT: /tmp/drift-base.md
+        run: ./scripts/drift-base.sh
+
+      - name: Propose
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BRANCH: automation/base-drift
+          LABEL: base-drift
+          TITLE: 'Base image drift: pinned UBI digests are behind the sibling repo'
+          REPORT: /tmp/drift-base.md
+          CHANGED: ${{ steps.drift.outputs.changed }}
+        run: ./scripts/propose-drift.sh

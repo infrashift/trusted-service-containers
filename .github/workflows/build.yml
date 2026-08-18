@@ -1,0 +1,336 @@
+name: CI Build & Audit
+
+# ONE workflow for BOTH tracks, deliberately.
+#
+# Two producer workflows would mean two review.yml runs racing to write the same
+# `review/cve-policy` commit status (last writer wins, non-deterministically);
+# release.yml's resolve-review would have to correlate two build runs and decide
+# what a partial success means; and the `has_build=false` clean no-op only works
+# with a single path-filtered producer. The cost of one workflow is one extra
+# job definition. The two jobs share matrix-setup, the evidence contract and the
+# signing steps, and diverge only in how bytes arrive at GHCR.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'versions.json'
+      - 'Containerfiles/**'
+      - 'rootfs/**'
+      - 'scripts/**'
+      - 'tools.lock'
+      - '.github/pdp/**'
+      # Changing the gate or the promotion logic must re-validate every leg
+      # against them, or the verdict on file was produced by different rules.
+      - '.github/workflows/review.yml'
+      - '.github/workflows/release.yml'
+
+permissions: {}
+
+concurrency:
+  group: build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # =========================================================================
+  matrix-setup:
+    name: Compute Matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      mirror_matrix: ${{ steps.compute.outputs.mirror_matrix }}
+      build_matrix: ${{ steps.compute.outputs.build_matrix }}
+      manifest_matrix: ${{ steps.compute.outputs.manifest_matrix }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0   # need history to diff against the PR base
+
+      - name: Compute selective matrix
+        id: compute
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          # Every leg of either kind. leg == service + "-" + variant for BOTH
+          # tracks; build entries carry an implicit "runtime" variant so the
+          # invariant holds uniformly and the schema guard can assert it.
+          ALL=$(jq -c '
+            [ .images | to_entries[]
+              | .key as $svc | .value as $v
+              | if $v.kind == "mirror"
+                then ( $v.variants | to_entries[]
+                       | { service: $svc, variant: .key,
+                           leg: ($svc + "-" + .key), kind: "mirror",
+                           trust_class: $v.upstreamTrust } )
+                else ( $v.arches[] as $a
+                       | { service: $svc, variant: "runtime",
+                           leg: ($svc + "-runtime"), kind: "build",
+                           trust_class: $v.upstreamTrust, arch: $a } )
+                end
+            ]' versions.json)
+
+          BASE=$(git show "${BASE_SHA}:versions.json" 2>/dev/null || echo '{}')
+
+          # A change ANYWHERE in an image entry means re-run that leg. Comparing
+          # whole objects rather than field-by-field means a newly added field
+          # cannot slip through unnoticed.
+          CHANGED=$(jq -c --argjson base "$BASE" '
+            [ .images | to_entries[]
+              | .key as $svc | .value as $v
+              | select( ($base.images[$svc] // null) != $v )
+              | if $v.kind == "mirror"
+                then ( $v.variants | to_entries[]
+                       | { service: $svc, variant: .key, leg: ($svc + "-" + .key) } )
+                else { service: $svc, variant: "runtime", leg: ($svc + "-runtime") }
+                end
+            ]' versions.json)
+
+          # Policy, orchestration or shared-input changes re-validate everything:
+          # the gate is only as trustworthy as its last evaluation.
+          if git diff --name-only "$BASE_SHA" HEAD \
+               | grep -qE '^(\.github/(pdp/|workflows/(review|release)\.yml$)|scripts/|tools\.lock$|rootfs/)'; then
+            echo "policy/orchestration changed -> full matrix"
+            FINAL="$ALL"
+          elif [ "$CHANGED" = "[]" ]; then
+            # Containerfile-only change: rebuild the legs that own them.
+            CF=$(git diff --name-only "$BASE_SHA" HEAD -- 'Containerfiles/*.Containerfile' \
+                 | xargs -r -n1 basename | sed 's/\.Containerfile$//' | jq -R -s -c 'split("\n")|map(select(length>0))')
+            if [ "$CF" = "[]" ]; then
+              echo "no image-affecting change detected -> full matrix (fallback)"
+              FINAL="$ALL"
+            else
+              FINAL=$(jq -c --argjson all "$ALL" --argjson cf "$CF" \
+                '[ $all[] | select(.service as $s | $cf | index($s)) ]' <<<'null')
+            fi
+          else
+            # Intersect with ALL so a deleted entry cannot resurrect itself.
+            FINAL=$(jq -c --argjson all "$ALL" --argjson ch "$CHANGED" \
+              '[ $all[] | . as $leg | select($ch | any(.leg == $leg.leg)) ]' <<<'null')
+          fi
+
+          echo "$FINAL" > build-matrix.json
+          jq -r '.[] | "  \(.kind)  \(.leg)\(if .arch then " (" + .arch + ")" else "" end)"' build-matrix.json
+
+          # ---- Injection guard, at the trust boundary -------------------
+          # build-matrix.json crosses into `run:` blocks in this workflow and in
+          # review.yml and release.yml. On a fork PR its contents derive from
+          # attacker-controlled versions.json keys. Per-FIELD regexes, not the
+          # reference's single blanket charset, because sonatype/nexus3 contains
+          # a slash -- widening one charset to cover it would weaken every field.
+          if ! jq -e '
+            type == "array" and length > 0 and length <= 64 and
+            all(.[];
+              type == "object" and
+              (.kind        | IN("mirror","build")) and
+              (.service     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
+              (.variant     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
+              (.leg         | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,127}$")) and
+              (.trust_class | IN("dhi","none","internal")) and
+              (.leg == (.service + "-" + .variant)) and
+              (if .kind == "build"
+               then ((keys_unsorted|sort) == ["arch","kind","leg","service","trust_class","variant"]
+                     and (.arch | IN("amd64","arm64")))
+               else ((keys_unsorted|sort) == ["kind","leg","service","trust_class","variant"])
+               end)
+            )' build-matrix.json > /dev/null; then
+            echo "::error::Computed matrix failed schema validation -- check versions.json keys"
+            cat build-matrix.json
+            exit 1
+          fi
+
+          MIRROR=$(jq -c '[.[] | select(.kind == "mirror")]' build-matrix.json)
+          BUILD=$(jq  -c '[.[] | select(.kind == "build")]'  build-matrix.json)
+          # Manifest lists are reconstructed ONLY for build legs, and only in
+          # release.yml after a verdict exists. Mirror legs must never appear
+          # here: rebuilding a manifest list over a mirrored index would replace
+          # the vendor's signed index with one they never signed.
+          MANIFEST=$(jq -c '[.[] | select(.kind == "build") | {service, variant, leg}] | unique' build-matrix.json)
+
+          {
+            echo "mirror_matrix=$MIRROR"
+            echo "build_matrix=$BUILD"
+            echo "manifest_matrix=$MANIFEST"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-matrix
+          path: build-matrix.json
+
+  # =========================================================================
+  mirror-and-audit:
+    name: Mirror ${{ matrix.leg }}
+    needs: matrix-setup
+    if: needs.matrix-setup.outputs.mirror_matrix != '[]'
+    # ALWAYS amd64. syft and grype are static analysers: they unpack layers and
+    # read package databases, they never execute image content, so an amd64
+    # runner scans a linux/arm64 child manifest perfectly well. The reference
+    # repo needed native arm64 runners only because buildah executes RUN steps.
+    runs-on: ubuntu-latest
+    environment: Build-Actor
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix-setup.outputs.mirror_matrix) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        with:
+          cosign-release: v2.6.1   # keep in lockstep with tools.lock
+
+      - name: Install pinned tools
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl syft grype opa
+
+      # DHI stores image layers on dhi.io but its signed attestations on
+      # registry.scout.docker.com -- a separate registry needing its own login.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ vars.DOCKERHUB_ORGANIZATION }}
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: registry.scout.docker.com
+          username: ${{ vars.DOCKERHUB_ORGANIZATION }}
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+
+      # Authenticated even though sonatype/nexus3 is public: anonymous Docker Hub
+      # pulls are rate-limited per IP and GitHub runners share IPs, so anonymous
+      # mirroring fails intermittently in a way that reads like a network flake.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_ORGANIZATION }}
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mirror, scan and sign
+        env:
+          # Untrusted matrix values reach the script only through env, never
+          # through shell interpolation.
+          SERVICE: ${{ matrix.service }}
+          VARIANT: ${{ matrix.variant }}
+          LEG: ${{ matrix.leg }}
+          TRUST_CLASS: ${{ matrix.trust_class }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: ./scripts/mirror-leg.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: evidence-${{ matrix.leg }}
+          path: evidence/
+          if-no-files-found: error
+
+  # =========================================================================
+  build-and-audit:
+    name: Build ${{ matrix.leg }} (${{ matrix.arch }})
+    needs: matrix-setup
+    if: needs.matrix-setup.outputs.build_matrix != '[]'
+    # Native arm64 runners here, unlike the mirror job: buildah EXECUTES the RUN
+    # steps in the Containerfile, so the builder architecture must match.
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    environment: Build-Actor
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix-setup.outputs.build_matrix) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        with:
+          cosign-release: v2.6.1
+
+      - name: Install pinned tools
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl syft grype opa
+
+      - name: Install buildah
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq buildah skopeo
+
+      # For the dual-provenance cross-check pulls (oryd/*, daprio/*, library/nats).
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_ORGANIZATION }}
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+
+      # The ubi9-micro base is anonymously pullable today (verified), so no
+      # credential is needed to READ it; this login is for PUSHING our own images.
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build, cross-check, scan and sign
+        env:
+          SERVICE: ${{ matrix.service }}
+          VARIANT: ${{ matrix.variant }}
+          LEG: ${{ matrix.leg }}
+          ARCH: ${{ matrix.arch }}
+          TRUST_CLASS: ${{ matrix.trust_class }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: ./scripts/build-leg.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: evidence-${{ matrix.leg }}-${{ matrix.arch }}
+          path: evidence/
+          if-no-files-found: error
+
+  # =========================================================================
+  # A single aggregate context. NEVER make individual matrix legs required
+  # checks: job names change with the matrix, and a required context that stops
+  # reporting blocks every PR forever.
+  gate:
+    name: build/gate
+    needs: [matrix-setup, mirror-and-audit, build-and-audit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate
+        env:
+          MIRROR: ${{ needs.mirror-and-audit.result }}
+          BUILD: ${{ needs.build-and-audit.result }}
+          SETUP: ${{ needs.matrix-setup.result }}
+        run: |
+          set -euo pipefail
+          echo "matrix-setup=$SETUP mirror=$MIRROR build=$BUILD"
+          for r in "$SETUP" "$MIRROR" "$BUILD"; do
+            case "$r" in
+              success|skipped) : ;;
+              *) echo "::error::a build leg did not succeed (${r})"; exit 1 ;;
+            esac
+          done
+          echo "all legs succeeded or were skipped"

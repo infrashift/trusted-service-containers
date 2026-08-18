@@ -1,0 +1,21 @@
+# Pinned tool versions.
+#
+# The reference repo installed syft, grype and opa from unpinned `main` /
+# `latest` URLs into the very job that holds the build signing key -- a remote
+# code execution path straight into the most privileged step in the pipeline.
+# Every tool here is version-pinned; installers verify checksums where upstream
+# publishes them.
+#
+# cosign is the one that matters most for interoperability: cosign v3 defaults
+# to --new-bundle-format=true and writes attestations as OCI referrers, while
+# v2 writes legacy sha256-<digest>.att tags. The sibling repo
+# (infrashift/trusted-base-images) is on v2, so `internal`-class verification
+# reads v2 layout. Pinning v2 here keeps both repos interoperable; migrate them
+# together, never one at a time. Revisit after the GHCR referrers spike.
+
+COSIGN_VERSION=v2.6.1
+REGCTL_VERSION=v0.11.5
+SYFT_VERSION=v1.51.0
+GRYPE_VERSION=v0.117.0
+OPA_VERSION=v1.19.1
+GITLEAKS_VERSION=v8.30.1

@@ -1,0 +1,178 @@
+name: PR Review Gate
+
+# Two jobs that must report on EVERY pull request, including ones that touch
+# nothing image-related:
+#
+#   seed-review-status  publishes the `review/cve-policy` commit status as
+#                       pending (or success, when no image path changed).
+#                       review.yml runs on workflow_run and therefore cannot
+#                       report a check against the PR itself, so without this
+#                       seed a required check would never appear and every PR
+#                       would hang waiting for it.
+#
+#   repo-gate           the repository-scoped half of the PDP: secret scanning,
+#                       versions.json schema and semantics, exception hygiene,
+#                       and the policy's own test suite.
+#
+# This workflow is deliberately NOT path-filtered. A path-filtered workflow
+# simply does not run, and its required contexts never appear, which blocks
+# docs-only PRs forever.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  seed-review-status:
+    name: Seed Review Status
+    runs-on: ubuntu-latest
+    # Fork PRs get a read-only GITHUB_TOKEN that cannot write commit statuses.
+    # Skipping is correct: a fork PR cannot reach dhi.io or push to GHCR either.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      statuses: write
+      pull-requests: read
+    steps:
+      - name: Resolve whether this PR affects images
+        id: paths
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # KEEP IN SYNC with the paths: filter in build.yml. The reference repo
+          # has a dedicated commit fixing exactly this drift.
+          BUILD_PATHS='^(versions\.json$|Containerfiles/|rootfs/|scripts/|tools\.lock$|\.github/pdp/|\.github/workflows/(build|review|release)\.yml$)'
+          CHANGED=$(gh pr diff "$PR_NUM" --repo "$REPO" --name-only)
+          echo "$CHANGED" | sed 's/^/  /'
+          if echo "$CHANGED" | grep -qE "$BUILD_PATHS"; then
+            echo "affects_images=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "affects_images=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish review/cve-policy status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          AFFECTS: ${{ steps.paths.outputs.affects_images }}
+        run: |
+          set -euo pipefail
+          if [[ "$AFFECTS" == "true" ]]; then
+            STATE=pending
+            DESC="Awaiting image review; resolved by Review Attestations."
+          else
+            STATE=success
+            DESC="No image-affecting paths changed."
+          fi
+          # Context string must match review.yml EXACTLY, and must match the
+          # required status check configured on the main ruleset.
+          gh api -X POST "/repos/${REPO}/statuses/${SHA}" \
+            -f state="$STATE" \
+            -f context="review/cve-policy" \
+            -f description="$DESC" \
+            -f target_url="${GITHUB_SERVER_URL}/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+
+  repo-gate:
+    name: Repo Gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # gitleaks scans history, and the reference repo's committed private
+          # keys are precisely the case that catches.
+          fetch-depth: 0
+
+      - name: Install pinned tools
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh opa gitleaks
+
+      - name: Install jsonschema
+        run: python3 -m pip install --quiet jsonschema
+
+      - name: Guard the secret scanner config
+        # Guard #2 of three. An empty .gitleaks.toml means ZERO rules: gitleaks
+        # scans, finds nothing, exits 0. Indistinguishable from a clean scan.
+        run: |
+          set -euo pipefail
+          bytes=$(stat -c%s .gitleaks.toml)
+          [ "$bytes" -ge 64 ] || { echo "::error::.gitleaks.toml is ${bytes} bytes -- an empty config disables every rule"; exit 1; }
+          grep -qE 'useDefault[[:space:]]*=[[:space:]]*true' .gitleaks.toml \
+            || { echo "::error::.gitleaks.toml must set [extend] useDefault = true"; exit 1; }
+
+      - name: Validate versions.json against the JSON Schema
+        run: python3 scripts/validate-schema.py
+
+      - name: Assert a single authoritative policy
+        run: ./scripts/check-no-orphan-rego.sh
+
+      - name: Lint workflows for drift
+        # The reference repo drifted in exactly these ways: a paths filter out
+        # of sync with the gate's regex, and a required status context spelled
+        # differently in two places. Both are mechanically checkable.
+        run: ./scripts/lint-workflows.sh
+
+      - name: Lint Containerfiles
+        # Shape invariants plus agreement with versions.json, so a Containerfile
+        # and its declared runtime cannot drift apart silently.
+        run: ./scripts/lint-containerfiles.sh
+
+      - name: Lint documentation paths
+        # The reference's skill cards cite four files that never existed.
+        # Documentation that lies is worse than none, because it is trusted.
+        run: ./scripts/lint-skills.sh
+
+      - name: Lint shell
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning scripts/*.sh
+
+      - name: Policy self-test
+        run: |
+          set -euo pipefail
+          opa check --strict .github/pdp/
+          out=$(opa fmt --list .github/pdp/)
+          if [ -n "$out" ]; then echo "::error::rego needs formatting: $out"; exit 1; fi
+          opa test .github/pdp/ | tail -1
+          cov=$(opa test .github/pdp/ --coverage --format json | jq -r '.coverage')
+          printf 'coverage: %.1f%%\n' "$cov"
+          awk -v c="$cov" 'BEGIN{ if (c+0 < 85) { print "coverage below 85% threshold" > "/dev/stderr"; exit 1 } }'
+
+      - name: Evaluate data.tsc.pdp.repo_decision
+        # Builds the OPA input from MEASURED facts -- real config size, real scan
+        # output, real versions.json -- never from asserted literals. The
+        # reference wrote "gitleaks_passed": true as a hardcoded string into a
+        # signed attestation while its config was 0 bytes.
+        run: ./scripts/repo-gate.sh repo-decision.json
+
+      - name: Summarise
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -f repo-decision.json ] || exit 0
+          {
+            echo "## Repo gate"
+            echo
+            echo "- allow: \`$(jq -r '.allow' repo-decision.json)\`"
+            echo "- violations: $(jq -r '.counts.violations' repo-decision.json)"
+            echo "- warnings: $(jq -r '.counts.warnings' repo-decision.json)"
+            jq -r '.violations[]? | "  - **\(.code)** \(.message)"' repo-decision.json
+            jq -r '.warnings[]?   | "  - _\(.code)_ \(.message)"' repo-decision.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: repo-decision
+          path: repo-decision.json
+          if-no-files-found: ignore

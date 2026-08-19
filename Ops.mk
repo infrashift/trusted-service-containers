@@ -26,7 +26,10 @@ OPA        ?= opa
 GITLEAKS   ?= gitleaks
 
 ORG        := infrashift
-REPO_NAME  := $(shell git remote get-url origin 2>/dev/null | sed -E 's#.*[/:]([^/]+/[^/]+?)(\.git)?$$#\1#' | cut -d/ -f2)
+# basename then strip a trailing .git. The previous one-liner relied on a lazy
+# quantifier that POSIX ERE does not have, so it left ".git" attached and every
+# derived GHCR path was wrong -- invisible until a remote actually existed.
+REPO_NAME  := $(shell git remote get-url origin 2>/dev/null | xargs -r basename | sed 's/\.git$$//')
 REPO_NAME  := $(if $(REPO_NAME),$(REPO_NAME),trusted-service-containers)
 PKG_PREFIX := $(REPO_NAME)
 REGISTRY   := ghcr.io/$(ORG)/$(REPO_NAME)

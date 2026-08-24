@@ -72,7 +72,12 @@ case "$TRUST_CLASS" in
   dhi)
     [[ -n "$KEYRING" && -f "$KEYRING" ]] || { echo "::error::trust_class=dhi but keyring $KEYRING is missing"; exit 1; }
     KEYRING_PINNED_SHA=$(sha256sum "$KEYRING" | cut -d' ' -f1)
-    curl -sSfL -o /tmp/dhi-fetched.pub https://registry.scout.docker.com/keyring/dhi/latest.pub
+    # Retried: a blip here aborts the leg under `set -e` before the comparison
+    # below can run, so a transient failure looks like a mirror failure rather
+    # than a network one. Not --retry-all-errors -- a 404 would mean Docker moved
+    # the keyring endpoint, which must surface rather than be retried away.
+    curl -sSfL --retry 3 --retry-delay 2 --retry-connrefused --max-time 30 \
+      -o /tmp/dhi-fetched.pub https://registry.scout.docker.com/keyring/dhi/latest.pub
     KEYRING_FETCHED_SHA=$(sha256sum /tmp/dhi-fetched.pub | cut -d' ' -f1)
 
     if [[ "$KEYRING_PINNED_SHA" != "$KEYRING_FETCHED_SHA" ]]; then

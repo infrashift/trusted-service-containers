@@ -185,6 +185,12 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.matrix-setup.outputs.mirror_matrix) }}
+    env:
+      # Whether a Docker Hub credential exists at all. The `secrets` context is
+      # not usable in a step-level `if:`, so it is reduced to a boolean here and
+      # the steps test that. Job-level env may read secrets; workflow-level may
+      # not, which is why this is repeated per job rather than hoisted.
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_OAT != '' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -195,15 +201,32 @@ jobs:
       - name: Install pinned tools
         run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl syft grype opa
 
+      # A DHI leg cannot do anything without a credential, so say that here
+      # rather than let it surface as an `unauthorized` from a registry three
+      # steps later.
+      - name: Require a Docker Hub credential for DHI legs
+        if: matrix.trust_class == 'dhi' && env.HAS_DOCKERHUB != 'true'
+        run: |
+          echo "::error::${{ matrix.leg }} is trust_class=dhi but no DOCKERHUB_OAT is configured."
+          echo "Set it on the Build-Actor environment -- see SETUP-ENVIRONMENTS.md step 6."
+          exit 1
+
       # DHI stores image layers on dhi.io but its signed attestations on
       # registry.scout.docker.com -- a separate registry needing its own login.
+      #
+      # Both are gated on trust_class. Every leg used to run both logins, so a
+      # Docker Hub problem failed legs that never touch Docker Hub: the first run
+      # of this workflow took down all 21 legs, 10 of which build from source
+      # against UBI and pull nothing from Docker.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: matrix.trust_class == 'dhi'
         with:
           registry: dhi.io
           username: ${{ vars.DOCKERHUB_ORGANIZATION }}
           password: ${{ secrets.DOCKERHUB_OAT }}
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: matrix.trust_class == 'dhi'
         with:
           registry: registry.scout.docker.com
           username: ${{ vars.DOCKERHUB_ORGANIZATION }}
@@ -212,7 +235,12 @@ jobs:
       # Authenticated even though sonatype/nexus3 is public: anonymous Docker Hub
       # pulls are rate-limited per IP and GitHub runners share IPs, so anonymous
       # mirroring fails intermittently in a way that reads like a network flake.
+      #
+      # Skipped rather than failed when no credential is configured: the pull
+      # still works anonymously, just with a rate limit. Degrading beats refusing
+      # to run at all.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: env.HAS_DOCKERHUB == 'true'
         with:
           registry: docker.io
           username: ${{ vars.DOCKERHUB_ORGANIZATION }}
@@ -262,6 +290,12 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.matrix-setup.outputs.build_matrix) }}
+    env:
+      # Whether a Docker Hub credential exists at all. The `secrets` context is
+      # not usable in a step-level `if:`, so it is reduced to a boolean here and
+      # the steps test that. Job-level env may read secrets; workflow-level may
+      # not, which is why this is repeated per job rather than hoisted.
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_OAT != '' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -276,7 +310,13 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq buildah skopeo
 
       # For the dual-provenance cross-check pulls (oryd/*, daprio/*, library/nats).
+      #
+      # Skipped when no credential is configured. These legs build from source
+      # against a UBI base and need nothing from Docker Hub to produce an image;
+      # the cross-check is a comparison against the vendor's own published build.
+      # Losing the login costs a rate limit, not the build.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: env.HAS_DOCKERHUB == 'true'
         with:
           registry: docker.io
           username: ${{ vars.DOCKERHUB_ORGANIZATION }}

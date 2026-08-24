@@ -80,7 +80,7 @@ live private keys sitting in `temp-delete/` in its checkout; treat those as
 compromised and rotate them.
 
 ```bash
-WORK=$(mktemp -d -p /dev/shm keygen.XXXXXX)
+export WORK=$(mktemp -d -p /dev/shm keygen.XXXXXX)
 cd "$WORK"
 for actor in build review release; do
   COSIGN_PASSWORD="$(openssl rand -base64 48)"
@@ -94,6 +94,35 @@ done
 ls -l
 ```
 
+**`WORK` is exported, and that matters.** It used to be a plain assignment, and
+step 4 opens with `cd "$WORK"`. In a new shell the variable is empty, `cd ""` is
+a silent no-op that leaves you wherever you were -- usually this repository --
+and the redirect that follows fails with `build.key: No such file or directory`.
+The commands look like they are failing for a permissions or auth reason when
+they are simply running in the wrong directory. Step 4 now guards against it
+rather than relying on you having kept the same shell.
+
+### Prove each public half matches its private half, before uploading
+
+```bash
+for actor in build review release; do
+  printf '%-8s ' "$actor"
+  if [ "$(COSIGN_PASSWORD="$(cat "${actor}.password")" cosign public-key --key "${actor}.key")" \
+       = "$(cat "${actor}.pub")" ]; then echo "pair OK"; else echo "MISMATCH"; fi
+done
+```
+
+Do not skip this. Uploading a private key whose public half is not the one
+committed produces no error anywhere: every build signs happily, and the failure
+appears later as
+
+    checksums.sha256 signature does not verify against build.pub
+
+on every review leg at once, which reads like a broken review actor rather than
+a key mismatch. That happened here on 2026-08-24 -- fresh keys went into the
+environments while the previously committed `.pub` files stayed in the tree, and
+it survived undetected until the first build that got far enough to be reviewed.
+
 > `cosign generate-key-pair` produces **ECDSA P-256, not ED25519**. The
 > reference repo's docs claim ED25519 throughout and are simply wrong. An
 > inaccurate cryptographic claim in a supply-chain repo is worse than a boring
@@ -104,6 +133,13 @@ ls -l
 ## 4. Three environments, each with TWO secrets
 
 ```bash
+# Both are set in earlier steps and neither survives a new shell. Without these
+# guards, an empty SLUG builds the URL `repos//environments/...` and an empty
+# WORK turns `cd "$WORK"` into a no-op that leaves you in the git repo, where
+# the .key files do not exist.
+: "${SLUG:?set it: export SLUG=infrashift/trusted-service-containers}"
+: "${WORK:?set it to the keygen directory from step 3, e.g. export WORK=/dev/shm/keygen.XXXXXX}"
+
 gh api -X PUT "repos/${SLUG}/environments/Build-Actor"
 gh api -X PUT "repos/${SLUG}/environments/Review-Actor"
 gh api -X PUT "repos/${SLUG}/environments/Release-Actor"

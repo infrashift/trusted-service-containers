@@ -115,7 +115,6 @@
               "required": ["upstreamRepo", "platforms", "variants"],
               "properties": {
                 "upstreamRepo": { "type": "string" },
-                "attestationRepo": { "type": ["string", "null"] },
                 "keyring": { "type": ["string", "null"] },
                 "requiredPredicates": { "type": "array", "items": { "type": "string" } },
                 "platforms": { "type": "array", "items": { "type": "string" }, "minItems": 1 },

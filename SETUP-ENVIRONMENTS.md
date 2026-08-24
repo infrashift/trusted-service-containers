@@ -273,9 +273,10 @@ that job consumes an OIDC token at all.
 
 ## 7. Resolve the four DHI digests
 
-`versions.json` ships them as `sha256:0000…` placeholders. `make validate`
-warns about them, and `scripts/mirror-leg.sh` **refuses to run** rather than
-mirroring a fake pin.
+**Done — 2026-08-24.** Kept as the procedure for the next pin.
+
+`versions.json` shipped them as `sha256:0000…` placeholders, and
+`scripts/mirror-leg.sh` refuses to run rather than mirror a fake pin.
 
 ```bash
 docker login dhi.io
@@ -285,22 +286,70 @@ for REF in traefik:3-debian13 traefik:3-debian13-dev postgres:16-debian postgres
 done
 ```
 
-Use `regctl manifest head`, **not** `docker pull` + `docker inspect` — the
-latter returns the single-platform digest for your local architecture, not the
-index digest we pin.
+Use `regctl manifest head`, **not** `docker pull` + `docker inspect` — the latter
+returns the single-platform digest for your local architecture, not the index
+digest we pin. Confirm it with
+`regctl manifest head --format '{{.GetDescriptor.MediaType}}'`: an index reports
+`application/vnd.oci.image.index.v1+json`.
 
-While logged in, discover the attestation repository and record it in each DHI
-entry's `attestationRepo` (it currently says `DISCOVER_AT_BOOTSTRAP`):
+### Where the attestations actually live
+
+This section used to say "discover the attestation repository and record it in
+`attestationRepo`", and pointed at `docker scout attest list`. Both were wrong,
+and the field is gone.
+
+DHI publishes attestations as **OCI referrers in the image's own repository** —
+`dhi.io/traefik`, not `registry.scout.docker.com/<org>/traefik`. There is no
+separate attestation registry, so there was never a namespace to discover.
+`attestationRepo` could only ever be set wrong, and was: it shipped as the
+literal `DISCOVER_AT_BOOTSTRAP`, which failed as `repo must be lowercase`.
+
+The structure, verified against the live registry:
+
+| Level | Carries |
+|---|---|
+| index (what we pin) | a cosign signature referrer |
+| each platform manifest | 15 in-toto attestation referrers |
+| each attestation manifest | its own cosign signature referrer |
+
+Two consequences the old code missed. The attestations hang off the **platform**
+manifests, so listing referrers on the index finds only the signature — which is
+why `requiredPredicates` appeared to be missing. And `regctl artifact list`
+emits **`.descriptors[]`**; the earlier note here asked which of `.manifests` or
+`.Manifests` was real, and the answer is neither.
+
+### Verifying by hand
+
+`--experimental-oci11=true` is not optional. DHI attaches signatures as OCI 1.1
+referrers, while cosign looks for the legacy `sha256-<digest>.sig` tag by
+default, so without the flag a correctly signed image reports
+`no signatures found`:
 
 ```bash
-docker scout attest list dhi.io/traefik:3-debian13
-regctl artifact list --external registry.scout.docker.com/<org>/traefik dhi.io/traefik@<pin>
+cosign verify --key .github/pdp/keyring/dhi-latest.pub \
+  --insecure-ignore-tlog=true --experimental-oci11=true \
+  dhi.io/traefik@sha256:734fb24f3fbdf5e664fb750753e11edc54dcf99706b714612a66837466fd3ad8
 ```
 
-**Capture the full JSON output.** `scripts/mirror-leg.sh` tries both
-`.manifests[]` and `.Manifests[]` spellings; confirm which is real rather than
-leaving it to chance. An empty list is already a hard failure, so this fails
-safe — but confirm it.
+Keep cosign at **v2**. v3 defaults `--new-bundle-format=true` and fails against
+DHI's simplesigning payloads, so `tools.lock`'s existing "v2, not v3" pin matters
+here specifically, not only for the `.att` layout.
+
+The keyring is the right key, checked rather than assumed: the public key
+embedded in the signature's Rekor bundle is byte-identical to
+`.github/pdp/keyring/dhi-latest.pub`, and the live keyring at
+`registry.scout.docker.com/keyring/dhi/latest.pub` still matches the committed
+copy.
+
+`docker scout` is not needed for any of this and the pipeline never calls it.
+It was useful once, to discover the layout above; `regctl` does the same job.
+Scout is also not a scanner here — our SBOMs come from syft and our CVE
+assessment from grype. The DHI attestations answer a different question: what
+the vendor signed.
+
+Verified end to end on 2026-08-24 — traefik and postgres, both platforms, 15
+referrers each, every signature verifying against the committed keyring and no
+missing predicates.
 
 ---
 

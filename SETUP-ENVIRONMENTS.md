@@ -233,12 +233,19 @@ own images go to GHCR with `GITHUB_TOKEN`.
 
 ```bash
 SLUG=infrashift/trusted-service-containers
-gh variable set DOCKERHUB_ORGANIZATION --repo "$SLUG" --body "infrashift"
+gh variable set DOCKERHUB_ORGANIZATION --repo "$SLUG" --body "infrashiftio"
 gh secret   set DOCKERHUB_OAT --repo "$SLUG" --env Build-Actor
 ```
 
 `DOCKERHUB_ORGANIZATION` is a variable -- it is the org name, not a credential,
-and having it in logs aids debugging. The token is a secret, and specifically an
+and having it in logs aids debugging.
+
+**The Docker Hub organisation is `infrashiftio`, not `infrashift`.** The GitHub
+org and the Docker Hub org are different names, and the variable holds the
+Docker Hub one because it is used as the login username and nothing else. Set to
+`infrashift` it authenticates as a user that does not exist, and Docker answers
+`unauthorized: incorrect username or password` -- which reads like a bad token
+and sends you looking at the secret. The token is a secret, and specifically an
 **environment** secret on `Build-Actor`.
 
 That last part is not incidental. A repository secret is readable by every job

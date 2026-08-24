@@ -24,6 +24,12 @@ on:
       # against them, or the verdict on file was produced by different rules.
       - '.github/workflows/review.yml'
       - '.github/workflows/release.yml'
+      # This file too. pr-gate.yml's BUILD_PATHS already listed it, so the two
+      # lists the KEEP IN SYNC contract governs had drifted: a PR changing only
+      # build.yml had review/cve-policy seeded to pending and then never ran
+      # build.yml to resolve it. It also meant a change to how images are built
+      # could not be exercised by a build.
+      - '.github/workflows/build.yml'
 
 permissions: {}
 

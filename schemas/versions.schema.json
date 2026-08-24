@@ -44,7 +44,8 @@
         "required": ["track", "ref"],
         "properties": {
           "track": { "$ref": "#/$defs/anchoredRegex" },
-          "ref": { "type": "string" },
+          "ref": { "type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*$",
+                  "description": "Interpolated into an OCI tag by build-leg.sh (DEST_TAG=pr-<n>-<ref>-<arch>), so it must satisfy the registry tag grammar. A '+' is valid semver build metadata and an invalid tag; it fails as buildah exit 125." },
           "url": { "type": "string", "format": "uri" },
           "commit": { "$ref": "#/$defs/commit" },
           "shortCommit": { "type": "string", "pattern": "^[0-9a-f]{7,12}$" },

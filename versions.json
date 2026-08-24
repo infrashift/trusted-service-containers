@@ -448,7 +448,7 @@
       "build": {
         "cgo": false,
         "trimpath": true,
-        "goToolchain": "go1.26.5",
+        "goToolchain": "go1.26.6",
         "mainPackage": ".",
         "binary": "nats-server",
         "installPath": "/usr/bin/nats-server",

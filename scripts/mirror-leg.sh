@@ -108,12 +108,18 @@ case "$TRUST_CLASS" in
       : > /tmp/all-descriptors.json
       FAILED=0
       MISSING_ANY="[]"
+      # A dedicated flag, NOT a test of RESULT. RESULT is initialised to
+      # "failed" at the top of this script so that any path which forgets to set
+      # it denies; that makes `[[ "$RESULT" == failed ]]` true on entry and, used
+      # as a guard here, unreachable-success. It shipped that way once: every DHI
+      # leg reported result=failed reason=UNSET while every signature verified.
+      LEG_ERR=""
       for plat in $(jq -r '.[]' <<<"$DECLARED_PLATFORMS"); do
         child=$(regctl manifest get "${SRC_REPO}@${PIN}" --format '{{json .}}' 2>/dev/null \
           | jq -r --arg p "$plat" '
               [.manifests[]? | select((.platform.os + "/" + .platform.architecture) == $p)][0].digest // empty')
         if [[ -z "$child" ]]; then
-          RESULT=failed; REASON="PLATFORM_MISSING ${plat}"; FAILED=$((FAILED + 1)); continue
+          LEG_ERR="PLATFORM_MISSING ${plat}"; FAILED=$((FAILED + 1)); continue
         fi
 
         # regctl emits `.descriptors[]`. Confirmed against the live registry --
@@ -121,7 +127,7 @@ case "$TRUST_CLASS" in
         # of this script guessed at and which silently yielded an empty list.
         if ! regctl artifact list "${SRC_REPO}@${child}" --format '{{jsonPretty .}}' \
                > "/tmp/refs-${plat//\//-}.json" 2>/tmp/refs.err; then
-          RESULT=failed; REASON="REFERRER_LIST_FAILED ${plat}: $(head -c 200 /tmp/refs.err)"
+          LEG_ERR="REFERRER_LIST_FAILED ${plat}: $(head -c 200 /tmp/refs.err)"
           FAILED=$((FAILED + 1)); continue
         fi
 
@@ -154,7 +160,7 @@ case "$TRUST_CLASS" in
       jq -s '{descriptors: .}' /tmp/all-descriptors.json > "$EVIDENCE/upstream-referrers.json"
       PRED_TYPES=$(jq -c '[.descriptors[]?.predicate] | map(select(. != "")) | unique' "$EVIDENCE/upstream-referrers.json")
 
-      if   [[ "$RESULT" == "failed" ]]; then :
+      if   [[ -n "$LEG_ERR" ]];         then RESULT=failed; REASON="$LEG_ERR"
       elif [[ "$FAILED" -gt 0 ]];       then RESULT=failed; REASON="SIGNATURE_INVALID (${FAILED} attestation signature(s))"
       elif [[ "$MISSING_ANY" != "[]" ]]; then RESULT=failed; REASON="MISSING_PREDICATES ${MISSING_ANY}"
       elif [[ "$VERIFIED" -le 1 ]];     then RESULT=failed; REASON=NO_ATTESTATIONS

@@ -45,6 +45,11 @@ COPY src/dapr-placement/ /src/
 
 ENV CGO_ENABLED=0 \
     GOOS=linux
+# The smoke test is --help, not --version. cmd/placement/options/options.go builds its
+# flag set with pflag and never registers a "version" flag -- only cmd/daprd does
+# -- so `--version` is an unknown flag and pflag's ExitOnError path exits 2.
+# --help returns pflag's ErrHelp, which that same path exits 0 on, so this still
+# proves the binary links, starts and parses flags for the target architecture.
 RUN set -euo pipefail; \
     GOARCH="${TARGETARCH}" go build \
       -ldflags="-s -w \
@@ -53,7 +58,7 @@ RUN set -euo pipefail; \
         -X 'github.com/dapr/dapr/pkg/buildinfo.version=${SOURCE_VERSION}' \
         -X 'github.com/dapr/kit/logger.DaprVersion=${SOURCE_VERSION}'" \
       -o /out/placement ./cmd/placement ; \
-    /out/placement --version
+    /out/placement --help
 
 ########################  certs  ##########################
 FROM ${CA_BASE}@${CA_DIGEST} AS certs

@@ -28,7 +28,11 @@ jobs:
     permissions:
       contents: write
       issues: write
-      id-token: write       # Docker OIDC, so the DHI legs can be listed
+    # Bound to Build-Actor so the Docker Hub token scoped to that
+    # environment is visible here. This job only pulls from upstream
+    # registries -- the same read the mirror leg does -- so it belongs to
+    # the build actor rather than to any signing actor.
+    environment: Build-Actor
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -43,15 +47,13 @@ jobs:
         with:
           registry: dhi.io
           username: ${{ vars.DOCKERHUB_ORGANIZATION }}
-        env:
-          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+          password: ${{ secrets.DOCKERHUB_OAT }}
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: docker.io
           username: ${{ vars.DOCKERHUB_ORGANIZATION }}
-        env:
-          DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
+          password: ${{ secrets.DOCKERHUB_OAT }}
 
       - name: Detect upstream drift
         id: drift

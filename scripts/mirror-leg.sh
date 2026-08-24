@@ -18,7 +18,6 @@ IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
 VAR=$(jq -ce --arg v "$VARIANT" '.variants[$v]' <<<"$IMG")
 
 SRC_REPO=$(jq -r '.upstreamRepo' <<<"$IMG")
-ATT_REPO=$(jq -r '.attestationRepo // ""' <<<"$IMG")
 KEYRING=$(jq -r '.keyring // ""' <<<"$IMG")
 REQ_PREDS=$(jq -c '.requiredPredicates // []' <<<"$IMG")
 DECLARED_PLATFORMS=$(jq -c '.platforms' <<<"$IMG")
@@ -85,33 +84,81 @@ case "$TRUST_CLASS" in
       # a silent trust transfer into a reviewable pull request.
       RESULT=failed; REASON=KEYRING_ROTATED
       echo "::warning::DHI keyring rotated: pinned=${KEYRING_PINNED_SHA} fetched=${KEYRING_FETCHED_SHA}"
-    elif ! regctl artifact list --external "$ATT_REPO" --format '{{jsonPretty .}}' \
-            "${SRC_REPO}@${PIN}" > "$EVIDENCE/upstream-referrers.json" 2>/tmp/refs.err; then
-      RESULT=failed; REASON="REFERRER_LIST_FAILED: $(head -c 300 /tmp/refs.err)"
-      echo '{}' > "$EVIDENCE/upstream-referrers.json"
+
+    # --- the index signature ------------------------------------------------
+    # DHI attaches cosign signatures as OCI 1.1 REFERRERS, not as the legacy
+    # sha256-<digest>.sig tag cosign looks for by default, so --experimental-oci11
+    # is load-bearing: without it cosign reports "no signatures found" against a
+    # correctly signed image. Verified against dhi.io on 2026-08-24; the key
+    # embedded in the signature's Rekor bundle is byte-identical to the keyring
+    # committed here.
+    elif ! cosign verify --key "$KEYRING" --insecure-ignore-tlog=true \
+             --experimental-oci11=true "${SRC_REPO}@${PIN}" >/dev/null 2>/tmp/idx.err; then
+      RESULT=failed; REASON="INDEX_SIGNATURE_INVALID: $(head -c 300 /tmp/idx.err)"
     else
-      # The exact jq path into `regctl artifact list` output is confirmed at
-      # bootstrap (SETUP-ENVIRONMENTS.md step 6). Both spellings are tried so a
-      # wrong guess yields an empty list -- which is a hard failure below, not a
-      # silent pass.
-      mapfile -t DIGESTS < <(jq -r '(.manifests // .Manifests // [])[]?.digest // empty' "$EVIDENCE/upstream-referrers.json")
-      if [[ ${#DIGESTS[@]} -eq 0 ]]; then
-        RESULT=failed; REASON=NO_ATTESTATIONS
-      else
-        FAILED=0
-        for d in "${DIGESTS[@]}"; do
-          if cosign verify --key "$KEYRING" --insecure-ignore-tlog=true "${ATT_REPO}@${d}" >/dev/null 2>&1; then
+      VERIFIED=$((VERIFIED + 1))
+
+      # --- the attestations, PER PLATFORM ----------------------------------
+      # They hang off the per-platform manifests, not off the index we pin, and
+      # they live in the image's own repository -- there is no separate
+      # attestation registry, which is what attestationRepo used to assert.
+      #
+      # Per platform, not once: a predicate present on amd64 and missing on
+      # arm64 used to pass, because nothing looked below the index.
+      : > /tmp/all-descriptors.json
+      FAILED=0
+      MISSING_ANY="[]"
+      for plat in $(jq -r '.[]' <<<"$DECLARED_PLATFORMS"); do
+        child=$(regctl manifest get "${SRC_REPO}@${PIN}" --format '{{json .}}' 2>/dev/null \
+          | jq -r --arg p "$plat" '
+              [.manifests[]? | select((.platform.os + "/" + .platform.architecture) == $p)][0].digest // empty')
+        if [[ -z "$child" ]]; then
+          RESULT=failed; REASON="PLATFORM_MISSING ${plat}"; FAILED=$((FAILED + 1)); continue
+        fi
+
+        # regctl emits `.descriptors[]`. Confirmed against the live registry --
+        # it is neither `.manifests` nor `.Manifests`, which an earlier version
+        # of this script guessed at and which silently yielded an empty list.
+        if ! regctl artifact list "${SRC_REPO}@${child}" --format '{{jsonPretty .}}' \
+               > "/tmp/refs-${plat//\//-}.json" 2>/tmp/refs.err; then
+          RESULT=failed; REASON="REFERRER_LIST_FAILED ${plat}: $(head -c 200 /tmp/refs.err)"
+          FAILED=$((FAILED + 1)); continue
+        fi
+
+        jq -c --arg p "$plat" '.descriptors[]? | {platform: $p, digest, artifactType,
+          predicate: ((.annotations // {})["in-toto.io/predicate-type"] // "")}' \
+          "/tmp/refs-${plat//\//-}.json" >> /tmp/all-descriptors.json
+
+        # Every attestation carries its own cosign signature referrer, signed by
+        # the same key. Verifying the index alone would leave the attestations
+        # unauthenticated.
+        while IFS= read -r d; do
+          [[ -n "$d" ]] || continue
+          if cosign verify --key "$KEYRING" --insecure-ignore-tlog=true \
+               --experimental-oci11=true "${SRC_REPO}@${d}" >/dev/null 2>&1; then
             VERIFIED=$((VERIFIED + 1))
           else
             FAILED=$((FAILED + 1))
           fi
-        done
-        PRED_TYPES=$(jq -c '[(.manifests // .Manifests // [])[]? | (.annotations // {})["in-toto.io/predicate-type"] // .artifactType] | map(select(. != null)) | unique' "$EVIDENCE/upstream-referrers.json")
-        MISSING=$(jq -cn --argjson have "$PRED_TYPES" --argjson req "$REQ_PREDS" '$req - $have')
-        if   [[ "$FAILED" -gt 0 ]];   then RESULT=failed; REASON="SIGNATURE_INVALID (${FAILED} of ${#DIGESTS[@]})"
-        elif [[ "$MISSING" != "[]" ]]; then RESULT=failed; REASON="MISSING_PREDICATES ${MISSING}"
-        else RESULT=verified; REASON=OK
+        done < <(jq -r '.descriptors[]?.digest // empty' "/tmp/refs-${plat//\//-}.json")
+
+        have=$(jq -c '[.descriptors[]? | (.annotations // {})["in-toto.io/predicate-type"] // .artifactType]
+                      | map(select(. != null)) | unique' "/tmp/refs-${plat//\//-}.json")
+        miss=$(jq -cn --argjson have "$have" --argjson req "$REQ_PREDS" '$req - $have')
+        if [[ "$miss" != "[]" ]]; then
+          MISSING_ANY=$(jq -cn --argjson a "$MISSING_ANY" --argjson b "$miss" --arg p "$plat" \
+            '$a + ($b | map({platform: $p, predicate: .}))')
         fi
+      done
+
+      jq -s '{descriptors: .}' /tmp/all-descriptors.json > "$EVIDENCE/upstream-referrers.json"
+      PRED_TYPES=$(jq -c '[.descriptors[]?.predicate] | map(select(. != "")) | unique' "$EVIDENCE/upstream-referrers.json")
+
+      if   [[ "$RESULT" == "failed" ]]; then :
+      elif [[ "$FAILED" -gt 0 ]];       then RESULT=failed; REASON="SIGNATURE_INVALID (${FAILED} attestation signature(s))"
+      elif [[ "$MISSING_ANY" != "[]" ]]; then RESULT=failed; REASON="MISSING_PREDICATES ${MISSING_ANY}"
+      elif [[ "$VERIFIED" -le 1 ]];     then RESULT=failed; REASON=NO_ATTESTATIONS
+      else RESULT=verified; REASON=OK
       fi
     fi
     ;;
@@ -124,12 +171,12 @@ esac
 att_state() {
   local want="$1"
   if [[ "$TRUST_CLASS" == "none" ]]; then echo "not-applicable"; return; fi
-  if jq -e --arg w "$want" '[(.manifests // .Manifests // [])[]? | ((.annotations // {})["in-toto.io/predicate-type"] // .artifactType // "")] | any(test($w; "i"))' \
+  if jq -e --arg w "$want" '[.descriptors[]? | (.predicate // .artifactType // "")] | any(test($w; "i"))' \
        "$EVIDENCE/upstream-referrers.json" >/dev/null 2>&1; then echo present; else echo absent; fi
 }
 
 jq -n --arg tc "$TRUST_CLASS" --arg res "$RESULT" --arg reason "$REASON" \
-      --arg src "${SRC_REPO}@${PIN}" --arg attrepo "$ATT_REPO" --arg keyring "$KEYRING" \
+      --arg src "${SRC_REPO}@${PIN}" --arg attrepo "$SRC_REPO" --arg keyring "$KEYRING" \
       --arg kp "$KEYRING_PINNED_SHA" --arg kf "$KEYRING_FETCHED_SHA" \
       --argjson verified "$VERIFIED" --argjson preds "$PRED_TYPES" --argjson req "$REQ_PREDS" \
       --arg sbom "$(att_state 'cyclonedx|spdx|sbom')" \
@@ -138,7 +185,7 @@ jq -n --arg tc "$TRUST_CLASS" --arg res "$RESULT" --arg reason "$REASON" \
   '{ trust_class: $tc, result: $res, reason: $reason,
      subject: $src,
      keyring: { path: $keyring, pinned_sha256: $kp, fetched_sha256: $kf },
-     attestations: { repository: $attrepo, verified: $verified,
+     attestations: { repository: $attrepo, colocated: true, verified: $verified,
                      predicate_types_found: $preds, predicate_types_required: $req,
                      sbom: $sbom, provenance: $prov, vex: $vex } }' \
   > "$EVIDENCE/upstream-verification.json"
@@ -160,8 +207,12 @@ LIVE=$(regctl manifest head --format '{{.GetDescriptor.Digest}}' "${SRC_REPO}:${
 # mirror is correct regardless of which cosign generation produced any given
 # upstream signature, and regardless of whether GHCR implements /referrers.
 # ---------------------------------------------------------------------------
+#
+# No --referrers-src/--referrers-tgt. Those redirect referrer lookup to a
+# SEPARATE repository, which is what the old attestationRepo field assumed.
+# DHI keeps its referrers in the image's own repository, so plain --referrers
+# already carries them and the redirection pointed somewhere that does not exist.
 COPY_ARGS=(--referrers --digest-tags --force-recursive)
-[[ -n "$ATT_REPO" ]] && COPY_ARGS+=(--referrers-src "$ATT_REPO" --referrers-tgt "$DEST_REPO")
 
 regctl image copy "${SRC_REPO}@${PIN}" "${DEST_REPO}:${DEST_TAG}" "${COPY_ARGS[@]}"
 
@@ -245,7 +296,7 @@ jq -n --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg tc "$TRUS
 # 9. Mirror provenance. `rebuilt: false` is the whole point of this track.
 # ---------------------------------------------------------------------------
 jq -n --arg srcrepo "$SRC_REPO" --arg srctag "$SRC_TAG" --arg pin "${PIN#sha256:}" \
-      --arg live "$LIVE" --arg tc "$TRUST_CLASS" --arg attrepo "$ATT_REPO" \
+      --arg live "$LIVE" --arg tc "$TRUST_CLASS" \
       --arg destrepo "$DEST_REPO" --arg destdig "${DEST_DIGEST#sha256:}" \
       --arg run "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID:-0}" \
       --arg regctl "$(regctl version --format '{{.VCSTag}}' 2>/dev/null || echo unknown)" \
@@ -253,7 +304,7 @@ jq -n --arg srcrepo "$SRC_REPO" --arg srctag "$SRC_TAG" --arg pin "${PIN#sha256:
        buildType: "https://github.com/infrashift/trusted-service-containers/mirror/v1",
        externalParameters: { upstream: { uri: $srcrepo, tag: $srctag, digest: {sha256: $pin}, trustClass: $tc } },
        internalParameters: { rebuilt: false, tool: "regctl", referrers: true, digestTags: true,
-                             tagResolvedDigest: $live, attestationRepo: $attrepo },
+                             tagResolvedDigest: $live, attestationsColocated: true },
        resolvedDependencies: [ { uri: $srcrepo, digest: {sha256: $pin},
                                  annotations: {role: "mirror-source", tag: $srctag, trustClass: $tc} } ] },
      runDetails: { builder: { id: $run, version: { regctl: $regctl } } },

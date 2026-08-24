@@ -186,44 +186,97 @@ gitleaks detect --config .gitleaks.toml --redact --exit-code 1
 
 ---
 
-## 6. Docker Hub OIDC connection
+## 6. Docker Hub authentication
 
-In the Docker Admin Console (needs Team/Business/DHI):
+**An Organization Access Token, on the `Build-Actor` environment.** OIDC was the
+original design and is still the better end state; it is not what runs today,
+and the reason is worth recording.
 
-1. **Security → OIDC connections → Create**
-2. Provider: `https://token.actions.githubusercontent.com`
-3. Create a **ruleset** scoped as tightly as the console allows — ideally to the
-   `Build-Actor` *environment* claim rather than a branch:
-   `repo:infrashift/trusted-service-containers:environment:Build-Actor`
-4. **Grant `pull` only.** This identity never pushes anywhere.
-5. Note the connection ID.
+### Why the token, for now
+
+The workflows previously logged in with `DOCKERHUB_OIDC_CONNECTIONID` and no
+password. That variable was never set, so the first pull request to reach
+`CI Build & Audit` failed at the first login with
+
+    DOCKERHUB_OIDC_CONNECTIONID is required for Docker Hub OIDC login
+
+and `Release Images` then refused to promote on the back of a failed build,
+which is the gate behaving correctly.
+
+OIDC has the better properties and they are not in dispute: a short-lived token
+scoped to a claim like
+`repo:infrashift/trusted-service-containers:environment:Build-Actor` cannot be
+used from another repo, another environment, or a laptop, and there is nothing
+to rotate or leak. A token has none of that.
+
+What settled it is the open question this step used to end on: whether the OIDC
+connection also covers `registry.scout.docker.com`, where DHI keeps its signed
+attestations. Docker's own mirror documentation uses an access token for all
+three hosts. Rather than keep the pipeline red while that is resolved in the
+abstract, the token gets it green and turns the question into a measurement:
+once it runs, the logs say which hosts accepted what.
+
+**Revisit this.** If OIDC proves out for `dhi.io` and `docker.io`, move those two
+back and leave the token for Scout alone -- one credential instead of three
+hosts' worth.
+
+### Create the token
+
+Docker Admin Console → **Organization → Access tokens**. Organisation-scoped, not
+personal: a personal token ties CI to one human's account, breaks when they
+rotate credentials or leave, and attributes every mirror pull to them.
+
+Grant **read-only**. This identity pulls upstream images and never pushes; our
+own images go to GHCR with `GITHUB_TOKEN`.
+
+### Install it
 
 ```bash
-gh variable set DOCKERHUB_ORGANIZATION     --repo "$SLUG" --body "infrashift"
-gh variable set DOCKERHUB_OIDC_CONNECTIONID --repo "$SLUG" --body "<connection-id>"
+SLUG=infrashift/trusted-service-containers
+gh variable set DOCKERHUB_ORGANIZATION --repo "$SLUG" --body "infrashiftio"
+gh secret   set DOCKERHUB_OAT --repo "$SLUG" --env Build-Actor
 ```
 
-Variables, not secrets — neither value is sensitive, and having them in logs
-aids debugging.
+`DOCKERHUB_ORGANIZATION` is a variable -- it is the org name, not a credential,
+and having it in logs aids debugging.
 
-Authenticate for `docker.io` too, even though `sonatype/nexus3` is public:
-anonymous Docker Hub pulls are rate-limited per IP and GitHub runners share
-IPs, so an anonymous mirror fails intermittently in a way that reads like a
-network flake.
+**The Docker Hub organisation is `infrashiftio`, not `infrashift`.** The GitHub
+org and the Docker Hub org are different names, and the variable holds the
+Docker Hub one because it is used as the login username and nothing else. Set to
+`infrashift` it authenticates as a user that does not exist, and Docker answers
+`unauthorized: incorrect username or password` -- which reads like a bad token
+and sends you looking at the secret. The token is a secret, and specifically an
+**environment** secret on `Build-Actor`.
 
-> **Unresolved:** whether the OIDC connection also covers
-> `registry.scout.docker.com`, where DHI keeps its signed attestations. Docker's
-> own mirror docs use an Organization Access Token for all three hosts. Test it;
-> if OIDC works, one long-lived credential disappears. If not, add
-> `DOCKERHUB_OAT` as a secret and use it for Scout only.
+That last part is not incidental. A repository secret is readable by every job
+in every workflow, so the release and review actors would gain a credential they
+have no business holding -- the same separation the three cosign keys exist to
+create, undone by one misplaced secret. The jobs that log in
+(`build.yml`'s `mirror-and-audit` and `build-and-audit`, and
+`drift-upstream.yml`'s `detect`) all bind to `Build-Actor`.
+
+`drift-upstream.yml`'s `detect` job was bound to `Build-Actor` for exactly this
+reason; it previously declared no environment. One consequence to keep in mind:
+that workflow is **scheduled**, so if `Build-Actor` ever gains required
+reviewers, its nightly runs will queue for approval instead of running. It has
+none today.
+
+Its `id-token: write` grant was removed at the same time. The comment beside it
+said "Docker OIDC, so the DHI legs can be listed", and with token auth nothing in
+that job consumes an OIDC token at all.
+
+> **Still open, and now measurable:** whether OIDC covers
+> `registry.scout.docker.com`. Answer it from a real run rather than from the
+> documentation, then narrow the token's scope or retire it.
 
 ---
 
 ## 7. Resolve the four DHI digests
 
-`versions.json` ships them as `sha256:0000…` placeholders. `make validate`
-warns about them, and `scripts/mirror-leg.sh` **refuses to run** rather than
-mirroring a fake pin.
+**Done — 2026-08-24.** Kept as the procedure for the next pin.
+
+`versions.json` shipped them as `sha256:0000…` placeholders, and
+`scripts/mirror-leg.sh` refuses to run rather than mirror a fake pin.
 
 ```bash
 docker login dhi.io
@@ -233,22 +286,70 @@ for REF in traefik:3-debian13 traefik:3-debian13-dev postgres:16-debian postgres
 done
 ```
 
-Use `regctl manifest head`, **not** `docker pull` + `docker inspect` — the
-latter returns the single-platform digest for your local architecture, not the
-index digest we pin.
+Use `regctl manifest head`, **not** `docker pull` + `docker inspect` — the latter
+returns the single-platform digest for your local architecture, not the index
+digest we pin. Confirm it with
+`regctl manifest head --format '{{.GetDescriptor.MediaType}}'`: an index reports
+`application/vnd.oci.image.index.v1+json`.
 
-While logged in, discover the attestation repository and record it in each DHI
-entry's `attestationRepo` (it currently says `DISCOVER_AT_BOOTSTRAP`):
+### Where the attestations actually live
+
+This section used to say "discover the attestation repository and record it in
+`attestationRepo`", and pointed at `docker scout attest list`. Both were wrong,
+and the field is gone.
+
+DHI publishes attestations as **OCI referrers in the image's own repository** —
+`dhi.io/traefik`, not `registry.scout.docker.com/<org>/traefik`. There is no
+separate attestation registry, so there was never a namespace to discover.
+`attestationRepo` could only ever be set wrong, and was: it shipped as the
+literal `DISCOVER_AT_BOOTSTRAP`, which failed as `repo must be lowercase`.
+
+The structure, verified against the live registry:
+
+| Level | Carries |
+|---|---|
+| index (what we pin) | a cosign signature referrer |
+| each platform manifest | 15 in-toto attestation referrers |
+| each attestation manifest | its own cosign signature referrer |
+
+Two consequences the old code missed. The attestations hang off the **platform**
+manifests, so listing referrers on the index finds only the signature — which is
+why `requiredPredicates` appeared to be missing. And `regctl artifact list`
+emits **`.descriptors[]`**; the earlier note here asked which of `.manifests` or
+`.Manifests` was real, and the answer is neither.
+
+### Verifying by hand
+
+`--experimental-oci11=true` is not optional. DHI attaches signatures as OCI 1.1
+referrers, while cosign looks for the legacy `sha256-<digest>.sig` tag by
+default, so without the flag a correctly signed image reports
+`no signatures found`:
 
 ```bash
-docker scout attest list dhi.io/traefik:3-debian13
-regctl artifact list --external registry.scout.docker.com/<org>/traefik dhi.io/traefik@<pin>
+cosign verify --key .github/pdp/keyring/dhi-latest.pub \
+  --insecure-ignore-tlog=true --experimental-oci11=true \
+  dhi.io/traefik@sha256:734fb24f3fbdf5e664fb750753e11edc54dcf99706b714612a66837466fd3ad8
 ```
 
-**Capture the full JSON output.** `scripts/mirror-leg.sh` tries both
-`.manifests[]` and `.Manifests[]` spellings; confirm which is real rather than
-leaving it to chance. An empty list is already a hard failure, so this fails
-safe — but confirm it.
+Keep cosign at **v2**. v3 defaults `--new-bundle-format=true` and fails against
+DHI's simplesigning payloads, so `tools.lock`'s existing "v2, not v3" pin matters
+here specifically, not only for the `.att` layout.
+
+The keyring is the right key, checked rather than assumed: the public key
+embedded in the signature's Rekor bundle is byte-identical to
+`.github/pdp/keyring/dhi-latest.pub`, and the live keyring at
+`registry.scout.docker.com/keyring/dhi/latest.pub` still matches the committed
+copy.
+
+`docker scout` is not needed for any of this and the pipeline never calls it.
+It was useful once, to discover the layout above; `regctl` does the same job.
+Scout is also not a scanner here — our SBOMs come from syft and our CVE
+assessment from grype. The DHI attestations answer a different question: what
+the vendor signed.
+
+Verified end to end on 2026-08-24 — traefik and postgres, both platforms, 15
+referrers each, every signature verifying against the committed keyring and no
+missing predicates.
 
 ---
 
@@ -341,7 +442,7 @@ Read the actual grype output **before** writing any exception.
 - [ ] `Review-Actor` has Required Reviewers with `prevent_self_review`
 - [ ] `Release-Actor` restricted to `main`
 - [ ] Three `.pub` files committed; zero `.key` files anywhere
-- [ ] Two repository variables set; OIDC ruleset scoped to pull-only
+- [ ] `DOCKERHUB_ORGANIZATION` variable set; `DOCKERHUB_OAT` read-only token on the `Build-Actor` environment
 - [ ] Four DHI digests resolved; `attestationRepo` discovered and committed
 - [ ] ubi9-micro assumptions re-verified against the pinned digest
 - [ ] Three teams exist with repository access

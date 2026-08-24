@@ -102,7 +102,6 @@
       "kind": "mirror",
       "upstreamTrust": "dhi",
       "upstreamRepo": "dhi.io/traefik",
-      "attestationRepo": "registry.scout.docker.com/DISCOVER_AT_BOOTSTRAP/traefik",
       "keyring": ".github/pdp/keyring/dhi-latest.pub",
       "requiredPredicates": [
         "https://cyclonedx.org/bom/v1.6",
@@ -117,22 +116,21 @@
         "runtime": {
           "tag": "3-debian13",
           "track": "^3-debian13$",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          "digest": "sha256:734fb24f3fbdf5e664fb750753e11edc54dcf99706b714612a66837466fd3ad8"
         },
         "dev": {
           "tag": "3-debian13-dev",
           "track": "^3-debian13-dev$",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          "digest": "sha256:09733296caf52acf53c3ab12ab698fed48ca0cd408b374940c987460bc90cc39"
         }
       },
-      "updated": "2026-08-18",
-      "reason": "Initial pin. DHI repoints 3-debian13 itself, so the tag string never changes and only the digest moves; track is therefore an exact match."
+      "updated": "2026-08-24",
+      "reason": "Placeholder digests resolved 2026-08-24 with an authenticated dhi.io login (regctl manifest head, index digest). DHI repoints 3-debian13 itself, so the tag string never changes and only the digest moves; track is therefore an exact match."
     },
     "postgres": {
       "kind": "mirror",
       "upstreamTrust": "dhi",
       "upstreamRepo": "dhi.io/postgres",
-      "attestationRepo": "registry.scout.docker.com/DISCOVER_AT_BOOTSTRAP/postgres",
       "keyring": ".github/pdp/keyring/dhi-latest.pub",
       "requiredPredicates": [
         "https://cyclonedx.org/bom/v1.6",
@@ -147,22 +145,21 @@
         "runtime": {
           "tag": "16-debian",
           "track": "^16-debian$",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          "digest": "sha256:c40f96887b66e68b6021f7b50193aea6ba9cbaad7006cc431bc21c00e2ae7812"
         },
         "dev": {
           "tag": "16-debian-dev",
           "track": "^16-debian-dev$",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          "digest": "sha256:ec61df9ae2947ac2c807473f2c46dcf33015499f31199132a2c8f5f3409fe675"
         }
       },
-      "updated": "2026-08-18",
+      "updated": "2026-08-24",
       "reason": "Initial pin, runtime + dev."
     },
     "nexus3": {
       "kind": "mirror",
       "upstreamTrust": "none",
       "upstreamRepo": "docker.io/sonatype/nexus3",
-      "attestationRepo": null,
       "keyring": null,
       "requiredPredicates": [],
       "enforcement": "observe",

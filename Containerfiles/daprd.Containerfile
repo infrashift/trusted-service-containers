@@ -47,6 +47,7 @@ ENV CGO_ENABLED=0 \
     GOOS=linux
 RUN set -euo pipefail; \
     GOARCH="${TARGETARCH}" go build \
+      -tags allcomponents \
       -ldflags="-s -w \
         -X 'github.com/dapr/dapr/pkg/buildinfo.gitcommit=${SOURCE_REF}' \
         -X 'github.com/dapr/dapr/pkg/buildinfo.gitversion=${SOURCE_GIT_VERSION}' \
@@ -54,6 +55,18 @@ RUN set -euo pipefail; \
         -X 'github.com/dapr/kit/logger.DaprVersion=${SOURCE_VERSION}'" \
       -o /out/daprd ./cmd/daprd ; \
     /out/daprd --version
+# -tags allcomponents is required, not optional. cmd/daprd/components/zz_notag.go
+# exists only to panic at startup when neither allcomponents nor stablecomponents
+# was set, so a daprd built without it compiles cleanly and then dies on its first
+# run. `--version` is what caught it here: the binary linked, then panicked with
+#     you must use either '-tags stablecomponents' or '-tags allcomponents'
+# Without that smoke test this image would have shipped and failed in a consumer's
+# cluster instead.
+#
+# allcomponents matches upstream, whose Makefile defaults DAPR_SIDECAR_FLAVOR to
+# it, so this stays a drop-in replacement for the official daprd. stablecomponents
+# is the smaller attack surface and a legitimate choice, but it drops components
+# some users rely on -- make that a deliberate decision, not a side effect.
 
 ########################  certs  ##########################
 FROM ${CA_BASE}@${CA_DIGEST} AS certs

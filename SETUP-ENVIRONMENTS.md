@@ -186,36 +186,81 @@ gitleaks detect --config .gitleaks.toml --redact --exit-code 1
 
 ---
 
-## 6. Docker Hub OIDC connection
+## 6. Docker Hub authentication
 
-In the Docker Admin Console (needs Team/Business/DHI):
+**An Organization Access Token, on the `Build-Actor` environment.** OIDC was the
+original design and is still the better end state; it is not what runs today,
+and the reason is worth recording.
 
-1. **Security → OIDC connections → Create**
-2. Provider: `https://token.actions.githubusercontent.com`
-3. Create a **ruleset** scoped as tightly as the console allows — ideally to the
-   `Build-Actor` *environment* claim rather than a branch:
-   `repo:infrashift/trusted-service-containers:environment:Build-Actor`
-4. **Grant `pull` only.** This identity never pushes anywhere.
-5. Note the connection ID.
+### Why the token, for now
+
+The workflows previously logged in with `DOCKERHUB_OIDC_CONNECTIONID` and no
+password. That variable was never set, so the first pull request to reach
+`CI Build & Audit` failed at the first login with
+
+    DOCKERHUB_OIDC_CONNECTIONID is required for Docker Hub OIDC login
+
+and `Release Images` then refused to promote on the back of a failed build,
+which is the gate behaving correctly.
+
+OIDC has the better properties and they are not in dispute: a short-lived token
+scoped to a claim like
+`repo:infrashift/trusted-service-containers:environment:Build-Actor` cannot be
+used from another repo, another environment, or a laptop, and there is nothing
+to rotate or leak. A token has none of that.
+
+What settled it is the open question this step used to end on: whether the OIDC
+connection also covers `registry.scout.docker.com`, where DHI keeps its signed
+attestations. Docker's own mirror documentation uses an access token for all
+three hosts. Rather than keep the pipeline red while that is resolved in the
+abstract, the token gets it green and turns the question into a measurement:
+once it runs, the logs say which hosts accepted what.
+
+**Revisit this.** If OIDC proves out for `dhi.io` and `docker.io`, move those two
+back and leave the token for Scout alone -- one credential instead of three
+hosts' worth.
+
+### Create the token
+
+Docker Admin Console → **Organization → Access tokens**. Organisation-scoped, not
+personal: a personal token ties CI to one human's account, breaks when they
+rotate credentials or leave, and attributes every mirror pull to them.
+
+Grant **read-only**. This identity pulls upstream images and never pushes; our
+own images go to GHCR with `GITHUB_TOKEN`.
+
+### Install it
 
 ```bash
-gh variable set DOCKERHUB_ORGANIZATION     --repo "$SLUG" --body "infrashift"
-gh variable set DOCKERHUB_OIDC_CONNECTIONID --repo "$SLUG" --body "<connection-id>"
+SLUG=infrashift/trusted-service-containers
+gh variable set DOCKERHUB_ORGANIZATION --repo "$SLUG" --body "infrashift"
+gh secret   set DOCKERHUB_OAT --repo "$SLUG" --env Build-Actor
 ```
 
-Variables, not secrets — neither value is sensitive, and having them in logs
-aids debugging.
+`DOCKERHUB_ORGANIZATION` is a variable -- it is the org name, not a credential,
+and having it in logs aids debugging. The token is a secret, and specifically an
+**environment** secret on `Build-Actor`.
 
-Authenticate for `docker.io` too, even though `sonatype/nexus3` is public:
-anonymous Docker Hub pulls are rate-limited per IP and GitHub runners share
-IPs, so an anonymous mirror fails intermittently in a way that reads like a
-network flake.
+That last part is not incidental. A repository secret is readable by every job
+in every workflow, so the release and review actors would gain a credential they
+have no business holding -- the same separation the three cosign keys exist to
+create, undone by one misplaced secret. The jobs that log in
+(`build.yml`'s `mirror-and-audit` and `build-and-audit`, and
+`drift-upstream.yml`'s `detect`) all bind to `Build-Actor`.
 
-> **Unresolved:** whether the OIDC connection also covers
-> `registry.scout.docker.com`, where DHI keeps its signed attestations. Docker's
-> own mirror docs use an Organization Access Token for all three hosts. Test it;
-> if OIDC works, one long-lived credential disappears. If not, add
-> `DOCKERHUB_OAT` as a secret and use it for Scout only.
+`drift-upstream.yml`'s `detect` job was bound to `Build-Actor` for exactly this
+reason; it previously declared no environment. One consequence to keep in mind:
+that workflow is **scheduled**, so if `Build-Actor` ever gains required
+reviewers, its nightly runs will queue for approval instead of running. It has
+none today.
+
+Its `id-token: write` grant was removed at the same time. The comment beside it
+said "Docker OIDC, so the DHI legs can be listed", and with token auth nothing in
+that job consumes an OIDC token at all.
+
+> **Still open, and now measurable:** whether OIDC covers
+> `registry.scout.docker.com`. Answer it from a real run rather than from the
+> documentation, then narrow the token's scope or retire it.
 
 ---
 
@@ -341,7 +386,7 @@ Read the actual grype output **before** writing any exception.
 - [ ] `Review-Actor` has Required Reviewers with `prevent_self_review`
 - [ ] `Release-Actor` restricted to `main`
 - [ ] Three `.pub` files committed; zero `.key` files anywhere
-- [ ] Two repository variables set; OIDC ruleset scoped to pull-only
+- [ ] `DOCKERHUB_ORGANIZATION` variable set; `DOCKERHUB_OAT` read-only token on the `Build-Actor` environment
 - [ ] Four DHI digests resolved; `attestationRepo` discovered and committed
 - [ ] ubi9-micro assumptions re-verified against the pinned digest
 - [ ] Three teams exist with repository access

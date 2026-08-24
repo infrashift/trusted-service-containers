@@ -45,15 +45,15 @@
     },
     "dapr": {
       "track": "^v1\\.18\\.[0-9]+$",
-      "ref": "v1.18.3",
+      "ref": "v1.18.3+backport.233f2b49",
       "url": "https://github.com/dapr/dapr",
-      "commit": "2dcf2e3548faf3c740b3d29ee300e2132db65cff",
+      "commit": "233f2b4997f9a939619a3ec4a481f4d794e19759",
       "lockstep": [
         "daprd",
         "dapr-placement",
         "dapr-scheduler"
       ],
-      "note": "One source repo produces all three images. Moved up from 1.14.4, which is outside Dapr's N-2 support window. Scheduler is included because from 1.15+ actor reminders and workflows require it."
+      "note": "One source repo produces all three images. Moved up from 1.14.4, which is outside Dapr's N-2 support window. Scheduler is included because from 1.15+ actor reminders and workflows require it. Pinned to an untagged commit on release-1.18, deliberately: v1.18.3 vendors etcd 3.5.30, which carries GO-2026-6107 and GO-2026-6114, both High with an upstream fix and therefore blocking under our policy. No released version clears them -- v1.18.3 is the newest tag -- but the fix is backported and this commit is it. `track` is unchanged, so drift-upstream will propose v1.18.4 as soon as it is tagged; replace this pin with that tag when it lands."
     }
   },
   "toolchains": {

@@ -45,10 +45,26 @@ COPY src/nats/ /src/
 
 ENV CGO_ENABLED=0 \
     GOOS=linux \
-    GOTOOLCHAIN=go1.26.5
-# GOTOOLCHAIN and -trimpath are copied from upstream's .goreleaser.yml at the
-# pinned tag. Matching both is what makes this the one service where a
-# byte-identical cross-check against the vendor binary is realistic.
+    GOTOOLCHAIN=go1.26.6
+# -trimpath is copied from upstream's .goreleaser.yml at the pinned tag, and so
+# was GOTOOLCHAIN until 2026-08-24. Matching both is what made this the one
+# service where a byte-identical cross-check against the vendor binary was
+# realistic.
+#
+# GOTOOLCHAIN now deliberately diverges. Upstream pins go1.26.5, which carries
+# GO-2026-5026, -5972, -6089 and -6090 -- four stdlib advisories, all High with a
+# fix, all blocking under our policy. They are fixed in 1.26.6. v2.14.5 is the
+# newest nats release, so there is no source bump that clears them; the only
+# lever is the compiler.
+#
+# The cost is the cross-check, which compares our binary against the vendor's
+# 1.26.5 build and will now differ. That comparison is explicitly an observation
+# and not a gate -- provenance records it as such -- so trading it for four
+# fixable Highs is the right way round. Restore the match by bumping this to
+# whatever upstream's .goreleaser.yml pins once they move past 1.26.5.
+#
+# go1.26.6 is also exactly what the pinned toolchain image ships, so the build
+# uses that image's compiler rather than downloading one.
 RUN set -euo pipefail; \
     GOARCH="${TARGETARCH}" go build -trimpath \
       -ldflags="-w \

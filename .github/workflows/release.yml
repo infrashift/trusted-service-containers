@@ -4,9 +4,21 @@ name: Release Images
 # is byte-identical to what the build actor produced and the review actor
 # verified -- asserted a third time here.
 
+# Triggered by the push to main that the merge produces, NOT by pull_request
+# closed. Both fire on a merge, but a pull_request run carries the ref
+# refs/pull/<n>/merge, and Release-Actor's deployment branch policy allows only
+# `main`, so every release leg was rejected before it started:
+#
+#   Branch "refs/pull/4/merge" is not allowed to deploy to Release-Actor
+#   due to environment protection rules.
+#
+# The policy is the right control and is not the thing to relax. Widening it to
+# match merge refs would let any pull request deploy to the environment holding
+# the release key, and would move the guard from the environment -- where it
+# holds regardless of what the workflow says -- into a workflow `if:` that a
+# future edit can drop. So the trigger moves to where the policy already points.
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
 
 permissions: {}
@@ -16,9 +28,9 @@ jobs:
   gate-check:
     name: Gate
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       pr_number: ${{ steps.ids.outputs.pr_number }}
       head_sha: ${{ steps.ids.outputs.head_sha }}
@@ -26,14 +38,32 @@ jobs:
       date_tag: ${{ steps.ids.outputs.date_tag }}
     steps:
       - name: Derive identifiers
+        # On a push event there is no pull_request context, so the PR is
+        # resolved from the merge commit instead. Everything downstream --
+        # resolve-review matching build and review runs by head_sha, and the
+        # release tags -- is unchanged.
         id: ids
         env:
-          PR_NUM: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          MERGE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          PRS=$(gh api "repos/${REPO}/commits/${MERGE_SHA}/pulls" \
+                  -H "Accept: application/vnd.github+json")
+          PR_NUM=$(jq -r '[.[] | select(.merged_at != null)] | sort_by(.merged_at) | last | .number // empty' <<<"$PRS")
+          HEAD_SHA=$(jq -r '[.[] | select(.merged_at != null)] | sort_by(.merged_at) | last | .head.sha // empty' <<<"$PRS")
+
+          # A push to main with no merged pull request behind it should not
+          # release. The ruleset requires a PR, so this is a real anomaly rather
+          # than a case to paper over: releasing would promote artifacts no
+          # review verdict covers.
+          if [[ -z "$PR_NUM" || -z "$HEAD_SHA" ]]; then
+            echo "::error::no merged pull request found for ${MERGE_SHA}; refusing to release"
+            exit 1
+          fi
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::malformed head sha"; exit 1; }
+          echo "resolved PR #${PR_NUM}, head ${HEAD_SHA}"
           {
             echo "pr_number=$PR_NUM"
             echo "head_sha=$HEAD_SHA"

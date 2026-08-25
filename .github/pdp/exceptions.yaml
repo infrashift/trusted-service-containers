@@ -22,7 +22,204 @@
 # .ai/skills/exception-handling.md and check whether a newer upstream release
 # on the declared track clears the finding instead.
 
-exceptions: []
+exceptions:
+  - id: EXC-2026-0001
+    image: nexus3
+    variant: "*"
+    package: "*"
+    cves:
+      - GHSA-2fvj-hgj9-j2gr
+      - GHSA-355h-qmc2-wpwf
+      - GHSA-3pjj-qpw6-5fcm
+      - GHSA-3qp7-7mw8-wx86
+      - GHSA-558v-64gr-wgg4
+      - GHSA-574f-3g2m-x479
+      - GHSA-57rv-r2g8-2cj3
+      - GHSA-5pvg-856g-cp85
+      - GHSA-676x-f7gg-47vc
+      - GHSA-6fmv-xxpf-w3cw
+      - GHSA-6jqx-86gh-f27w
+      - GHSA-78wr-2p64-hpwj
+      - GHSA-93wv-jw9v-4972
+      - GHSA-98qh-xjc8-98pq
+      - GHSA-c653-97m9-rcg9
+      - GHSA-cj8j-37rh-8475
+      - GHSA-cm33-6792-r9fm
+      - GHSA-f6hv-jmp6-3vwv
+      - GHSA-j3rv-43j4-c7qm
+      - GHSA-jppx-w49h-x2qq
+      - GHSA-m69x-pw9p-7j3q
+      - GHSA-mf92-479x-3373
+      - GHSA-mj4r-2hfc-f8p6
+      - GHSA-mvh2-crg5-v77c
+      - GHSA-pwqr-wmgm-9rr8
+      - GHSA-r5w3-xv2f-j59q
+      - GHSA-r7wm-3cxj-wff9
+      - GHSA-rmj7-2vxq-3g9f
+      - GHSA-rwm7-x88c-3g2p
+      - GHSA-w9fj-cfpg-grvv
+      - GHSA-x4gw-5cx5-pgmh
+      - GHSA-x96m-rh44-vgv8
+    issued:  "2026-08-24T00:00:00Z"
+    expires: "2026-11-22T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/5"
+    justification: >-
+      nexus3 is a mirror: we copy Sonatype's published image by digest and
+      never rebuild it, so nothing on our side can change what is inside these
+      jars -- only a Sonatype release can. The pin is already current;
+      3.90.5-ubi resolves to exactly the digest we pin. Re-triage on the next
+      3.90.x or 3.91 release.
+
+  - id: EXC-2026-0002
+    image: postgres
+    variant: "*"
+    package: "*"
+    cves:
+      - CVE-2026-10536
+      - CVE-2026-11856
+      - CVE-2026-12087
+      - CVE-2026-13221
+      - CVE-2026-40468
+      - CVE-2026-40469
+      - CVE-2026-42496
+      - CVE-2026-5450
+      - CVE-2026-57433
+      - CVE-2026-6653
+      - CVE-2026-8376
+      - CVE-2026-8924
+      - CVE-2026-8926
+      - CVE-2026-8927
+      - CVE-2026-9079
+    issued:  "2026-08-24T00:00:00Z"
+    expires: "2026-11-22T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/6"
+    justification: >-
+      Debian base-layer CVEs inside a Docker Hardened Image we mirror by
+      digest and never rebuild. Clearing them requires Docker to publish a
+      rebuilt image on the same tag; dhi.io/postgres:16-debian and
+      :16-debian-dev both still resolve to the digests we pin, verified
+      2026-08-24. DHI publishes OpenVEX, so consuming it may retire part of
+      this set on evidence rather than by waiver.
+
+  - id: EXC-2026-0003
+    image: traefik
+    variant: "dev"
+    package: "*"
+    cves:
+      - CVE-2026-12087
+      - CVE-2026-13221
+      - CVE-2026-42496
+      - CVE-2026-5450
+      - CVE-2026-57433
+      - CVE-2026-8376
+    issued:  "2026-08-24T00:00:00Z"
+    expires: "2026-11-22T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/6"
+    justification: >-
+      Debian base-layer CVEs inside a Docker Hardened Image we mirror by
+      digest and never rebuild, scoped to the dev variant because the runtime
+      variant reports none. dhi.io/traefik:3-debian13-dev still resolves to
+      the digest we pin, verified 2026-08-24. DHI publishes OpenVEX, so
+      consuming it may retire part of this set on evidence rather than by
+      waiver.
+
+  - id: EXC-2026-0004
+    image: hydra
+    variant: "*"
+    package: "*"
+    cves:
+      - GHSA-78h2-9frx-2jm8
+      - GHSA-hrxh-6v49-42gf
+      - GHSA-mh2q-q3fh-2475
+      - GHSA-r9w3-57w2-gch2
+      - GHSA-x744-4wpc-v9h2
+      - GHSA-xgrm-4fwx-7qm8
+      - GO-2026-5026
+      - GO-2026-5970
+    issued:  "2026-08-24T00:00:00Z"
+    expires: "2026-11-22T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      Vendored Go dependency CVEs in hydra at v26.2.0, which is the latest
+      release and five months old; the four Ory services release in lockstep
+      off a shared tag, so no partial bump exists either. We build upstream
+      source unmodified, so clearing these would mean forking and patching
+      go.mod. Waived to a date, not accepted: decide before expiry whether to
+      keep the Ory stack.
+
+  - id: EXC-2026-0005
+    image: kratos
+    variant: "*"
+    package: "*"
+    cves:
+      - GHSA-78h2-9frx-2jm8
+      - GHSA-hrxh-6v49-42gf
+      - GHSA-mh2q-q3fh-2475
+      - GHSA-x744-4wpc-v9h2
+      - GHSA-xgrm-4fwx-7qm8
+      - GO-2026-5026
+      - GO-2026-5970
+    issued:  "2026-08-24T00:00:00Z"
+    expires: "2026-11-22T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      Vendored Go dependency CVEs in kratos at v26.2.0, which is the latest
+      release and five months old; the four Ory services release in lockstep
+      off a shared tag, so no partial bump exists either. We build upstream
+      source unmodified, so clearing these would mean forking and patching
+      go.mod. Waived to a date, not accepted: decide before expiry whether to
+      keep the Ory stack.
+
+  - id: EXC-2026-0006
+    image: keto
+    variant: "*"
+    package: "*"
+    cves:
+      - GHSA-hrxh-6v49-42gf
+      - GHSA-mh2q-q3fh-2475
+      - GHSA-x744-4wpc-v9h2
+      - GHSA-xgrm-4fwx-7qm8
+      - GO-2026-5026
+      - GO-2026-5970
+    issued:  "2026-08-24T00:00:00Z"
+    expires: "2026-11-22T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      Vendored Go dependency CVEs in keto at v26.2.0, which is the latest
+      release and five months old; the four Ory services release in lockstep
+      off a shared tag, so no partial bump exists either. We build upstream
+      source unmodified, so clearing these would mean forking and patching
+      go.mod. Waived to a date, not accepted: decide before expiry whether to
+      keep the Ory stack.
+
+  - id: EXC-2026-0007
+    image: oathkeeper
+    variant: "*"
+    package: "*"
+    cves:
+      - GHSA-78h2-9frx-2jm8
+      - GHSA-hrxh-6v49-42gf
+      - GHSA-mh2q-q3fh-2475
+      - GO-2026-4918
+      - GO-2026-5026
+      - GO-2026-5970
+    issued:  "2026-08-24T00:00:00Z"
+    expires: "2026-11-22T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      Vendored Go dependency CVEs in oathkeeper at v26.2.0, which is the
+      latest release and five months old; the four Ory services release in
+      lockstep off a shared tag, so no partial bump exists either. We build
+      upstream source unmodified, so clearing these would mean forking and
+      patching go.mod. Waived to a date, not accepted: decide before expiry
+      whether to keep the Ory stack.
 
 # --- Example. Delete before the first real entry. --------------------------
 #

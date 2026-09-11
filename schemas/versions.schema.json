@@ -129,8 +129,9 @@
                   "type": "object",
                   "required": ["trustedIdentity", "rootUrl"],
                   "properties": {
-                    "trustedIdentity": { "type": "string", "pattern": "^x509\\.subject: .*\\bO=.*$" },
-                    "rootUrl": { "type": "string", "pattern": "^https?://" }
+                    "trustedIdentity": { "type": "string", "pattern": "^x509\\.subject: (?=(.*,)?CN=[^,]+)(?=(.*,)?O=[^,]+).*$",
+                      "description": "Notary matches x509.subject as an attribute subset with only C/ST/O mandatory, so CN is required here: without it every leaf the vendor CA issues would verify." },
+                    "rootUrl": { "type": "string", "pattern": "^https://" }
                   }
                 },
                 "platforms": { "type": "array", "items": { "type": "string" }, "minItems": 1 },

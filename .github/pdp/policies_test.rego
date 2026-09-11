@@ -274,6 +274,7 @@ test_both_keyring_shas_absent_denies if {
 # Verified against the vendored Microsoft root, no attestations required.
 notation_verified := patch(single_platform_mirror, [
 	{"op": "replace", "path": "/upstream/trust_class", "value": "notation"},
+	{"op": "add", "path": "/image/keyring", "value": ".github/pdp/keyring/microsoft-supply-chain-rsa-root-ca-2022.crt"},
 	{"op": "replace", "path": "/upstream/signature", "value": "verified"},
 	{"op": "replace", "path": "/upstream/verified_with", "value": ".github/pdp/keyring/microsoft-supply-chain-rsa-root-ca-2022.crt"},
 	{"op": "add", "path": "/upstream/keyring_fetched_sha256", "value": "ba402b4b"},
@@ -305,6 +306,25 @@ test_notation_wrong_root_denies if {
 	i := patch(notation_verified, [{"op": "replace", "path": "/upstream/verified_with", "value": ".github/pdp/keyring/dhi-latest.pub"}])
 	d := pdp.decision with input as i
 	"UPSTREAM_KEYRING_MISMATCH" in codes(d)
+}
+
+# The keyring comes from versions.json via the review actor; if it is absent the
+# sentinel can never equal a recorded verified_with, so the leg denies.
+test_notation_without_declared_keyring_denies if {
+	i := patch(notation_verified, [{"op": "remove", "path": "/image/keyring"}])
+	d := pdp.decision with input as i
+	"UPSTREAM_KEYRING_MISMATCH" in codes(d)
+	"NOTATION_KEYRING_PATH_INVALID" in codes(d)
+}
+
+# A keyring outside the vendored directory is not a pin, even if it "verifies".
+test_notation_keyring_outside_dir_denies if {
+	i := patch(notation_verified, [
+		{"op": "replace", "path": "/image/keyring", "value": "/tmp/attacker-root.crt"},
+		{"op": "replace", "path": "/upstream/verified_with", "value": "/tmp/attacker-root.crt"},
+	])
+	d := pdp.decision with input as i
+	"NOTATION_KEYRING_PATH_INVALID" in codes(d)
 }
 
 test_notation_root_drift_denies if {
@@ -800,6 +820,13 @@ test_notation_entry_wrong_keyring_denies if {
 
 test_notation_entry_without_identity_denies if {
 	i := patch(base_repo, [{"op": "remove", "path": "/versions/images/mssql/notation"}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_NOTATION_IDENTITY_MISSING" in repo_codes(d)
+}
+
+# CN-less identity: well-formed for notation, but it matches every leaf.
+test_notation_entry_cnless_identity_denies if {
+	i := patch(base_repo, [{"op": "replace", "path": "/versions/images/mssql/notation/trustedIdentity", "value": "x509.subject: O=Microsoft Corporation,ST=Washington,C=US"}])
 	d := pdp.repo_decision with input as i with data.exceptions as []
 	"VERSIONS_NOTATION_IDENTITY_MISSING" in repo_codes(d)
 }

@@ -55,7 +55,16 @@ VERDICT=$(jq -r '.verdict' <<<"$PRED")
 # `observe` produces verdict PASS with namespace quarantine on purpose; routing
 # on the verdict alone would promote a policy-violating image into trusted/.
 # Absent or unrecognised denies: only the literal "trusted" promotes.
-VERDICT_NS=$(jq -r '.namespace // "<absent>"' <<<"$PRED")
+#
+# Verdicts signed before the top-level field existed still carry the policy's
+# per-platform namespace under cve_policy.per_platform; fold those the same
+# way review-leg.sh does (every platform trusted, or quarantine). A verdict
+# with neither is refused.
+VERDICT_NS=$(jq -r '
+  .namespace
+  // (if ((.cve_policy.per_platform // {}) | length) > 0
+      then (if ([.cve_policy.per_platform[].namespace] | all(. == "trusted")) then "trusted" else "quarantine" end)
+      else "<absent>" end)' <<<"$PRED")
 VERDICT_COMMIT=$(jq -r '.metadata.commitSha' <<<"$PRED")
 VERDICT_LEG=$(jq -r '.subject.leg' <<<"$PRED")
 
@@ -68,7 +77,7 @@ VERDICT_LEG=$(jq -r '.subject.leg' <<<"$PRED")
 
 case "$VERDICT_NS" in
   trusted|quarantine) ;;
-  *) fail "review verdict carries namespace ${VERDICT_NS}; expected trusted or quarantine (re-run review on a build that writes it)" ;;
+  *) fail "review verdict carries namespace ${VERDICT_NS} and no per-platform namespaces; expected trusted or quarantine. Re-push the branch so build and review run with the current scripts." ;;
 esac
 echo "verdict=${VERDICT} namespace=${VERDICT_NS} for ${LEG} @ ${DEV_DIGEST}"
 

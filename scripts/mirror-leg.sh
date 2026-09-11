@@ -179,7 +179,10 @@ case "$TRUST_CLASS" in
     [[ -n "$KEYRING" && -f "$KEYRING" ]] || { echo "::error::trust_class=notation but keyring $KEYRING is missing"; exit 1; }
     NOTATION_IDENTITY=$(jq -r '.notation.trustedIdentity // ""' <<<"$IMG")
     NOTATION_ROOT_URL=$(jq -r '.notation.rootUrl // ""' <<<"$IMG")
-    [[ "$NOTATION_IDENTITY" == "x509.subject: "* ]] || { echo "::error::trust_class=notation needs notation.trustedIdentity (x509.subject: ...)"; exit 1; }
+    # CN is mandatory: Notary matches x509.subject as an attribute subset, so a
+    # CN-less identity admits every leaf the root's CA ever issues.
+    [[ "$NOTATION_IDENTITY" == "x509.subject: "* && "$NOTATION_IDENTITY" =~ (^|[\ ,])CN=[^,]+ ]] \
+      || { echo "::error::trust_class=notation needs notation.trustedIdentity of the form 'x509.subject: CN=...,O=...'"; exit 1; }
     [[ -n "$NOTATION_ROOT_URL" ]] || { echo "::error::trust_class=notation needs notation.rootUrl"; exit 1; }
     KEYRING_PINNED_SHA=$(sha256sum "$KEYRING" | cut -d' ' -f1)
 
@@ -189,19 +192,25 @@ case "$TRUST_CLASS" in
     # Vendors serve roots as DER; the committed copy is PEM. Normalise before
     # comparing so the digest compares like with like. Retried like the DHI
     # keyring fetch, and for the same reason; a 404 still surfaces.
+    # Unlike the DHI branch, a fetch failure is named as such and does NOT
+    # skip verification: the image is still verified against the committed
+    # root (which is what trust rests on), and the policy's NOTATION_ROOT_DRIFT
+    # rule still denies on the digest mismatch -- but the evidence then says
+    # "endpoint unreachable", not "vendor rotated its root".
+    DRIFT=""
     if curl -sSfL --retry 3 --retry-delay 2 --retry-connrefused --max-time 30 \
          -o /tmp/notation-root.bin "$NOTATION_ROOT_URL" \
        && { openssl x509 -inform DER -in /tmp/notation-root.bin -out /tmp/notation-root.pem 2>/dev/null \
             || openssl x509 -inform PEM -in /tmp/notation-root.bin -out /tmp/notation-root.pem; }; then
       KEYRING_FETCHED_SHA=$(sha256sum /tmp/notation-root.pem | cut -d' ' -f1)
+      [[ "$KEYRING_PINNED_SHA" == "$KEYRING_FETCHED_SHA" ]] || DRIFT=KEYRING_ROTATED
     else
       KEYRING_FETCHED_SHA="<fetch-failed>"
+      DRIFT=ROOT_FETCH_FAILED
     fi
+    [[ -z "$DRIFT" ]] || echo "::warning::${DRIFT}: pinned=${KEYRING_PINNED_SHA} fetched=${KEYRING_FETCHED_SHA}"
 
-    if [[ "$KEYRING_PINNED_SHA" != "$KEYRING_FETCHED_SHA" ]]; then
-      RESULT=failed; REASON=KEYRING_ROTATED
-      echo "::warning::Notary root rotated or unfetchable: pinned=${KEYRING_PINNED_SHA} fetched=${KEYRING_FETCHED_SHA}"
-    else
+    {
       # A throwaway notation home: trust store holds ONLY the committed root,
       # and the trust policy is scoped to this one upstream repository.
       NOTATION_HOME=$(mktemp -d)
@@ -224,15 +233,15 @@ case "$TRUST_CLASS" in
         sleep 2
       done
       if [[ "$NOTATION_OK" -eq 1 ]]; then
-        RESULT=verified; REASON=OK; VERIFIED=1
+        RESULT=verified; REASON="OK${DRIFT:+; $DRIFT}"; VERIFIED=1
       else
-        RESULT=failed; REASON="NOTATION_VERIFY_FAILED: $(tail -c 300 /tmp/notation.out | tr '\n' ' ')"
+        RESULT=failed; REASON="NOTATION_VERIFY_FAILED${DRIFT:+ ($DRIFT)}: $(tail -c 300 /tmp/notation.out | tr '\n' ' ')"
       fi
       jq -n --arg out "$(cat /tmp/notation.out)" --arg res "$RESULT" --arg id "$NOTATION_IDENTITY" \
             --arg ver "$(notation version 2>/dev/null | tr '\n' ' ')" \
         '{result:$res, trustedIdentity:$id, notation:$ver, output:$out}' > "$EVIDENCE/notation-verify.json"
       rm -rf "$NOTATION_HOME"
-    fi
+    }
     ;;
 
   *)
@@ -299,6 +308,16 @@ DEST_DIGEST=$(regctl manifest head --format '{{.GetDescriptor.Digest}}' "${DEST_
 if [[ "$DEST_DIGEST" != "$PIN" ]]; then
   echo "::error::Copy was not content-preserving: source ${PIN}, destination ${DEST_DIGEST}"
   exit 1
+fi
+
+# The digest invariant cannot see referrers. For a Notary-signed image the
+# signature IS the trust artifact, and regclient turns an unsupported referrers
+# API into an empty list rather than an error, so assert it landed.
+if [[ "$TRUST_CLASS" == "notation" ]]; then
+  regctl artifact list --format '{{jsonPretty .}}' "${DEST_REPO}@${DEST_DIGEST}" 2>/dev/null \
+    | jq -e '[.descriptors[]?.artifactType] | any(. == "application/vnd.cncf.notary.signature")' >/dev/null \
+    || { echo "::error::the Notary signature referrer did not survive the copy to ${DEST_REPO}@${DEST_DIGEST}"; exit 1; }
+  echo "  notary signature referrer present on ${DEST_REPO}@${DEST_DIGEST}"
 fi
 
 # ---------------------------------------------------------------------------

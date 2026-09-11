@@ -185,7 +185,7 @@
       "requiredPredicates": [],
       "notation": {
         "trustedIdentity": "x509.subject: CN=Microsoft SCD Products RSA Signing,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US",
-        "rootUrl": "http://www.microsoft.com/pkiops/certs/Microsoft%20Supply%20Chain%20RSA%20Root%20CA%202022.crt",
+        "rootUrl": "https://www.microsoft.com/pkiops/certs/Microsoft%20Supply%20Chain%20RSA%20Root%20CA%202022.crt",
         "note": "Root pinned by TOFU on 2026-09-11 from Microsoft's PKI endpoint; SHA-256 fingerprint 23:FF:E2:B8:BD:B9:A1:71:15:15:D4:CF:FD:A0:4B:C7:F7:93:D5:13:C7:6C:24:3F:10:20:50:7D:86:69:B7:DB, valid to 2047-02-17. The signing leaf (CN=Microsoft SCD Products RSA Signing, expires 2027-10-31) chains via CN=Microsoft SCD Products RSA CA. Identity is pinned to the leaf subject because the root alone would trust every Microsoft product signature. Verified locally with notation v1.3.2 at level strict on 2026-09-11; a wrong root, a wrong identity and an out-of-scope registry each failed as expected."
       },
       "enforcement": "observe",

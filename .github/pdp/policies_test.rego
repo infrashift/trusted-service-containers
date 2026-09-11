@@ -270,6 +270,59 @@ test_both_keyring_shas_absent_denies if {
 	"DHI_KEYRING_DRIFT" in codes(d)
 }
 
+# --- notation (Notary Project) class: mssql -------------------------------
+# Verified against the vendored Microsoft root, no attestations required.
+notation_verified := patch(single_platform_mirror, [
+	{"op": "replace", "path": "/upstream/trust_class", "value": "notation"},
+	{"op": "replace", "path": "/upstream/signature", "value": "verified"},
+	{"op": "replace", "path": "/upstream/verified_with", "value": ".github/pdp/keyring/microsoft-supply-chain-rsa-root-ca-2022.crt"},
+	{"op": "add", "path": "/upstream/keyring_fetched_sha256", "value": "ba402b4b"},
+	{"op": "add", "path": "/upstream/keyring_pinned_sha256", "value": "ba402b4b"},
+])
+
+test_notation_verified_allows if {
+	d := pdp.decision with input as notation_verified
+	d.allow
+	d.namespace == "trusted"
+	not "UPSTREAM_ATTESTATION_MISSING" in codes(d)
+}
+
+# The `none` escape hatch must not carry over: notation REQUIRES a signature.
+test_notation_cannot_claim_not_applicable if {
+	i := patch(notation_verified, [{"op": "replace", "path": "/upstream/signature", "value": "not-applicable"}])
+	d := pdp.decision with input as i
+	"UPSTREAM_SIGNATURE_REQUIRED" in codes(d)
+}
+
+test_notation_failed_denies if {
+	i := patch(notation_verified, [{"op": "replace", "path": "/upstream/signature", "value": "failed"}])
+	d := pdp.decision with input as i
+	"UPSTREAM_SIGNATURE_FAILED" in codes(d)
+}
+
+# Verified against a root the attacker controls is not verified.
+test_notation_wrong_root_denies if {
+	i := patch(notation_verified, [{"op": "replace", "path": "/upstream/verified_with", "value": ".github/pdp/keyring/dhi-latest.pub"}])
+	d := pdp.decision with input as i
+	"UPSTREAM_KEYRING_MISMATCH" in codes(d)
+}
+
+test_notation_root_drift_denies if {
+	i := patch(notation_verified, [{"op": "replace", "path": "/upstream/keyring_fetched_sha256", "value": "ROTATED"}])
+	d := pdp.decision with input as i
+	"NOTATION_ROOT_DRIFT" in codes(d)
+}
+
+# Different sentinels: both digests absent must compare UNEQUAL and deny.
+test_notation_root_shas_absent_denies if {
+	i := patch(notation_verified, [
+		{"op": "remove", "path": "/upstream/keyring_fetched_sha256"},
+		{"op": "remove", "path": "/upstream/keyring_pinned_sha256"},
+	])
+	d := pdp.decision with input as i
+	"NOTATION_ROOT_DRIFT" in codes(d)
+}
+
 test_dhi_missing_attestation_denies if {
 	i := patch(base_mirror, [
 		{"op": "replace", "path": "/upstream/trust_class", "value": "dhi"},
@@ -313,6 +366,40 @@ test_dropped_architecture_denies if {
 	d := pdp.decision with input as i
 	"INDEX_PLATFORM_DRIFT" in codes(d)
 	"PLATFORM_SET_MISMATCH" in codes(d)
+}
+
+# mssql is amd64-only and a bare manifest: the platform set has exactly one
+# element. Every other mirror test hardcodes the two-element list, so without
+# this the single-platform path is never exercised.
+single_platform_mirror := patch(base_mirror, [
+	{"op": "replace", "path": "/image/key", "value": "mssql"},
+	{"op": "replace", "path": "/image/destination_repo", "value": "ghcr.io/infrashift/trusted-service-containers/development/mssql"},
+	{"op": "replace", "path": "/image/config_user", "value": "mssql"},
+	{"op": "replace", "path": "/mirror/pinned_source_repo", "value": "mcr.microsoft.com/mssql/rhel/server"},
+	{"op": "replace", "path": "/mirror/source_repo", "value": "mcr.microsoft.com/mssql/rhel/server"},
+	{"op": "replace", "path": "/mirror/resolved_tag", "value": "2025-latest"},
+	{"op": "replace", "path": "/mirror/track_constraint", "value": "^2025-latest$"},
+	{"op": "replace", "path": "/mirror/declared_platforms", "value": ["linux/amd64"]},
+	{"op": "replace", "path": "/mirror/source_platforms", "value": ["linux/amd64"]},
+	{"op": "replace", "path": "/mirror/destination_platforms", "value": ["linux/amd64"]},
+])
+
+test_single_platform_mirror_allows if {
+	d := pdp.decision with input as single_platform_mirror
+	d.allow
+	d.namespace == "trusted"
+	not "PLATFORM_SET_MISMATCH" in codes(d)
+	not "INDEX_PLATFORM_DRIFT" in codes(d)
+}
+
+# The amd64-only entry must not be allowed to claim arm64: declaring a platform
+# the manifest does not carry is exactly the drift the rule exists to catch.
+test_single_platform_declared_two_denies if {
+	i := patch(single_platform_mirror, [{"op": "replace", "path": "/mirror/declared_platforms", "value": ["linux/amd64", "linux/arm64"]}])
+	d := pdp.decision with input as i
+	not d.allow
+	"PLATFORM_SET_MISMATCH" in codes(d)
+	not "INDEX_PLATFORM_DRIFT" in codes(d)
 }
 
 test_upstream_repo_mismatch_denies if {
@@ -620,6 +707,13 @@ base_repo := {
 				"platforms": ["linux/amd64", "linux/arm64"],
 				"variants": {"runtime": {"tag": "3.90.5-ubi", "track": "^3\\.90\\.[0-9]+-ubi$", "digest": D}},
 			},
+			"mssql": {
+				"kind": "mirror", "upstreamTrust": "notation", "upstreamRepo": "mcr.microsoft.com/mssql/rhel/server",
+				"keyring": ".github/pdp/keyring/microsoft-supply-chain-rsa-root-ca-2022.crt",
+				"notation": {"trustedIdentity": "x509.subject: CN=Microsoft SCD Products RSA Signing,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US"},
+				"platforms": ["linux/amd64"],
+				"variants": {"runtime": {"tag": "2025-latest", "track": "^2025-latest$", "digest": D2}},
+			},
 			"kratos": {
 				"kind": "build", "upstreamTrust": "internal", "source": "ory",
 				"toolchain": "go1.26", "base": "ubi9-micro", "caSource": "ubi9-minimal",
@@ -635,6 +729,16 @@ repo_codes(dec) := {v.code | some v in dec.violations}
 test_base_repo_allows if {
 	d := pdp.repo_decision with input as base_repo with data.exceptions as []
 	d.allow
+}
+
+# A single-platform mirror entry passes the repo gate unchanged: platforms is
+# checked for shape only, arity is a leg-time comparison against the manifest.
+test_single_platform_repo_entry_allows if {
+	d := pdp.repo_decision with input as base_repo with data.exceptions as []
+	d.allow
+	i := json.patch(base_repo, [{"op": "replace", "path": "/versions/images/mssql/platforms", "value": "linux/amd64"}])
+	d2 := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_PLATFORMS_MISSING" in repo_codes(d2)
 }
 
 test_empty_repo_input_denies if {
@@ -686,6 +790,18 @@ test_unpinned_digest_denies if {
 	i := patch(base_repo, [{"op": "replace", "path": "/versions/images/nexus3/variants/runtime/digest", "value": "3.90.5-ubi"}])
 	d := pdp.repo_decision with input as i with data.exceptions as []
 	"VERSIONS_DIGEST_INVALID" in repo_codes(d)
+}
+
+test_notation_entry_wrong_keyring_denies if {
+	i := patch(base_repo, [{"op": "replace", "path": "/versions/images/mssql/keyring", "value": ".github/pdp/keyring/dhi-latest.pub"}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_NOTATION_KEYRING_INVALID" in repo_codes(d)
+}
+
+test_notation_entry_without_identity_denies if {
+	i := patch(base_repo, [{"op": "remove", "path": "/versions/images/mssql/notation"}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_NOTATION_IDENTITY_MISSING" in repo_codes(d)
 }
 
 test_dhi_class_on_non_dhi_repo_denies if {

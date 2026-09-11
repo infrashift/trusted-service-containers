@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Mirror one {service, variant} leg: verify upstream trust, copy the whole
-# multi-arch index by digest, scan every platform, sign and attest.
+# index (or the bare single-platform manifest, for upstreams that publish no
+# index) by digest, scan every platform, sign and attest.
 #
 # Required env: SERVICE VARIANT LEG TRUST_CLASS PR_NUM GITHUB_REPOSITORY
 #               COSIGN_PRIVATE_KEY COSIGN_PASSWORD
@@ -169,6 +170,71 @@ case "$TRUST_CLASS" in
     fi
     ;;
 
+  notation)
+    # Notary Project signature (mssql). Verified with `notation` against the
+    # COMMITTED root CA, with the signing identity pinned to the vendor's leaf
+    # subject: a root alone would trust every certificate Microsoft ever issued
+    # under it. The live root is fetched from the vendor's PKI endpoint and
+    # compared, exactly as the DHI keyring is, so a rotation arrives as a PR.
+    [[ -n "$KEYRING" && -f "$KEYRING" ]] || { echo "::error::trust_class=notation but keyring $KEYRING is missing"; exit 1; }
+    NOTATION_IDENTITY=$(jq -r '.notation.trustedIdentity // ""' <<<"$IMG")
+    NOTATION_ROOT_URL=$(jq -r '.notation.rootUrl // ""' <<<"$IMG")
+    [[ "$NOTATION_IDENTITY" == "x509.subject: "* ]] || { echo "::error::trust_class=notation needs notation.trustedIdentity (x509.subject: ...)"; exit 1; }
+    [[ -n "$NOTATION_ROOT_URL" ]] || { echo "::error::trust_class=notation needs notation.rootUrl"; exit 1; }
+    KEYRING_PINNED_SHA=$(sha256sum "$KEYRING" | cut -d' ' -f1)
+
+    regctl artifact list --format '{{jsonPretty .}}' "${SRC_REPO}@${PIN}" \
+      > "$EVIDENCE/upstream-referrers.json" 2>/dev/null || echo '{}' > "$EVIDENCE/upstream-referrers.json"
+
+    # Vendors serve roots as DER; the committed copy is PEM. Normalise before
+    # comparing so the digest compares like with like. Retried like the DHI
+    # keyring fetch, and for the same reason; a 404 still surfaces.
+    if curl -sSfL --retry 3 --retry-delay 2 --retry-connrefused --max-time 30 \
+         -o /tmp/notation-root.bin "$NOTATION_ROOT_URL" \
+       && { openssl x509 -inform DER -in /tmp/notation-root.bin -out /tmp/notation-root.pem 2>/dev/null \
+            || openssl x509 -inform PEM -in /tmp/notation-root.bin -out /tmp/notation-root.pem; }; then
+      KEYRING_FETCHED_SHA=$(sha256sum /tmp/notation-root.pem | cut -d' ' -f1)
+    else
+      KEYRING_FETCHED_SHA="<fetch-failed>"
+    fi
+
+    if [[ "$KEYRING_PINNED_SHA" != "$KEYRING_FETCHED_SHA" ]]; then
+      RESULT=failed; REASON=KEYRING_ROTATED
+      echo "::warning::Notary root rotated or unfetchable: pinned=${KEYRING_PINNED_SHA} fetched=${KEYRING_FETCHED_SHA}"
+    else
+      # A throwaway notation home: trust store holds ONLY the committed root,
+      # and the trust policy is scoped to this one upstream repository.
+      NOTATION_HOME=$(mktemp -d)
+      mkdir -p "$NOTATION_HOME/notation/truststore/x509/ca/pinned"
+      cp "$KEYRING" "$NOTATION_HOME/notation/truststore/x509/ca/pinned/root.pem"
+      jq -n --arg scope "$SRC_REPO" --arg id "$NOTATION_IDENTITY" \
+        '{version:"1.0", trustPolicies:[{name:"pinned", registryScopes:[$scope],
+          signatureVerification:{level:"strict"}, trustStores:["ca:pinned"],
+          trustedIdentities:[$id]}]}' > "$NOTATION_HOME/notation/trustpolicy.json"
+      cp "$NOTATION_HOME/notation/trustpolicy.json" "$EVIDENCE/notation-trustpolicy.json"
+      # Three attempts: a registry connection reset mid-verify was observed
+      # against mcr.microsoft.com and would otherwise quarantine the image for
+      # a network blip. A genuine signature failure simply fails three times.
+      NOTATION_OK=0
+      for attempt in 1 2 3; do
+        if XDG_CONFIG_HOME="$NOTATION_HOME" notation verify "${SRC_REPO}@${PIN}" > /tmp/notation.out 2>&1; then
+          NOTATION_OK=1; break
+        fi
+        echo "notation verify attempt ${attempt} failed: $(tail -c 200 /tmp/notation.out | tr '\n' ' ')"
+        sleep 2
+      done
+      if [[ "$NOTATION_OK" -eq 1 ]]; then
+        RESULT=verified; REASON=OK; VERIFIED=1
+      else
+        RESULT=failed; REASON="NOTATION_VERIFY_FAILED: $(tail -c 300 /tmp/notation.out | tr '\n' ' ')"
+      fi
+      jq -n --arg out "$(cat /tmp/notation.out)" --arg res "$RESULT" --arg id "$NOTATION_IDENTITY" \
+            --arg ver "$(notation version 2>/dev/null | tr '\n' ' ')" \
+        '{result:$res, trustedIdentity:$id, notation:$ver, output:$out}' > "$EVIDENCE/notation-verify.json"
+      rm -rf "$NOTATION_HOME"
+    fi
+    ;;
+
   *)
     echo "::error::unknown trust_class '${TRUST_CLASS}' for ${LEG}"; exit 1 ;;
 esac
@@ -206,7 +272,8 @@ LIVE=$(regctl manifest head --format '{{.GetDescriptor.Digest}}' "${SRC_REPO}:${
 [[ "$LIVE" == "$PIN" ]] || echo "::warning::${SRC_REPO}:${SRC_TAG} now resolves to ${LIVE}; pin is ${PIN}. Mirroring the PIN."
 
 # ---------------------------------------------------------------------------
-# 4. Copy the whole index BY DIGEST.
+# 4. Copy the whole index BY DIGEST. A single-manifest upstream (mssql) has no
+#    index; the manifest digest is then the claim and the same copy applies.
 #
 # --referrers carries OCI 1.1 referrers; --digest-tags carries the legacy
 # sha256-<digest>.sig/.att tags that cosign v2 writes. BOTH are passed so the
@@ -237,21 +304,20 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Enumerate platforms.
 #
-# MUST filter unknown/unknown and vnd.docker.reference.type: both nexus3 3.90.1
-# and 3.90.5 carry BuildKit attestation manifests as extra index entries, and
-# handing one to syft produces a confusing failure. Attestation shape varies
-# between patch releases of the same upstream, so nothing may be assumed.
+# scripts/manifest-platforms.sh handles both upstream shapes -- a multi-arch
+# index (filtering the BuildKit attestation manifests nexus3 carries) and a bare
+# single-platform manifest (mssql) -- and exits non-zero rather than print an
+# empty set. review-leg.sh re-derives the same set live from GHCR through the
+# same helper, so the build actor cannot fake it.
 # ---------------------------------------------------------------------------
 regctl manifest get --format '{{jsonPretty .}}' "${DEST_REPO}@${DEST_DIGEST}" > "$EVIDENCE/index.json"
 
-mapfile -t PLATFORMS < <(jq -r '
-  .manifests[]
-  | select((.annotations // {})["vnd.docker.reference.type"] == null)
-  | select(.platform.os != null and .platform.os != "unknown")
-  | select(.platform.architecture != null and .platform.architecture != "unknown")
-  | "\(.platform.os)/\(.platform.architecture)"' "$EVIDENCE/index.json" | sort -u)
+SHAPE=$(scripts/manifest-platforms.sh "${DEST_REPO}@${DEST_DIGEST}")
+MEDIA_TYPE=$(jq -r '.media_type' <<<"$SHAPE")
+IS_INDEX=$(jq -r '.is_index' <<<"$SHAPE")
+mapfile -t PLATFORMS < <(jq -r '.platforms[]' <<<"$SHAPE")
 
-ACTUAL=$(printf '%s\n' "${PLATFORMS[@]}" | jq -R -s -c 'split("\n")|map(select(length>0))|sort')
+ACTUAL=$(jq -c '.platforms | sort' <<<"$SHAPE")
 DECLARED=$(jq -c 'sort' <<<"$DECLARED_PLATFORMS")
 if [[ "$ACTUAL" != "$DECLARED" ]]; then
   echo "::error::Platform drift: versions.json declares ${DECLARED}, mirrored index carries ${ACTUAL}"
@@ -262,6 +328,8 @@ fi
 # 7. Per-platform scan, against the CHILD manifest digest.
 #    Resolving the child ourselves removes all ambiguity about how syft/grype
 #    pick from an index, and puts the exact digest scanned into the evidence.
+#    For a bare manifest regctl resolves --platform to the manifest itself, so
+#    child_digest == the pinned digest and the same loop applies.
 # ---------------------------------------------------------------------------
 PLATFORM_JSON='[]'
 for p in "${PLATFORMS[@]}"; do
@@ -288,13 +356,13 @@ CONFIG_USER=$(regctl image config "${DEST_REPO}@${FIRST_CHILD}" --format '{{.Con
 jq -n --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg tc "$TRUST_CLASS" \
       --arg repo "$DEST_REPO" --arg tag "$DEST_TAG" --arg dig "$DEST_DIGEST" \
       --arg enf "$ENFORCEMENT" --arg srctag "$SRC_TAG" --arg track "$TRACK" \
-      --arg cu "$CONFIG_USER" \
+      --arg cu "$CONFIG_USER" --arg mt "$MEDIA_TYPE" --argjson idx "$IS_INDEX" \
       --argjson platforms "$PLATFORM_JSON" \
   '{ kind: "mirror", leg: $leg, service: $svc, variant: $var, trust_class: $tc,
      enforcement: $enf, upstream_tag: $srctag, track: $track,
      config_user: $cu, labels: {},
      subject: { repository: $repo, tag: $tag, digest: $dig,
-                media_type: "application/vnd.oci.image.index.v1+json", is_index: true },
+                media_type: $mt, is_index: $idx },
      platforms: $platforms,
      manifest_group: null }' > "$EVIDENCE/subject.json"
 

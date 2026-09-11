@@ -104,12 +104,19 @@
         "required": ["kind", "upstreamTrust", "enforcement", "updated", "reason"],
         "properties": {
           "kind": { "enum": ["mirror", "build"] },
-          "upstreamTrust": { "enum": ["dhi", "none", "internal"] },
+          "upstreamTrust": { "enum": ["dhi", "none", "internal", "notation"] },
           "enforcement": { "enum": ["enforce", "observe"] },
           "updated": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
           "reason": { "type": "string", "minLength": 10 }
         },
         "allOf": [
+          {
+            "if": { "properties": { "upstreamTrust": { "const": "notation" } }, "required": ["upstreamTrust"] },
+            "then": {
+              "required": ["keyring", "notation"],
+              "properties": { "keyring": { "type": "string", "pattern": "^\\.github/pdp/keyring/.*\\.crt$" } }
+            }
+          },
           {
             "if": { "properties": { "kind": { "const": "mirror" } }, "required": ["kind"] },
             "then": {
@@ -118,6 +125,14 @@
                 "upstreamRepo": { "type": "string" },
                 "keyring": { "type": ["string", "null"] },
                 "requiredPredicates": { "type": "array", "items": { "type": "string" } },
+                "notation": {
+                  "type": "object",
+                  "required": ["trustedIdentity", "rootUrl"],
+                  "properties": {
+                    "trustedIdentity": { "type": "string", "pattern": "^x509\\.subject: .*\\bO=.*$" },
+                    "rootUrl": { "type": "string", "pattern": "^https?://" }
+                  }
+                },
                 "platforms": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
                 "variants": {
                   "type": "object",

@@ -12,8 +12,8 @@ someone who does not trust us.
 
 Two kinds of image, two integrity models.
 
-**Mirror track** (traefik, postgres, nexus3). These arrive already hardened and
-already attested. Rebuilding would destroy the vendor's signature and, for DHI,
+**Mirror track** (traefik, postgres, nexus3, mssql). These arrive as the vendor
+built them, and for DHI already attested. Rebuilding would destroy the vendor's signature and, for DHI,
 their zero-known-CVE claim. So we copy content-addressed, preserving OCI
 referrers, and layer our own scan, signing and policy gate on top.
 
@@ -32,7 +32,7 @@ build from a pinned source **commit** onto our own `ubi9-micro`.
 3. **Fail closed, and prove it.** Rego's `> 0` against a missing value is
    *undefined*, i.e. silently non-violating. Every numeric field is guarded,
    every enum is closed, every equality uses distinct sentinels so "both absent"
-   denies. 74 tests, 85% coverage floor.
+   denies. 85 tests, 85% coverage floor.
 4. **Trust class drives signature verification only**, never CVE thresholds.
 5. **One CVE gate for every image.** The only per-image escape is a dated,
    justified, reviewed exception — capped at 90 days and evaluated against a
@@ -75,8 +75,11 @@ docs/build-track/          measurements and reasoning
 
 - **`enforcement: "observe"`** lets a new upstream be onboarded and triaged
   without red-lighting `main`. It still publishes every violation and still
-  routes to `quarantine`; it is not a route into `trusted/`.
-- **No `:latest`.** Meaningless across eleven services with runtime and dev
+  routes to `quarantine`; it is not a route into `trusted/`. The signed review
+  verdict carries `namespace` separately from PASS/FAIL, and
+  `scripts/release-leg.sh` routes on the namespace, so an observe PASS lands
+  in `quarantine/` rather than being promoted.
+- **No `:latest`.** Meaningless across twelve services with runtime and dev
   variants, and it invites pulling a `-dev` image into production.
 - **Quarantine is a documented state.** Fully evidenced, immutably tagged, and
   never given the clean upstream-shaped tag.
@@ -109,3 +112,8 @@ these are the places it went wrong. Each has a mechanical guard here.
 - Four DHI digests and `attestationRepo` need an authenticated session.
 - Whether Docker OIDC covers `registry.scout.docker.com`.
 - nexus3's day-one CVE count is unknown; it will very likely quarantine.
+- mssql's day-one CVE count is unknown; a ~700MB RHEL image will very likely
+  quarantine. Triage lands in `.github/pdp/exceptions.yaml` after the first scan.
+- The mssql Notary root is TOFU-pinned. `NOTATION_ROOT_DRIFT` will surface a
+  rotation; the signing leaf expires 2027-10-31 and the pinned identity may
+  need re-checking then.

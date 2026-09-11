@@ -129,14 +129,14 @@ MIRROR_BLOCK='{}'; BUILD_BLOCK='{}'
 if [[ "$KIND" == "mirror" ]]; then
   VAR=$(jq -ce --arg v "$VARIANT" '.variants[$v]' <<<"$IMG")
   PIN=$(jq -r '.digest' <<<"$VAR")
-  # Live platform set, re-derived now rather than read from the evidence, with
-  # the unknown/unknown attestation manifests filtered out.
-  regctl manifest get --format '{{jsonPretty .}}' "${DEST_REPO}@${LIVE_DIGEST}" > /tmp/live-index.json
-  LIVE_PLATFORMS=$(jq -c '[ .manifests[]
-      | select((.annotations // {})["vnd.docker.reference.type"] == null)
-      | select(.platform.os != null and .platform.os != "unknown")
-      | select(.platform.architecture != null and .platform.architecture != "unknown")
-      | "\(.platform.os)/\(.platform.architecture)" ] | unique' /tmp/live-index.json)
+  # Live platform set, re-derived now rather than read from the evidence.
+  # scripts/manifest-platforms.sh filters the unknown/unknown attestation
+  # manifests of an index and reads a bare single manifest's config os/arch;
+  # it exits non-zero rather than yield an empty set.
+  LIVE_SHAPE=$(scripts/manifest-platforms.sh "${DEST_REPO}@${LIVE_DIGEST}") \
+    || fail "could not derive the live platform set for ${DEST_REPO}@${LIVE_DIGEST}"
+  LIVE_PLATFORMS=$(jq -ce '.platforms | unique' <<<"$LIVE_SHAPE") \
+    || fail "manifest-platforms.sh returned no platform list for ${DEST_REPO}@${LIVE_DIGEST}"
 
   MIRROR_BLOCK=$(jq -n \
     --arg pinrepo "$(jq -r '.upstreamRepo' <<<"$IMG")" \
@@ -196,6 +196,10 @@ PUB_KEYS=$(jq -c '[paths(scalars) | map(tostring) | join(".")] | map({key:., val
 EVALUATED_AT="${EVALUATED_AT:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}"
 PER_PLATFORM='{}'
 LEG_VERDICT=PASS
+# The namespace is a separate axis from the verdict. `observe` makes a leg with
+# violations ALLOW (the pipeline does not red-light) while the policy still
+# routes it to quarantine. Default quarantine; only an all-trusted leg promotes.
+LEG_NAMESPACE=trusted
 ALL_WAIVED='[]'
 ALL_VIOLATIONS='[]'
 
@@ -245,6 +249,8 @@ while read -r slug cve_file; do
 
   ALLOW=$(jq -r '.allow' "/tmp/decision-${slug}.json")
   [[ "$ALLOW" == "true" ]] || LEG_VERDICT=FAIL
+  NS=$(jq -r '.namespace // "quarantine"' "/tmp/decision-${slug}.json")
+  [[ "$NS" == "trusted" ]] || LEG_NAMESPACE=quarantine
 
   PER_PLATFORM=$(jq -c --arg s "$slug" --slurpfile d "/tmp/decision-${slug}.json" \
     '. + {($s): {allow:$d[0].allow, namespace:$d[0].namespace, counts:$d[0].counts,
@@ -259,7 +265,8 @@ while read -r slug cve_file; do
     "$(jq -r '.counts.recorded' "/tmp/decision-${slug}.json")"
 done < <(jq -r '.[] | "\(.slug) \(.cve)"' <<<"$PLATFORMS")
 
-record cve_policy "$LEG_VERDICT" "evaluated per platform against data.tsc.pdp.decision"
+[[ "$LEG_VERDICT" == "PASS" ]] || LEG_NAMESPACE=quarantine
+record cve_policy "$LEG_VERDICT" "evaluated per platform against data.tsc.pdp.decision; namespace ${LEG_NAMESPACE}"
 
 # ===========================================================================
 # 7. The signed verdict.
@@ -267,7 +274,7 @@ record cve_policy "$LEG_VERDICT" "evaluated per platform against data.tsc.pdp.de
 jq -n \
   --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg kind "$KIND" \
   --arg repo "$DEST_REPO" --arg tag "$DEST_TAG" --arg dig "$LIVE_DIGEST" \
-  --arg verdict "$LEG_VERDICT" --arg tc "$REPO_TRUST" --arg enf "$ENFORCEMENT" \
+  --arg verdict "$LEG_VERDICT" --arg ns "$LEG_NAMESPACE" --arg tc "$REPO_TRUST" --arg enf "$ENFORCEMENT" \
   --arg now "$EVALUATED_AT" --arg head "$HEAD_SHA" --arg pr "${PR_NUM:-}" \
   --arg brun "${BUILD_RUN_ID:-}" --arg rrun "${REVIEW_RUN_ID:-}" \
   --argjson platforms "$PLATFORMS" --argjson checks "$CHECKS" \
@@ -280,7 +287,7 @@ jq -n \
      checks: $checks,
      cve_policy: { result:$verdict, policy:"data.tsc.pdp.decision",
                    per_platform:$perplat, exceptions_applied:$waived },
-     verdict: $verdict }' > review-verdict.json
+     verdict: $verdict, namespace: $ns }' > review-verdict.json
 
 cosign sign-blob --yes --tlog-upload=false --key env://COSIGN_PRIVATE_KEY \
   --output-signature review-verdict.json.sig review-verdict.json >/dev/null
@@ -291,5 +298,5 @@ cosign attest --yes --tlog-upload=false --key env://COSIGN_PRIVATE_KEY \
   --type https://infrashift.io/attestation/review/v1 \
   --predicate review-verdict.json "${DEST_REPO}@${LIVE_DIGEST}" >/dev/null
 
-echo "verdict: ${LEG_VERDICT} for ${LEG}"
-[[ "$LEG_VERDICT" == "PASS" ]] || echo "::warning::${LEG} FAILED review; it will be promoted to quarantine, not trusted"
+echo "verdict: ${LEG_VERDICT} namespace: ${LEG_NAMESPACE} for ${LEG}"
+[[ "$LEG_NAMESPACE" == "trusted" ]] || echo "::warning::${LEG} will be promoted to quarantine, not trusted (verdict ${LEG_VERDICT})"

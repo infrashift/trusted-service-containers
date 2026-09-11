@@ -91,7 +91,7 @@ jobs:
               (.service     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.variant     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.leg         | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,127}$")) and
-              (.trust_class | IN("dhi","none","internal")) and
+              (.trust_class | IN("dhi","none","internal","notation")) and
               (.leg == (.service + "-" + .variant)) and
               (if .kind == "build"
                then ((keys_unsorted|sort) == ["arch","kind","leg","service","trust_class","variant"]
@@ -214,8 +214,8 @@ jobs:
               echo "OVERALL=error" > /tmp/overall
               exit 0
             fi
-            echo "| Leg | Kind | Trust | Verdict | Blocking | Waived | Recorded |"
-            echo "|---|---|---|---|---:|---:|---:|"
+            echo "| Leg | Kind | Trust | Verdict | Namespace | Blocking | Waived | Recorded |"
+            echo "|---|---|---|---|---|---:|---:|---:|"
           } > /tmp/report.md
 
           OVERALL=success
@@ -223,7 +223,7 @@ jobs:
             jq -r '
               . as $v
               | ($v.cve_policy.per_platform | to_entries) as $pp
-              | "| `\($v.subject.leg)` | \($v.subject.kind) | \($v.subject.trustClass) | **\($v.verdict)** | \([$pp[].value.counts.blocking] | add // 0) | \([$pp[].value.counts.waived] | add // 0) | \([$pp[].value.counts.recorded] | add // 0) |"
+              | "| `\($v.subject.leg)` | \($v.subject.kind) | \($v.subject.trustClass) | **\($v.verdict)** | `\($v.namespace // "quarantine")` | \([$pp[].value.counts.blocking] | add // 0) | \([$pp[].value.counts.waived] | add // 0) | \([$pp[].value.counts.recorded] | add // 0) |"
             ' "$f" >> /tmp/report.md
             [[ "$(jq -r '.verdict' "$f")" == "PASS" ]] || OVERALL=failure
           done

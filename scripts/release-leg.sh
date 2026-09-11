@@ -51,6 +51,11 @@ PRED=$(jq -s -r '[ .[] | .payload | @base64d | fromjson | .predicate ]
 [[ -n "$PRED" && "$PRED" != "null" ]] || fail "could not decode the review predicate"
 
 VERDICT=$(jq -r '.verdict' <<<"$PRED")
+# The namespace is signed alongside the verdict and is the routing decision.
+# `observe` produces verdict PASS with namespace quarantine on purpose; routing
+# on the verdict alone would promote a policy-violating image into trusted/.
+# Absent or unrecognised denies: only the literal "trusted" promotes.
+VERDICT_NS=$(jq -r '.namespace // "<absent>"' <<<"$PRED")
 VERDICT_COMMIT=$(jq -r '.metadata.commitSha' <<<"$PRED")
 VERDICT_LEG=$(jq -r '.subject.leg' <<<"$PRED")
 
@@ -61,7 +66,11 @@ VERDICT_LEG=$(jq -r '.subject.leg' <<<"$PRED")
 [[ "$VERDICT_LEG" == "$LEG" ]] \
   || fail "verdict is for leg ${VERDICT_LEG}, expected ${LEG}"
 
-echo "verdict=${VERDICT} for ${LEG} @ ${DEV_DIGEST}"
+case "$VERDICT_NS" in
+  trusted|quarantine) ;;
+  *) fail "review verdict carries namespace ${VERDICT_NS}; expected trusted or quarantine (re-run review on a build that writes it)" ;;
+esac
+echo "verdict=${VERDICT} namespace=${VERDICT_NS} for ${LEG} @ ${DEV_DIGEST}"
 
 # ===========================================================================
 # 2. Destination.
@@ -72,7 +81,7 @@ echo "verdict=${VERDICT} for ${LEG} @ ${DEV_DIGEST}"
 # one requires naming the exact commit, which is the deliberate act that should
 # be required.
 # ===========================================================================
-if [[ "$VERDICT" == "PASS" ]]; then
+if [[ "$VERDICT" == "PASS" && "$VERDICT_NS" == "trusted" ]]; then
   NAMESPACE=trusted
   if [[ "$KIND" == "mirror" ]]; then
     TAGS=("$BASE_TAG" "${BASE_TAG}-${SHORT_SHA}" "${BASE_TAG}-${DATE_TAG}")

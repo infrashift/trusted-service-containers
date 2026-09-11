@@ -15,9 +15,10 @@ The images divide into two kinds, and that split drives the whole design.
 
 ### Mirror track — we do not rebuild
 
-`traefik`, `postgres`, `nexus3` arrive already hardened and already attested.
-Rebuilding them would destroy the vendor's signature and, for Docker Hardened
-Images, their zero-known-CVE claim. So we copy them **content-addressed**,
+`traefik`, `postgres`, `nexus3`, `mssql` arrive as the vendor built them, and
+for Docker Hardened Images already attested; `mssql` arrives with a Notary
+Project signature we verify. Rebuilding them would destroy the
+vendor's signature and, for DHI, their zero-known-CVE claim. So we copy them **content-addressed**,
 preserving OCI referrers, and layer our own scan, signing and policy gate on top.
 
 The load-bearing property:
@@ -66,7 +67,7 @@ Mirror-track tags **are** the upstream tags, so migration is a one-line change:
 Alongside the rolling tag, each release also publishes immutable
 `<tag>-<shortsha>` and `<tag>-<YYYYMMDD>` variants.
 
-**There is no `:latest`.** Across eleven services with runtime and dev
+**There is no `:latest`.** Across twelve services with runtime and dev
 variants it has no defensible meaning, and it invites pulling a `-dev` image —
 root, with a shell and a package manager — into production.
 
@@ -117,7 +118,7 @@ each entry's declared track and never widen one.
 
 ## Policy
 
-One file, one package: `.github/pdp/policies.rego` (`tsc.pdp`), with 74 tests
+One file, one package: `.github/pdp/policies.rego` (`tsc.pdp`), with 85 tests
 and a fail-closed contract documented at the top.
 
 **One CVE gate for every image**, regardless of trust class or track: Criticals
@@ -137,7 +138,8 @@ findings are reported in a distinct `waived` state, never silently dropped.
 |---|---|
 | `dhi` | Docker Hardened Images; verified against a TOFU-pinned copy of Docker's keyring |
 | `internal` | our own base images, verified against the sibling repo's release key |
-| `none` | unverifiable. `cosign download signature oryd/kratos:v26.2.0` returns `Cert: false, Chain: false` — a keyed signature whose public key the vendor does not publish |
+| `notation` | Notary Project signatures (`mssql`); verified with `notation` against a TOFU-pinned vendor root CA under `.github/pdp/keyring/`, with the signing identity pinned to the vendor's leaf subject |
+| `none` | unverifiable *by us*, which is not the same as unsigned. `cosign download signature oryd/kratos:v26.2.0` returns `Cert: false, Chain: false` — a keyed signature whose public key the vendor does not publish |
 
 ---
 

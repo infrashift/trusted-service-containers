@@ -71,7 +71,7 @@ help:
 	echo "  images:   $(words $(IMAGES)) ($(words $(MIRROR_IMAGES)) mirror, $(words $(BUILD_IMAGES)) build)"
 
 .PHONY: validate
-validate: check-versions check-schema check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills lint-shell policy-test
+validate: check-versions check-schema check-keyring check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills lint-shell policy-test
 	echo "OK: repository validation passed"
 
 .PHONY: check-versions
@@ -99,6 +99,15 @@ check-versions:
 .PHONY: check-schema
 check-schema:
 	python3 scripts/validate-schema.py
+
+.PHONY: check-keyring
+check-keyring:
+	# Every vendored key or root under .github/pdp/keyring/ has a .sha256
+	# sidecar in `sha256sum -c` format. The sidecar is what a reviewer reads
+	# as the pin; this makes it load-bearing rather than decorative.
+	(cd .github/pdp/keyring && for s in *.sha256; do sha256sum -c --quiet "$$s" || { echo "error: keyring sidecar $$s does not match its file" >&2; exit 1; }; done)
+	for f in .github/pdp/keyring/*.pub .github/pdp/keyring/*.crt; do [ -f "$$f.sha256" ] || { echo "error: $$f has no .sha256 sidecar" >&2; exit 1; }; done
+	echo "OK: keyring sidecars match"
 
 .PHONY: check-gitleaks-config
 check-gitleaks-config:

@@ -15,6 +15,15 @@ It then checks the verdict's `commitSha` equals the merged head SHA. A verdict
 issued against a different commit is a verdict about different bits, however
 recent it looks.
 
+## Verdict and namespace are two axes
+
+`verdict` is PASS/FAIL: whether the pipeline red-lights. `namespace` is where
+the image goes. They differ under `enforcement: "observe"`, where a leg with
+violations is allowed (PASS) but still routed to `quarantine`. The review leg
+signs both; `release-leg.sh` promotes to `trusted/` only when the verdict is
+PASS **and** the namespace is `trusted`, and fails closed if the namespace is
+absent or unrecognised.
+
 ## Tags
 
 | | trusted | quarantine |

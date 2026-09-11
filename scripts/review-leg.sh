@@ -112,8 +112,26 @@ check "trust class agrees with repo" "$REPO_TRUST"
 UV="$EV/upstream-verification.json"
 SIG_STATE=$(jq -r '.result' "$UV")
 VERIFIED_WITH=$(jq -r '.verified_with // .keyring.path // ""' "$UV")
-KEYRING_PINNED=$(jq -r '.keyring.pinned_sha256 // ""' "$UV")
+# The PINNED digest is re-derived here from the checked-out keyring the repo
+# declares, never read from the evidence: otherwise the build actor could
+# report pinned == fetched for any pair of values. The FETCHED digest is the
+# build actor's observation of the vendor endpoint and stays as recorded.
+IMG_KEYRING=$(jq -r '.keyring // ""' <<<"$IMG")
+KEYRING_PINNED=""
+if [[ -n "$IMG_KEYRING" ]]; then
+  [[ -f "$IMG_KEYRING" ]] || fail "versions.json declares keyring ${IMG_KEYRING} but it is not in the checkout"
+  KEYRING_PINNED=$(sha256sum "$IMG_KEYRING" | cut -d' ' -f1)
+fi
 KEYRING_FETCHED=$(jq -r '.keyring.fetched_sha256 // ""' "$UV")
+
+# A Notary-signed image must still CARRY its signature after the copy. The
+# digest invariant cannot see referrers, so this is checked live on GHCR.
+if [[ "$REPO_TRUST" == "notation" ]]; then
+  regctl artifact list --format '{{jsonPretty .}}' "${DEST_REPO}@${LIVE_DIGEST}" 2>/dev/null \
+    | jq -e '[.descriptors[]?.artifactType] | any(. == "application/vnd.cncf.notary.signature")' >/dev/null \
+    || fail "no application/vnd.cncf.notary.signature referrer on ${DEST_REPO}@${LIVE_DIGEST}; the vendor signature did not survive the mirror"
+  check "notary signature referrer present on GHCR" "OK"
+fi
 ATT_SBOM=$(jq -r '.attestations.sbom // "not-applicable"' "$UV")
 ATT_PROV=$(jq -r '.attestations.provenance // "not-applicable"' "$UV")
 ATT_VEX=$(jq -r '.attestations.vex // "not-applicable"' "$UV")
@@ -129,14 +147,14 @@ MIRROR_BLOCK='{}'; BUILD_BLOCK='{}'
 if [[ "$KIND" == "mirror" ]]; then
   VAR=$(jq -ce --arg v "$VARIANT" '.variants[$v]' <<<"$IMG")
   PIN=$(jq -r '.digest' <<<"$VAR")
-  # Live platform set, re-derived now rather than read from the evidence, with
-  # the unknown/unknown attestation manifests filtered out.
-  regctl manifest get --format '{{jsonPretty .}}' "${DEST_REPO}@${LIVE_DIGEST}" > /tmp/live-index.json
-  LIVE_PLATFORMS=$(jq -c '[ .manifests[]
-      | select((.annotations // {})["vnd.docker.reference.type"] == null)
-      | select(.platform.os != null and .platform.os != "unknown")
-      | select(.platform.architecture != null and .platform.architecture != "unknown")
-      | "\(.platform.os)/\(.platform.architecture)" ] | unique' /tmp/live-index.json)
+  # Live platform set, re-derived now rather than read from the evidence.
+  # scripts/manifest-platforms.sh filters the unknown/unknown attestation
+  # manifests of an index and reads a bare single manifest's config os/arch;
+  # it exits non-zero rather than yield an empty set.
+  LIVE_SHAPE=$(scripts/manifest-platforms.sh "${DEST_REPO}@${LIVE_DIGEST}") \
+    || fail "could not derive the live platform set for ${DEST_REPO}@${LIVE_DIGEST}"
+  LIVE_PLATFORMS=$(jq -ce '.platforms | unique' <<<"$LIVE_SHAPE") \
+    || fail "manifest-platforms.sh returned no platform list for ${DEST_REPO}@${LIVE_DIGEST}"
 
   MIRROR_BLOCK=$(jq -n \
     --arg pinrepo "$(jq -r '.upstreamRepo' <<<"$IMG")" \
@@ -195,7 +213,15 @@ PUB_KEYS=$(jq -c '[paths(scalars) | map(tostring) | join(".")] | map({key:., val
 # ===========================================================================
 EVALUATED_AT="${EVALUATED_AT:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}"
 PER_PLATFORM='{}'
-LEG_VERDICT=PASS
+# Both axes start CLOSED and are opened only by evidence. The verdict is
+# whether the pipeline red-lights; the namespace is where the image goes.
+# `observe` makes a leg with violations ALLOW while the policy still routes it
+# to quarantine, so they are computed separately. A leg with no platforms
+# would run this loop zero times and must not be signed PASS/trusted.
+[[ "$(jq 'length' <<<"$PLATFORMS")" -gt 0 ]] || fail "subject.json carries no platforms; nothing to evaluate"
+DECISIONS=0
+ANY_DENY=0
+ANY_QUARANTINE=0
 ALL_WAIVED='[]'
 ALL_VIOLATIONS='[]'
 
@@ -215,7 +241,7 @@ while read -r slug cve_file; do
     --arg track "$KIND" --arg now "$EVALUATED_AT" \
     --arg key "$SERVICE" --arg var "$VARIANT" --arg enf "$ENFORCEMENT" \
     --arg drepo "$DEST_REPO" --arg ddig "$LIVE_DIGEST" --arg cu "$CONFIG_USER" \
-    --argjson labels "$LABELS" \
+    --argjson labels "$LABELS" --arg ikr "$IMG_KEYRING" \
     --arg tc "$REPO_TRUST" --arg sig "$SIG_STATE" --arg vw "$VERIFIED_WITH" \
     --arg kp "$KEYRING_PINNED" --arg kf "$KEYRING_FETCHED" \
     --arg asbom "$ATT_SBOM" --arg aprov "$ATT_PROV" --arg avex "$ATT_VEX" \
@@ -226,12 +252,14 @@ while read -r slug cve_file; do
     --argjson fc "$(fixable Critical)" --argjson fh "$(fixable High)" \
     --argjson pubkeys "$PUB_KEYS" \
     '{ track: $track, evaluated_at: $now,
-       image: { key:$key, variant:$var, enforcement:$enf,
-                destination_repo:$drepo, destination_digest:$ddig,
-                config_user:$cu, labels:$labels },
-       upstream: { trust_class:$tc, signature:$sig, verified_with:$vw,
-                   keyring_pinned_sha256:$kp, keyring_fetched_sha256:$kf,
-                   attestations: { sbom:$asbom, provenance:$aprov, vex:$avex } },
+       image: ({ key:$key, variant:$var, enforcement:$enf,
+                 destination_repo:$drepo, destination_digest:$ddig,
+                 config_user:$cu, labels:$labels }
+               + (if $ikr != "" then {keyring:$ikr} else {} end)),
+       upstream: ({ trust_class:$tc, signature:$sig, verified_with:$vw,
+                    keyring_pinned_sha256:$kp, keyring_fetched_sha256:$kf }
+                  | with_entries(select(.value != ""))
+                  | . + { attestations: { sbom:$asbom, provenance:$aprov, vex:$avex } }),
        mirror: $mirror, build: $build,
        scan_results: { critical_count:$c, high_count:$h, medium_count:$m, low_count:$l,
                        fixable_critical_count:$fc, fixable_high_count:$fh,
@@ -244,7 +272,10 @@ while read -r slug cve_file; do
   || fail "policy did not evaluate for ${slug} (a null/false result is a hard failure, never a pass)"
 
   ALLOW=$(jq -r '.allow' "/tmp/decision-${slug}.json")
-  [[ "$ALLOW" == "true" ]] || LEG_VERDICT=FAIL
+  [[ "$ALLOW" == "true" ]] || ANY_DENY=1
+  NS=$(jq -r '.namespace // "quarantine"' "/tmp/decision-${slug}.json")
+  [[ "$NS" == "trusted" ]] || ANY_QUARANTINE=1
+  DECISIONS=$((DECISIONS + 1))
 
   PER_PLATFORM=$(jq -c --arg s "$slug" --slurpfile d "/tmp/decision-${slug}.json" \
     '. + {($s): {allow:$d[0].allow, namespace:$d[0].namespace, counts:$d[0].counts,
@@ -259,7 +290,12 @@ while read -r slug cve_file; do
     "$(jq -r '.counts.recorded' "/tmp/decision-${slug}.json")"
 done < <(jq -r '.[] | "\(.slug) \(.cve)"' <<<"$PLATFORMS")
 
-record cve_policy "$LEG_VERDICT" "evaluated per platform against data.tsc.pdp.decision"
+[[ "$DECISIONS" -eq "$(jq 'length' <<<"$PLATFORMS")" ]] \
+  || fail "evaluated ${DECISIONS} decision(s) for $(jq 'length' <<<"$PLATFORMS") platform(s)"
+LEG_VERDICT=FAIL; LEG_NAMESPACE=quarantine
+[[ "$ANY_DENY" -eq 0 ]] && LEG_VERDICT=PASS
+[[ "$ANY_DENY" -eq 0 && "$ANY_QUARANTINE" -eq 0 ]] && LEG_NAMESPACE=trusted
+record cve_policy "$LEG_VERDICT" "evaluated ${DECISIONS} platform(s) against data.tsc.pdp.decision; namespace ${LEG_NAMESPACE}"
 
 # ===========================================================================
 # 7. The signed verdict.
@@ -267,7 +303,7 @@ record cve_policy "$LEG_VERDICT" "evaluated per platform against data.tsc.pdp.de
 jq -n \
   --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg kind "$KIND" \
   --arg repo "$DEST_REPO" --arg tag "$DEST_TAG" --arg dig "$LIVE_DIGEST" \
-  --arg verdict "$LEG_VERDICT" --arg tc "$REPO_TRUST" --arg enf "$ENFORCEMENT" \
+  --arg verdict "$LEG_VERDICT" --arg ns "$LEG_NAMESPACE" --arg tc "$REPO_TRUST" --arg enf "$ENFORCEMENT" \
   --arg now "$EVALUATED_AT" --arg head "$HEAD_SHA" --arg pr "${PR_NUM:-}" \
   --arg brun "${BUILD_RUN_ID:-}" --arg rrun "${REVIEW_RUN_ID:-}" \
   --argjson platforms "$PLATFORMS" --argjson checks "$CHECKS" \
@@ -280,7 +316,7 @@ jq -n \
      checks: $checks,
      cve_policy: { result:$verdict, policy:"data.tsc.pdp.decision",
                    per_platform:$perplat, exceptions_applied:$waived },
-     verdict: $verdict }' > review-verdict.json
+     verdict: $verdict, namespace: $ns }' > review-verdict.json
 
 cosign sign-blob --yes --tlog-upload=false --key env://COSIGN_PRIVATE_KEY \
   --output-signature review-verdict.json.sig review-verdict.json >/dev/null
@@ -291,5 +327,5 @@ cosign attest --yes --tlog-upload=false --key env://COSIGN_PRIVATE_KEY \
   --type https://infrashift.io/attestation/review/v1 \
   --predicate review-verdict.json "${DEST_REPO}@${LIVE_DIGEST}" >/dev/null
 
-echo "verdict: ${LEG_VERDICT} for ${LEG}"
-[[ "$LEG_VERDICT" == "PASS" ]] || echo "::warning::${LEG} FAILED review; it will be promoted to quarantine, not trusted"
+echo "verdict: ${LEG_VERDICT} namespace: ${LEG_NAMESPACE} for ${LEG}"
+[[ "$LEG_NAMESPACE" == "trusted" ]] || echo "::warning::${LEG} will be promoted to quarantine, not trusted (verdict ${LEG_VERDICT})"

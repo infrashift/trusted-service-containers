@@ -20,6 +20,13 @@ cosign download signature <image>:<tag>
 `Cert: false, Chain: false` with no published public key means `none` — record
 *that we checked*, not that we skipped.
 
+Also look for a Notary Project signature: `cosign tree <image>@<digest>` lists
+`application/vnd.cncf.notary.signature` referrers, and `notation inspect`
+shows the certificate chain. If the root is a vendor CA you can fetch from the
+vendor's own PKI endpoint, the class is `notation`: vendor the root certificate under
+`.github/pdp/keyring/`, set `keyring`, and pin `notation.trustedIdentity` to
+the leaf subject. See `upstream-trust.md`.
+
 ## 3. Write an anchored track
 
 `^3\.90\.[0-9]+-ubi$`, not `3\.90\.`. Unanchored also matches `13.90.7`. The
@@ -27,6 +34,17 @@ repo gate rejects unanchored tracks and tracks that do not contain their own pin
 
 For a rolling tag the track is the literal tag (`^3-debian13$`) — the vendor
 moves the digest behind it, which is the whole signal.
+
+Check how `sort -V` orders the vendor's tags before writing a multi-tag track.
+`scripts/drift-upstream.sh` proposes the highest-sorting match, and a hotfix
+suffix sorts *below* its base: `2025-CU8-GDR1-rhel-10` comes before
+`2025-CU8-rhel-10`, so a CU track would never propose a GDR security release.
+When the vendor repoints a rolling tag on every fix (mssql `2025-latest`), pin
+that and let only the digest move.
+
+A bare single-platform manifest with no index (mssql) is supported: declare
+exactly the one platform, and `scripts/manifest-platforms.sh` reads it from the
+config blob instead of the index.
 
 ## 4. Pin by digest, and by commit for build entries
 

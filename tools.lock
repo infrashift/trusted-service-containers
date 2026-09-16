@@ -14,6 +14,28 @@
 # together, never one at a time. Revisit after the GHCR referrers spike.
 
 COSIGN_VERSION=v2.6.1
+# The sha256 of each release binary. install-tools.sh installs cosign itself --
+# there is no sigstore/cosign-installer step any more -- and refuses anything
+# that does not match. cosign is the tool that touches the signing key, so its
+# identity is a reviewed repo fact, not whatever the release endpoint serves.
+#
+# These were taken from cosign's own cosign_checksums.txt after verifying that
+# file's keyless signature:
+#
+#   cosign verify-blob --certificate cosign_checksums.txt-keyless.pem \
+#     --signature cosign_checksums.txt-keyless.sig \
+#     --certificate-identity keyless@projectsigstore.iam.gserviceaccount.com \
+#     --certificate-oidc-issuer https://accounts.google.com \
+#     cosign_checksums.txt
+#   Verified OK
+#
+# Note the identity: cosign releases are signed by sigstore's release SERVICE
+# ACCOUNT via Google, not by a GitHub Actions workflow identity. Verifying
+# against .github/workflows/release.yml@refs/tags/... fails with "none of the
+# expected identities matched". Re-run the command above when bumping, and
+# change all three values together.
+COSIGN_SHA256_AMD64=064954c5d8c7e3b28188eee5b1727b31c411550bc5fefd41aa672d3c761d103a
+COSIGN_SHA256_ARM64=56a16480bdd56ec789abaa65924402f6b92c0041f06885995853c05567b76f34
 REGCTL_VERSION=v0.11.5
 SYFT_VERSION=v1.51.0
 GRYPE_VERSION=v0.117.0

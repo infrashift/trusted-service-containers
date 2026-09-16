@@ -103,6 +103,33 @@ exceptions:
       2026-08-24. DHI publishes OpenVEX, so consuming it may retire part of
       this set on evidence rather than by waiver.
 
+  - id: EXC-2026-0008
+    image: postgres
+    variant: "*"
+    package: libcurl4t64
+    cves:
+      - CVE-2026-18924
+      - CVE-2026-19931
+    issued:  "2026-09-15T00:00:00Z"
+    expires: "2026-12-14T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/6"
+    justification: >-
+      Two Critical libcurl4t64 CVEs in the Debian base layer of a Docker
+      Hardened Image we mirror by digest and never rebuild. Both are reported
+      fix_state wont-fix, so no bump on the declared track clears them:
+      17-debian and 17-debian-dev still resolve to the digests we pin, and a
+      fix requires Docker to republish on the same tag. Scoped to the package
+      rather than "*" so any future CVE in libcurl is re-triaged rather than
+      inheriting this decision. Present in all four postgres variants, so the
+      16 pair carries it too; the 16 pair stays in quarantine on ~80 other
+      findings regardless. NOT a reachability argument: postgres does not
+      obviously invoke libcurl, but that has not been demonstrated here, and
+      this waiver should not be read as claiming it. It is an accepted risk on
+      an unfixable base-layer finding, dated, owned, and due for re-triage on
+      the next DHI digest move or by 2026-12-14, whichever comes first. DHI
+      publishes OpenVEX; consuming it may retire this on evidence instead.
+
   - id: EXC-2026-0003
     image: traefik
     variant: "dev"

@@ -151,10 +151,20 @@
           "tag": "16-debian-dev",
           "track": "^16-debian-dev$",
           "digest": "sha256:ec61df9ae2947ac2c807473f2c46dcf33015499f31199132a2c8f5f3409fe675"
+        },
+        "runtime17": {
+          "tag": "17-debian",
+          "track": "^17-debian$",
+          "digest": "sha256:e207534f8946a6f24231f7114505686b196c989701aeef66cbafb2b0969d29e8"
+        },
+        "dev17": {
+          "tag": "17-debian-dev",
+          "track": "^17-debian-dev$",
+          "digest": "sha256:afcafbca99f75ea91ee60c851ae527eea7a131a650ae5562300bc19d32a51a4d"
         }
       },
-      "updated": "2026-08-24",
-      "reason": "Initial pin, runtime + dev."
+      "updated": "2026-09-15",
+      "reason": "Initial pin, runtime + dev. PostgreSQL 17 added 2026-09-15 as a second pair of variants (runtime17/dev17) rather than a second image entry, so both majors are served from one trusted/postgres repository under their own upstream tags. It exists because the platform runs PostgreSQL 17 in two places -- GitLab's database and chit-server -- and this line published only 16, so neither could leave Docker Hub: a PG17 data directory cannot be read by PG16, which makes it a dump-and-restore migration rather than a swap. CONSUMER CAUTION, and it is not the major version: 17-debian is debian-13 while the images it would replace are bookworm (debian-12). A different glibc is a different collation, so text index ordering can change -- REINDEX stored data after the move, exactly as for an alpine-to-debian move. Exact tags rather than a regex range, for the reason the 16 pair has them: only the digest moves, and drift-upstream proposes it."
     },
     "nexus3": {
       "kind": "mirror",

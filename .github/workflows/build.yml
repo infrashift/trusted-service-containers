@@ -134,7 +134,7 @@ jobs:
               (.service     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.variant     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.leg         | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,127}$")) and
-              (.trust_class | IN("dhi","none","internal")) and
+              (.trust_class | IN("dhi","none","internal","notation")) and
               (.leg == (.service + "-" + .variant)) and
               (if .kind == "build"
                then ((keys_unsorted|sort) == ["arch","kind","leg","service","trust_class","variant"]
@@ -199,7 +199,7 @@ jobs:
           cosign-release: v2.6.1   # keep in lockstep with tools.lock
 
       - name: Install pinned tools
-        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl syft grype opa
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl syft grype opa notation
 
       # A DHI leg cannot do anything without a credential, so say that here
       # rather than let it surface as an `unauthorized` from a registry three

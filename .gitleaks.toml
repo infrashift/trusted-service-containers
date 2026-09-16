@@ -66,7 +66,7 @@ paths = [
   # Public halves of the signing keypairs. Not secrets -- downstream consumers
   # need them to verify, and they say PUBLIC KEY, not PRIVATE KEY.
   '''\.github/pdp/public-keys/.*\.pub$''',
-  '''\.github/pdp/keyring/.*\.pub$''',
+  '''\.github/pdp/keyring/.*\.(pub|crt)$''',
   '''^docs/(dist|node_modules|\.astro)/''',
   '''^schemas/.*\.json$''',
   '''^\.github/pdp/policies_test\.rego$''',

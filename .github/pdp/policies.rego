@@ -93,7 +93,7 @@ missing := "<missing>"
 
 tracks := {"mirror", "build"}
 
-trust_classes := {"dhi", "none", "internal"}
+trust_classes := {"dhi", "none", "internal", "notation"}
 
 # Three distinct states. Never collapse to a boolean.
 #   verified        verification ran and succeeded, against the correct key
@@ -108,7 +108,7 @@ attestation_states := {"present", "absent", "not-applicable"}
 
 enforcement_modes := {"enforce", "observe"}
 
-class_requires_signature := {"dhi": true, "internal": true, "none": false}
+class_requires_signature := {"dhi": true, "internal": true, "none": false, "notation": true}
 
 # The exact key material each class must have verified against. An image that
 # verified against the wrong key is not verified. `none` has no entry, so
@@ -118,7 +118,26 @@ class_keyring := {
 	"internal": ".github/pdp/public-keys/upstream/trusted-base-images-release.pub",
 }
 
-class_requires_attestations := {"dhi": true, "internal": true, "none": false}
+# `notation` is a signature FORMAT, not a vendor: each Notary-signed image
+# names its own vendored root in versions.json (`keyring`), which the review
+# actor re-reads from the CODEOWNERS-gated checkout and passes as
+# image.keyring. The path must live under the keyring directory as a .crt.
+# Absent gets a sentinel that can never equal a recorded verified_with.
+notation_keyring_pattern := `^\.github/pdp/keyring/[A-Za-z0-9._-]+\.crt$`
+
+expected_keyring := k if {
+	k := class_keyring[trust_class]
+}
+
+expected_keyring := k if {
+	trust_class == "notation"
+	k := object.get(input, ["image", "keyring"], "<keyring-absent>")
+}
+
+# `notation` (Notary Project, used by mssql) verifies the vendor's x509 signature
+# chain to a vendored root; Microsoft publishes no SBOM or provenance referrer,
+# so attestations are not required of it.
+class_requires_attestations := {"dhi": true, "internal": true, "none": false, "notation": false}
 
 required_attestation_kinds := {"sbom", "provenance"}
 
@@ -464,7 +483,7 @@ violations contains v if {
 violations contains v if {
 	signature_state == "not-applicable"
 	class_requires_signature[trust_class] == true
-	v := {"code": "UPSTREAM_SIGNATURE_REQUIRED", "trust_class": trust_class, "expected_keyring": object.get(class_keyring, trust_class, missing), "message": sprintf("Trust class %q requires a verified signature against %v, but the reported state is not-applicable. Verification was skipped where it is mandatory. Denying.", [trust_class, object.get(class_keyring, trust_class, missing)])}
+	v := {"code": "UPSTREAM_SIGNATURE_REQUIRED", "trust_class": trust_class, "expected_keyring": expected_keyring, "message": sprintf("Trust class %q requires a verified signature against %v, but the reported state is not-applicable. Verification was skipped where it is mandatory. Denying.", [trust_class, expected_keyring])}
 }
 
 # Verified against the WRONG key is not verified. Without this rule, anyone who
@@ -473,7 +492,7 @@ violations contains v if {
 violations contains v if {
 	signature_state == "verified"
 	class_requires_signature[trust_class] == true
-	expected := class_keyring[trust_class]
+	expected := expected_keyring
 	verified_with != expected
 	v := {"code": "UPSTREAM_KEYRING_MISMATCH", "expected": expected, "actual": verified_with, "message": sprintf("Trust class %q must verify against %v but the recorded keyring was %q. Denying.", [trust_class, expected, verified_with])}
 }
@@ -505,6 +524,25 @@ violations contains v if {
 	pinned := object.get(input, ["upstream", "keyring_pinned_sha256"], "<pinned-absent>")
 	fetched != pinned
 	v := {"code": "DHI_KEYRING_DRIFT", "fetched": fetched, "pinned": pinned, "message": sprintf("Live DHI keyring digest %v does not match the committed copy %v. Upstream may have rotated its signing key. Review and update .github/pdp/keyring/dhi-latest.pub in a PR. Denying.", [fetched, pinned])}
+}
+
+# A notation image whose declared keyring is not a vendored .crt under the
+# keyring directory has nothing the repo gate protects; the leg-side check
+# closes the gap if the repo gate was somehow bypassed.
+violations contains v if {
+	trust_class == "notation"
+	not regex.match(notation_keyring_pattern, expected_keyring)
+	v := {"code": "NOTATION_KEYRING_PATH_INVALID", "keyring": expected_keyring, "message": sprintf("Trust class notation must verify against a vendored root under .github/pdp/keyring/ (*.crt); versions.json declares %q. Denying.", [expected_keyring])}
+}
+
+# Same model for the Notary Project root: the vendor serves the root CA over its
+# PKI endpoint, the workflow fetches it and compares against the committed root certificate.
+violations contains v if {
+	trust_class == "notation"
+	fetched := object.get(input, ["upstream", "keyring_fetched_sha256"], "<fetched-absent>")
+	pinned := object.get(input, ["upstream", "keyring_pinned_sha256"], "<pinned-absent>")
+	fetched != pinned
+	v := {"code": "NOTATION_ROOT_DRIFT", "fetched": fetched, "pinned": pinned, "message": sprintf("Live Notary root CA digest %v does not match the committed copy %v. The vendor may have rotated its root. Review and update the root certificate under .github/pdp/keyring/ in a PR. Denying.", [fetched, pinned])}
 }
 
 # ===========================================================================
@@ -995,6 +1033,29 @@ repo_violations contains v if {
 	some key, img in versions_images
 	not object.get(img, "upstreamTrust", missing) in trust_classes
 	v := {"code": "VERSIONS_TRUST_CLASS_INVALID", "image": key, "message": sprintf("images.%v.upstreamTrust is %q, not one of %v. Denying.", [key, object.get(img, "upstreamTrust", missing), trust_classes])}
+}
+
+repo_violations contains v if {
+	some key, img in versions_images
+	object.get(img, "upstreamTrust", missing) == "notation"
+	not regex.match(notation_keyring_pattern, object.get(img, "keyring", missing))
+	v := {"code": "VERSIONS_NOTATION_KEYRING_INVALID", "image": key, "message": sprintf("images.%v declares trust class notation but keyring is %q, not a vendored .crt under .github/pdp/keyring/. Denying.", [key, object.get(img, "keyring", missing)])}
+}
+
+# Prefix alone is not a pin: the Notary trust-policy spec matches x509.subject as
+# an attribute SUBSET with only C, ST and O mandatory, so an identity without a
+# CN admits every leaf the vendor's CA ever issues. Require the CN too.
+notation_identity_pinned(id) if {
+	startswith(id, "x509.subject: ")
+	regex.match(`(^|[ ,])CN=[^,]+`, id)
+	regex.match(`(^|[ ,])O=[^,]+`, id)
+}
+
+repo_violations contains v if {
+	some key, img in versions_images
+	object.get(img, "upstreamTrust", missing) == "notation"
+	not notation_identity_pinned(object.get(img, ["notation", "trustedIdentity"], missing))
+	v := {"code": "VERSIONS_NOTATION_IDENTITY_MISSING", "image": key, "message": sprintf("images.%v declares trust class notation without an x509.subject trusted identity carrying both CN and O. A root CA alone trusts every certificate it ever issued, and a CN-less subject matches every leaf. Denying.", [key])}
 }
 
 repo_violations contains v if {

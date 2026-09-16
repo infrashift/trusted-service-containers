@@ -10,6 +10,9 @@ Four logins, one credential path. `docker/login-action` writes
 | `docker.io` | sonatype/nexus3 and the build-track cross-check references |
 | `ghcr.io` | our own push target (`GITHUB_TOKEN`) |
 
+`mcr.microsoft.com` (mssql) is anonymous-pull with no per-IP rate limit we have
+hit, so it has no login step. Add one only if MCR starts refusing anonymous pulls.
+
 ## OIDC, not a stored token
 
 ```yaml

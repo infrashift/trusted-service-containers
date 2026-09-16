@@ -88,6 +88,22 @@ install_gitleaks() {
   gitleaks version
 }
 
+install_notation() {
+  local tmp
+  tmp=$(mktemp -d)
+  fetch -o "$tmp/notation.tgz" \
+    "https://github.com/notaryproject/notation/releases/download/${NOTATION_VERSION}/notation_${NOTATION_VERSION#v}_linux_${GOARCH}.tar.gz"
+  fetch -o "$tmp/checksums.txt" \
+    "https://github.com/notaryproject/notation/releases/download/${NOTATION_VERSION}/notation_${NOTATION_VERSION#v}_checksums.txt"
+  # Upstream publishes sha256 sums; a tarball that does not match is not installed.
+  (cd "$tmp" && grep " notation_${NOTATION_VERSION#v}_linux_${GOARCH}.tar.gz\$" checksums.txt \
+     | sed 's/  .*/  notation.tgz/' | sha256sum -c -)
+  tar -xzf "$tmp/notation.tgz" -C "$tmp" notation
+  install -m 0755 "$tmp/notation" "$BIN/notation"
+  rm -rf "$tmp"
+  "$BIN/notation" version
+}
+
 for tool in "$@"; do
   echo "::group::install $tool"
   "install_${tool}"

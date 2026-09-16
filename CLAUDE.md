@@ -11,7 +11,7 @@ make -f Ops.mk validate
 ```
 
 Schema, gitleaks config, single-policy check, workflow lint, Containerfile
-lint, shellcheck, and 74 policy tests. It is fast. There is no reason to skip it.
+lint, shellcheck, and 85 policy tests. It is fast. There is no reason to skip it.
 
 ## versions.json is the only place a digest lives
 

@@ -177,6 +177,32 @@
       "updated": "2026-08-18",
       "reason": "Tracks the 3.90 patch line only; 3.91.0-ubi and 3.91.1-ubi already exist upstream, so a naive newest-tag check would jump a minor on its first run. Trust class none: public Docker Hub image with unsigned BuildKit attestations only. Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml -- a ~700MB JVM image will very likely quarantine."
     },
+    "mssql": {
+      "kind": "mirror",
+      "upstreamTrust": "notation",
+      "upstreamRepo": "mcr.microsoft.com/mssql/rhel/server",
+      "keyring": ".github/pdp/keyring/microsoft-supply-chain-rsa-root-ca-2022.crt",
+      "requiredPredicates": [],
+      "notation": {
+        "trustedIdentity": "x509.subject: CN=Microsoft SCD Products RSA Signing,O=Microsoft Corporation,L=Redmond,ST=Washington,C=US",
+        "rootUrl": "https://www.microsoft.com/pkiops/certs/Microsoft%20Supply%20Chain%20RSA%20Root%20CA%202022.crt",
+        "note": "Root pinned by TOFU on 2026-09-11 from Microsoft's PKI endpoint; SHA-256 fingerprint 23:FF:E2:B8:BD:B9:A1:71:15:15:D4:CF:FD:A0:4B:C7:F7:93:D5:13:C7:6C:24:3F:10:20:50:7D:86:69:B7:DB, valid to 2047-02-17. The signing leaf (CN=Microsoft SCD Products RSA Signing, expires 2027-10-31) chains via CN=Microsoft SCD Products RSA CA. Identity is pinned to the leaf subject because the root alone would trust every Microsoft product signature. Verified locally with notation v1.3.2 at level strict on 2026-09-11; a wrong root, a wrong identity and an out-of-scope registry each failed as expected."
+      },
+      "enforcement": "observe",
+      "platforms": [
+        "linux/amd64"
+      ],
+      "variants": {
+        "runtime": {
+          "tag": "2025-latest",
+          "track": "^2025-latest$",
+          "digest": "sha256:54b58c3af8156b1b25049ac2c9c47ae18e422b537dbf251588b2d45278f1fd1a"
+        }
+      },
+      "updated": "2026-09-11",
+      "reason": "Initial pin, SQL Server 2025 on the RHEL 10 base (mcr.microsoft.com/mssql/rhel/server, not the Ubuntu mssql/server repo) to match the repo's UBI posture. Rolling tag: Microsoft repoints 2025-latest on every CU and GDR, and a CU regex track would be a trap because `sort -V` orders 2025-CU8-GDR1-rhel-10 BEFORE 2025-CU8-rhel-10, so drift-upstream.sh would never propose a GDR security release. Track is therefore the exact tag and only the digest moves; 2025-latest resolved to the same manifest as 2025-CU8-GDR1-rhel-10 (17.0.4085.5) on 2026-09-11. Trust class notation: the image carries a Notary Project signature as an OCI referrer, chained to Microsoft Supply Chain RSA Root CA 2022, which we vendor and verify against with the signing identity pinned. There is no cosign signature and no SBOM or provenance referrer, so no attestations are required of this class. Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml -- a ~700MB RHEL image will very likely quarantine.",
+      "note": "amd64 ONLY, and a BARE manifest: the tag resolves to a single application/vnd.docker.distribution.manifest.v2+json with no index. Microsoft supports x86-64 hosts only and states emulation is untested. scripts/manifest-platforms.sh derives the platform set from the config os/arch for this shape. Runtime config: user mssql, port 1433, entrypoint /opt/mssql/bin/launch_sqlservr.sh, no declared volumes (data lives under /var/opt/mssql; mount it). The container starts only with ACCEPT_EULA=Y and a password supplied via the MSSQL_SA_PASSWORD environment variable at run time; MSSQL_PID defaults to developer and selecting a production edition asserts that the consumer holds a licence. The SQL build number is not in the tag; read the com.microsoft.version label from the evidence. The notation signature is an OCI referrer in the image's own repository; the mirror copies it with --referrers, and the first run's upstream-referrers.json should list artifactType application/vnd.cncf.notary.signature."
+    },
     "kratos": {
       "kind": "build",
       "source": "ory",

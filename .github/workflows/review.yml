@@ -214,20 +214,23 @@ jobs:
               echo "OVERALL=error" > /tmp/overall
               exit 0
             fi
-            echo "| Leg | Kind | Trust | Verdict | Blocking | Waived | Recorded |"
-            echo "|---|---|---|---|---:|---:|---:|"
+            echo "| Leg | Kind | Trust | Verdict | Namespace | Blocking | Waived | Recorded |"
+            echo "|---|---|---|---|---|---:|---:|---:|"
           } > /tmp/report.md
 
           OVERALL=success
+          QUARANTINED=0
           for f in "${FILES[@]}"; do
             jq -r '
               . as $v
               | ($v.cve_policy.per_platform | to_entries) as $pp
-              | "| `\($v.subject.leg)` | \($v.subject.kind) | \($v.subject.trustClass) | **\($v.verdict)** | \([$pp[].value.counts.blocking] | add // 0) | \([$pp[].value.counts.waived] | add // 0) | \([$pp[].value.counts.recorded] | add // 0) |"
+              | "| `\($v.subject.leg)` | \($v.subject.kind) | \($v.subject.trustClass) | **\($v.verdict)** | `\($v.namespace // "quarantine")` | \([$pp[].value.counts.blocking] | add // 0) | \([$pp[].value.counts.waived] | add // 0) | \([$pp[].value.counts.recorded] | add // 0) |"
             ' "$f" >> /tmp/report.md
             [[ "$(jq -r '.verdict' "$f")" == "PASS" ]] || OVERALL=failure
+            [[ "$(jq -r '.namespace // "quarantine"' "$f")" == "trusted" ]] || QUARANTINED=$((QUARANTINED + 1))
           done
           echo "OVERALL=$OVERALL" > /tmp/overall
+          echo "QUARANTINED=$QUARANTINED" > /tmp/quarantined
 
           # Violations, per leg.
           {
@@ -286,7 +289,7 @@ jobs:
           fi
 
           cat /tmp/report.md >> "$GITHUB_STEP_SUMMARY"
-          { echo "overall=$OVERALL"; } >> "$GITHUB_OUTPUT"
+          { echo "overall=$OVERALL"; echo "quarantined=$(cut -d= -f2 /tmp/quarantined)"; } >> "$GITHUB_OUTPUT"
 
       - name: Comment on the PR
         env:
@@ -303,12 +306,17 @@ jobs:
           SHA: ${{ needs.gate-check.outputs.head_sha }}
           REVIEW_RESULT: ${{ needs.review.result }}
           OVERALL: ${{ steps.report.outputs.overall }}
+          QUARANTINED: ${{ steps.report.outputs.quarantined }}
         run: |
           set -euo pipefail
           if [[ "$REVIEW_RESULT" != "success" ]]; then
             STATE=error; DESC="Review job did not complete."
-          elif [[ "$OVERALL" == "success" ]]; then
+          elif [[ "$OVERALL" == "success" && "$QUARANTINED" == "0" ]]; then
             STATE=success; DESC="All legs passed the CVE and integrity policy."
+          elif [[ "$OVERALL" == "success" ]]; then
+            # `observe` legs: allowed, so the check is green, but routed to
+            # quarantine/. Say so where a reviewer actually looks.
+            STATE=success; DESC="All legs passed; ${QUARANTINED} observe leg(s) carry violations and route to quarantine/."
           else
             STATE=failure; DESC="One or more legs failed policy; they will be quarantined."
           fi

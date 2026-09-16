@@ -199,7 +199,7 @@ jobs:
           cosign-release: v2.6.1   # keep in lockstep with tools.lock
 
       - name: Install pinned tools
-        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl syft grype opa
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl syft grype opa notation
 
       # A DHI leg cannot do anything without a credential, so say that here
       # rather than let it surface as an `unauthorized` from a registry three

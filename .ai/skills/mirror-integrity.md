@@ -21,6 +21,11 @@ DHI signs the index. Splitting per-arch and reassembling produces a digest the
 vendor never signed, and orphans every referrer. `INDEX_PLATFORM_DRIFT` and
 `PLATFORM_SET_MISMATCH` catch a dropped architecture.
 
+A single-manifest upstream (mssql) has no index. The manifest digest is then
+the claim, `scripts/manifest-platforms.sh` derives the one platform from the
+config blob, and `PLATFORM_SET_MISMATCH` still compares it against
+`versions.json`. The helper exits non-zero rather than emit an empty set.
+
 ## Both referrer mechanisms, always
 
 Every `regctl image copy` passes `--referrers` **and** `--digest-tags`.

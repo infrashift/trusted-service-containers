@@ -7,21 +7,57 @@
 # job as the build signing key.
 set -euo pipefail
 
-# Every download goes through fetch(). Retrying only where a retry can help is
-# the point of the flag choice:
+# Every download goes through fetch(), which retries transient failures and
+# ONLY transient failures.
 #
-#   --retry 3 --retry-delay 2   timeouts, 5xx and 429 -- the release CDN or the
-#                               registry having a bad second
+# curl's own --retry covers what curl classes as transient: timeouts, 5xx, 429,
+# and -- with --retry-connrefused -- a refused connection.
+#
+#   --retry 3 --retry-delay 2   the release CDN or the registry having a bad second
 #   --retry-connrefused         a refused connection, which curl does not count
 #                               as transient on its own
 #
-# NOT --retry-all-errors: that would also retry a 404, and a 404 here means a
-# wrong pin in tools.lock rather than a flaky network. Three retries would turn
-# a clear "this version does not exist" into a slow one.
+# That set does NOT include a connection which is established and then dies. A
+# TLS handshake reset is exit 35, a mid-transfer recv failure is 56, an empty
+# reply is 52, and curl retries none of them. One of those took out a 24-leg
+# build on the FIRST download of one leg:
 #
-# --max-time bounds a SINGLE attempt, not the whole sequence.
+#   curl: (35) Recv failure: Connection reset by peer
+#   ##[error]Process completed with exit code 35.
+#
+# --retry-all-errors would cover them and is still the wrong flag: combined
+# with -f it also retries a 404, and a 404 here means a wrong pin in tools.lock
+# rather than a flaky network. Three retries would turn a clear "this version
+# does not exist" into a slow one.
+#
+# So the retry happens here, keyed on the curl exit code, and the list is an
+# ALLOW list. 22 -- the code -f returns for any HTTP >= 400 -- is not on it, and
+# neither is anything unrecognised: a code only earns a retry by being known
+# transient. A wrong pin still fails on the first attempt, loudly.
+#
+# --max-time bounds a SINGLE curl attempt, not the whole sequence.
 fetch() {
-  curl -sSfL --retry 3 --retry-delay 2 --retry-connrefused --max-time 120 "$@"
+  local attempt=1 rc delay
+  while :; do
+    rc=0
+    curl -sSfL --retry 3 --retry-delay 2 --retry-connrefused --max-time 120 "$@" || rc=$?
+    if [[ "$rc" -eq 0 ]]; then
+      return 0
+    fi
+    case "$rc" in
+      # 6 resolve  7 connect  28 timeout  35 TLS  52 empty reply  55 send  56 recv
+      6|7|28|35|52|55|56) : ;;
+      *) return "$rc" ;;
+    esac
+    if [[ "$attempt" -ge 3 ]]; then
+      echo "fetch: curl exit ${rc} after ${attempt} attempts; giving up" >&2
+      return "$rc"
+    fi
+    delay=$(( attempt * 5 ))
+    echo "fetch: curl exit ${rc} (transport), attempt ${attempt}/3; retrying in ${delay}s" >&2
+    sleep "$delay"
+    attempt=$(( attempt + 1 ))
+  done
 }
 
 # shellcheck disable=SC1091

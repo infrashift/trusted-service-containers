@@ -91,7 +91,7 @@ jobs:
               (.service     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.variant     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.leg         | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,127}$")) and
-              (.trust_class | IN("dhi","none","internal")) and
+              (.trust_class | IN("dhi","none","internal","notation")) and
               (.leg == (.service + "-" + .variant)) and
               (if .kind == "build"
                then ((keys_unsorted|sort) == ["arch","kind","leg","service","trust_class","variant"]

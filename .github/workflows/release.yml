@@ -78,6 +78,9 @@ jobs:
     name: Resolve Build & Review Runs
     needs: gate-check
     runs-on: ubuntu-latest
+    # Two bounded waits (below) run inside this job. The ceiling is a backstop
+    # against a wait that never settles, not an expected duration.
+    timeout-minutes: 90
     permissions:
       actions: read
     outputs:
@@ -91,24 +94,58 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ needs.gate-check.outputs.head_sha }}
+          # Wall-clock ceilings, not expected durations. A full matrix build has
+          # measured ~12 min; review is gated on Review-Actor's reviewers, so it
+          # is allowed longer. Exhausting either is a hard failure, never a pass.
+          BUILD_WAIT_SECONDS: '1800'
+          REVIEW_WAIT_SECONDS: '2700'
         run: |
           set -euo pipefail
 
-          RUNS=$(gh api "/repos/${REPO}/actions/workflows/build.yml/runs?head_sha=${HEAD_SHA}&per_page=50")
-          TOTAL=$(jq -r '.total_count' <<<"$RUNS")
+          # =================================================================
+          # 1. The build run.
+          #
+          # NOTHING ORDERS THE MERGE AGAINST THE BUILD. release.yml fires on
+          # the push to main; build.yml fires on the pull_request. Merging
+          # while the build is still running is ordinary, not exceptional.
+          #
+          # An in-flight run has conclusion `null`, which the success filter
+          # drops -- leaving a non-empty run list and no success, which the
+          # old code reported as "build run(s) ... but none succeeded" and
+          # failed the release. That reads as a broken build; it was a race.
+          # A run set can only be judged once it has SETTLED, so wait for
+          # that, then judge exactly as before.
+          # =================================================================
+          DEADLINE=$(( $(date +%s) + BUILD_WAIT_SECONDS ))
+          while :; do
+            RUNS=$(gh api "/repos/${REPO}/actions/workflows/build.yml/runs?head_sha=${HEAD_SHA}&per_page=100")
+            TOTAL=$(jq -r '.total_count' <<<"$RUNS")
 
-          if [[ "$TOTAL" -eq 0 ]]; then
-            # A legitimate no-op: the PR touched no image-affecting path, so
-            # build.yml never ran. Exit cleanly rather than failing the release.
-            echo "no build run for ${HEAD_SHA}; this PR changed no image-affecting paths"
-            echo "has_build=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+            if [[ "$TOTAL" -eq 0 ]]; then
+              # A legitimate no-op: the PR touched no image-affecting path, so
+              # build.yml never ran. Exit cleanly rather than failing the release.
+              echo "no build run for ${HEAD_SHA}; this PR changed no image-affecting paths"
+              echo "has_build=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            PENDING=$(jq -r '[.workflow_runs[] | select(.conclusion == null)] | length' <<<"$RUNS")
+            if [[ "$PENDING" -eq 0 ]]; then
+              break
+            fi
+            if [[ "$(date +%s)" -ge "$DEADLINE" ]]; then
+              echo "::error::${PENDING} build run(s) for ${HEAD_SHA} still in progress after ${BUILD_WAIT_SECONDS}s; refusing to release. Re-run this job once they have finished."
+              exit 1
+            fi
+            echo "waiting: ${PENDING} of ${TOTAL} build run(s) for ${HEAD_SHA} still in progress"
+            sleep 30
+          done
 
           BUILD_RUN=$(jq -r '[.workflow_runs[] | select(.conclusion == "success")] | sort_by(.run_number) | last | .id // empty' <<<"$RUNS")
           if [[ -z "$BUILD_RUN" ]]; then
-            # Runs exist but none succeeded. That is a real failure, not a no-op:
-            # promoting on the back of a failed build would be silent.
+            # Runs exist, all have settled, and none succeeded. That is a real
+            # failure, not a no-op: promoting on the back of a failed build
+            # would be silent.
             echo "::error::${TOTAL} build run(s) for ${HEAD_SHA} but none succeeded; refusing to release"
             exit 1
           fi
@@ -116,21 +153,61 @@ jobs:
           echo "has_build=true" >> "$GITHUB_OUTPUT"
           echo "build run: $BUILD_RUN"
 
+          # The instant the build settled. Nothing that started before it can
+          # have reviewed it, which is what bounds the search below.
+          BUILD_ENDED=$(jq -r --arg id "$BUILD_RUN" \
+            '.workflow_runs[] | select((.id|tostring) == $id) | .updated_at' <<<"$RUNS")
+          [[ -n "$BUILD_ENDED" ]] || { echo "::error::could not read the completion time of build run ${BUILD_RUN}"; exit 1; }
+          # 120s of slack for clock skew between the two runs' timestamps.
+          CUTOFF=$(( $(date -u -d "$BUILD_ENDED" +%s) - 120 ))
+
+          # =================================================================
+          # 2. The review run.
+          #
           # Pin the exact review run that reviewed THIS build, by matching the
           # buildRunId recorded inside a review verdict. Matching on head_sha
           # alone would accept a review of a different build of the same commit.
+          #
+          # Two reasons this has to wait and to be bounded by TIME, not COUNT:
+          #
+          #   - review.yml is triggered by build.yml COMPLETING, so on a fast
+          #     merge the review run does not exist yet when this job starts.
+          #   - the old scan looked at the 20 most recent review runs. That
+          #     window silently expires: once 20 newer review runs exist, a
+          #     real successful review falls out of it and the release fails
+          #     with "no successful review run found" -- indistinguishable
+          #     from never having been reviewed. Bounding by the build's own
+          #     completion time cannot expire, because only a review run that
+          #     started after the build finished could have reviewed it.
+          #
+          # Still fail-closed: the loop only ever sets REVIEW_RUN from a run
+          # whose downloaded verdict names this build run.
+          # =================================================================
           REVIEW_RUN=""
-          for rid in $(gh api "/repos/${REPO}/actions/workflows/review.yml/runs?per_page=20" \
-                        --jq '[.workflow_runs[] | select(.conclusion == "success")] | sort_by(.run_number) | reverse | .[].id'); do
-            tmp=$(mktemp -d)
-            if gh run download "$rid" --repo "$REPO" --pattern 'review-*' --dir "$tmp" >/dev/null 2>&1; then
-              if grep -Rqs "\"buildRunId\": *\"${BUILD_RUN}\"" "$tmp"; then
-                REVIEW_RUN="$rid"; rm -rf "$tmp"; break
+          DEADLINE=$(( $(date +%s) + REVIEW_WAIT_SECONDS ))
+          while :; do
+            CANDIDATES=$(gh api "/repos/${REPO}/actions/workflows/review.yml/runs?per_page=100" \
+                           --jq "[.workflow_runs[] | select((.created_at | fromdateiso8601) >= ${CUTOFF})]")
+            for rid in $(jq -r '[.[] | select(.conclusion == "success")] | sort_by(.run_number) | reverse | .[].id' <<<"$CANDIDATES"); do
+              tmp=$(mktemp -d)
+              if gh run download "$rid" --repo "$REPO" --pattern 'review-*' --dir "$tmp" >/dev/null 2>&1; then
+                if grep -Rqs "\"buildRunId\": *\"${BUILD_RUN}\"" "$tmp"; then
+                  REVIEW_RUN="$rid"; rm -rf "$tmp"; break
+                fi
               fi
+              rm -rf "$tmp"
+            done
+            if [[ -n "$REVIEW_RUN" ]]; then
+              break
             fi
-            rm -rf "$tmp"
+            if [[ "$(date +%s)" -ge "$DEADLINE" ]]; then
+              echo "::error::no successful review run found for build run ${BUILD_RUN} after ${REVIEW_WAIT_SECONDS}s. If the review has since passed, re-run this job; if it failed, fix it and re-run the review."
+              exit 1
+            fi
+            PENDING=$(jq -r '[.[] | select(.conclusion == null)] | length' <<<"$CANDIDATES")
+            echo "waiting: no review verdict names build run ${BUILD_RUN} yet (${PENDING} review run(s) in progress)"
+            sleep 30
           done
-          [[ -n "$REVIEW_RUN" ]] || { echo "::error::no successful review run found for build run ${BUILD_RUN}"; exit 1; }
           echo "review_run_id=$REVIEW_RUN" >> "$GITHUB_OUTPUT"
           echo "review run: $REVIEW_RUN"
 

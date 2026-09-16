@@ -147,5 +147,45 @@ else
   ok "no cosign attest --replace"
 fi
 
+# --- 10. cosign comes from install-tools.sh, and only from there ----------
+# sigstore/cosign-installer restated COSIGN_VERSION as its `cosign-release:`
+# input in FIVE steps, kept in step with tools.lock by a comment on one of them
+# and by nothing mechanical -- the same shape as the paths/BUILD_PATHS drift
+# above. It also fetched a bootstrap binary through its own curl, outside
+# install-tools.sh's retry, which cost a 24-leg build one leg twice in a row.
+# Both problems are structural, so forbid the action rather than re-sync it.
+# This file names it in order to forbid it, so exclude this file.
+HITS=$(grep -rn 'cosign-installer\|cosign-release:' scripts/ "$WF" \
+        | grep -v '^scripts/lint-workflows\.sh:' \
+        | grep -vE ':[[:space:]]*#' || true)
+if [[ -n "$HITS" ]]; then
+  err "cosign must be installed via scripts/install-tools.sh (which pins its sha256), not by the installer action:"
+  echo "$HITS" >&2
+else
+  ok "cosign installed only via install-tools.sh"
+fi
+
+# Every job that signs must actually install cosign. Catching this here beats
+# discovering it as `cosign: command not found` inside the signing step.
+python3 - <<'PY2' || fail=1
+import glob, sys, yaml
+bad = False
+for f in sorted(glob.glob('.github/workflows/*.yml')):
+    d = yaml.safe_load(open(f)) or {}
+    for name, job in (d.get('jobs') or {}).items():
+        dumped = yaml.dump(job)
+        if 'COSIGN_PRIVATE_KEY' not in dumped:
+            continue
+        installs = [t for s in (job.get('steps') or [])
+                      for t in [s.get('run') or '']
+                      if 'install-tools.sh' in t and ' cosign' in t]
+        if not installs:
+            print(f"error: {f}:{name} signs with COSIGN_PRIVATE_KEY but no step installs cosign via install-tools.sh", file=sys.stderr)
+            bad = True
+if not bad:
+    print("  %-52s %s" % ("every signing job installs cosign", "OK"))
+sys.exit(1 if bad else 0)
+PY2
+
 [[ "$fail" -eq 0 ]] && echo "OK: workflow lint passed"
 exit "$fail"

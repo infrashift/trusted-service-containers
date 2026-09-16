@@ -281,12 +281,8 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-        with:
-          cosign-release: v2.6.1
-
       - name: Install pinned tools
-        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh cosign regctl
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -337,12 +333,8 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-        with:
-          cosign-release: v2.6.1
-
       - name: Install pinned tools
-        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh regctl
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh cosign regctl
 
       - name: Install buildah
         run: sudo apt-get update -qq && sudo apt-get install -y -qq buildah

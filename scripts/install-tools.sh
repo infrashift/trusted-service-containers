@@ -124,6 +124,53 @@ install_gitleaks() {
   gitleaks version
 }
 
+# cosign holds the signing key, so it is the one binary whose identity must be a
+# REVIEWED REPO FACT rather than whatever a release endpoint serves today.
+# tools.lock carries the version AND the sha256 of each release binary, and a
+# mismatch installs nothing.
+#
+# This replaces the sigstore/cosign-installer action, for two reasons:
+#
+#   - That action fetches a bootstrap cosign through its own curl, outside
+#     fetch(), so the retry above could not reach it. A TLS reset there
+#     (curl 35) cost a 24-leg build one leg, in two consecutive runs.
+#   - Its `cosign-release:` input restated COSIGN_VERSION in FIVE workflow
+#     steps, held in step by a comment on one of them and by nothing else.
+#     One install path deletes that drift class; lint-workflows.sh now refuses
+#     to let it come back.
+#
+# The trade is explicit rather than hidden. cosign-installer verified its
+# download against sigstore; this verifies it against a digest committed here
+# and gated by CODEOWNERS. A signature proves the project signed something; the
+# pin proves these are byte-for-byte the bytes that were reviewed, and they
+# cannot change without a reviewed commit. The pinned values in tools.lock were
+# produced by verifying cosign's own signed cosign_checksums.txt with
+# `cosign verify-blob` against the release workflow identity, then
+# independently hashing the downloaded binaries.
+install_cosign() {
+  local want tmp
+  case "$GOARCH" in
+    amd64) want="${COSIGN_SHA256_AMD64:-}" ;;
+    arm64) want="${COSIGN_SHA256_ARM64:-}" ;;
+    *)     want="" ;;
+  esac
+  if [[ -z "$want" ]]; then
+    echo "::error::no cosign sha256 pinned in tools.lock for ${GOARCH}" >&2
+    return 1
+  fi
+  tmp=$(mktemp -d)
+  fetch -o "$tmp/cosign" \
+    "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-${GOARCH}"
+  if ! echo "${want}  ${tmp}/cosign" | sha256sum -c - >/dev/null 2>&1; then
+    echo "::error::cosign-linux-${GOARCH} sha256 $(sha256sum "$tmp/cosign" | cut -d' ' -f1) does not match the ${want} pinned in tools.lock; refusing to install" >&2
+    rm -rf "$tmp"
+    return 1
+  fi
+  install -m 0755 "$tmp/cosign" "$BIN/cosign"
+  rm -rf "$tmp"
+  "$BIN/cosign" version
+}
+
 install_notation() {
   local tmp
   tmp=$(mktemp -d)

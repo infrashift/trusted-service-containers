@@ -854,6 +854,29 @@ warnings contains w if {
 	w := {"code": "UPSTREAM_VEX_ABSENT", "message": "No upstream VEX attestation found. Scan results are un-suppressed and may overcount."}
 }
 
+# A variant is a DEV variant when its key is `dev` or `dev<major>`.
+#
+# This was written as the literal `variant != "dev"`, which was correct while
+# the only variants were `runtime` and `dev`. The postgres 17 pair added
+# `runtime17` and `dev17`, and the literal silently stopped covering the dev
+# one: postgres-dev was exempt from RUNTIME_RUNS_AS_ROOT and postgres-dev17 --
+# the SAME upstream dev image, one major apart -- was not.
+#
+# It is only a warning today, so the damage is a spurious line in a report. It
+# stops being cosmetic the moment anyone takes up the invitation four lines
+# down and moves this block to `violations contains`: that denies the 17 dev
+# image and passes the 16 one, for no reason a reader could find.
+#
+# `default false` matters. A bare `dev_variant if ...` is UNDEFINED rather than
+# false when the body fails, which would make the `decision` object that reads
+# it undefined too, collapsing it to the terse default and losing every
+# violation detail. With the default, `not dev_variant` is exactly "this is a
+# runtime variant", and an unrecognised or missing variant lands there -- the
+# conservative side, where the rule fires.
+default dev_variant := false
+
+dev_variant if regex.match(`^dev[0-9]*$`, variant)
+
 # Runtime variants should not run as root. Dev variants legitimately ship a
 # shell, a package manager and root -- that is what they are for -- so they are
 # exempt from THIS rule and from nothing else. Note this is a surface rule, not
@@ -863,7 +886,7 @@ warnings contains w if {
 # is unverified at design time. To promote it, move this block from
 # `warnings contains` to `violations contains` verbatim. That is the whole change.
 warnings contains w if {
-	variant != "dev"
+	not dev_variant
 	u := object.get(input, ["image", "config_user"], missing)
 	u in {"", "0", "root", missing}
 	w := {"code": "RUNTIME_RUNS_AS_ROOT", "value": u, "message": sprintf("Runtime variant %v reports config user %q. Runtime variants are expected to be non-root.", [image_id, u])}
@@ -909,7 +932,7 @@ decision := {
 	"image": image_id,
 	"image_key": image_key,
 	"variant": variant,
-	"dev_variant": variant == "dev",
+	"dev_variant": dev_variant,
 	"track": track,
 	"trust_class": trust_class,
 	"signature_state": signature_state,
@@ -1072,6 +1095,24 @@ repo_violations contains v if {
 	img.kind == "mirror"
 	not is_object(object.get(img, "variants", null))
 	v := {"code": "VERSIONS_VARIANTS_MISSING", "image": key, "message": sprintf("mirror entry images.%v has no `variants` object. Denying.", [key])}
+}
+
+# The variant naming convention, made mechanical.
+#
+# `dev_variant` decides which variants are exempt from RUNTIME_RUNS_AS_ROOT by
+# matching the shape `dev<major>`. That is only safe while no variant can be
+# named in a shape NEITHER side recognises. `devel`, or `runtime-alpine`, would
+# read as a runtime variant to the policy and as something else to a human --
+# which is precisely the gap `dev17` fell into when the rule tested the literal
+# string "dev".
+#
+# Widening the convention is a policy decision, not a side effect of adding an
+# image: change this regex and `dev_variant` together, in their own PR.
+repo_violations contains v if {
+	some key, img in versions_images
+	some vname, _ in object.get(img, "variants", {})
+	not regex.match(`^(runtime|dev)[0-9]*$`, vname)
+	v := {"code": "VERSIONS_VARIANT_NAME_INVALID", "image": key, "variant": vname, "message": sprintf("images.%v.variants.%v is not of the form runtime<major> or dev<major>. The policy decides dev-variant exemptions from that shape, so a name outside it is silently treated as a runtime variant. Denying.", [key, vname])}
 }
 
 repo_violations contains v if {

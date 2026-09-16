@@ -878,3 +878,97 @@ test_duplicate_exception_id_denies if {
 	d := pdp.repo_decision with input as base_repo with data.exceptions as [good_exc, good_exc]
 	"EXCEPTION_DUPLICATE_ID" in repo_codes(d)
 }
+
+# ===========================================================================
+# Dev variants are recognised by SHAPE, not by the literal string "dev".
+#
+# `variant != "dev"` was correct while the only variants were runtime and dev.
+# The postgres 17 pair added dev17, and the literal stopped covering it: the
+# same upstream dev image warned on 17 and not on 16. These tests fail against
+# that version of the rule.
+# ===========================================================================
+warn_codes(dec) := {w.code | some w in dec.warnings}
+
+# The baseline case that always worked, kept so a fix cannot regress it.
+test_dev_variant_root_is_not_warned if {
+	i := patch(base_mirror, [
+		{"op": "replace", "path": "/image/variant", "value": "dev"},
+		{"op": "replace", "path": "/image/config_user", "value": "root"},
+	])
+	d := pdp.decision with input as i
+	not "RUNTIME_RUNS_AS_ROOT" in warn_codes(d)
+	d.dev_variant == true
+}
+
+# The bug: dev17 is a dev variant and must be exempt exactly as dev is.
+test_dev_major_suffixed_variant_root_is_not_warned if {
+	i := patch(base_mirror, [
+		{"op": "replace", "path": "/image/variant", "value": "dev17"},
+		{"op": "replace", "path": "/image/config_user", "value": "root"},
+	])
+	d := pdp.decision with input as i
+	not "RUNTIME_RUNS_AS_ROOT" in warn_codes(d)
+	d.dev_variant == true
+}
+
+# The exemption must not leak the other way: a runtime variant still warns,
+# with or without a major suffix.
+test_runtime_variant_root_is_warned if {
+	i := patch(base_mirror, [{"op": "replace", "path": "/image/config_user", "value": "root"}])
+	d := pdp.decision with input as i
+	"RUNTIME_RUNS_AS_ROOT" in warn_codes(d)
+	d.dev_variant == false
+}
+
+test_runtime_major_suffixed_variant_root_is_warned if {
+	i := patch(base_mirror, [
+		{"op": "replace", "path": "/image/variant", "value": "runtime17"},
+		{"op": "replace", "path": "/image/config_user", "value": "root"},
+	])
+	d := pdp.decision with input as i
+	"RUNTIME_RUNS_AS_ROOT" in warn_codes(d)
+	d.dev_variant == false
+}
+
+# "devel" is not "dev<major>". It must NOT pick up the exemption by prefix --
+# an unrecognised name lands on the conservative side and still warns.
+test_devlike_variant_does_not_inherit_the_exemption if {
+	i := patch(base_mirror, [
+		{"op": "replace", "path": "/image/variant", "value": "devel"},
+		{"op": "replace", "path": "/image/config_user", "value": "root"},
+	])
+	d := pdp.decision with input as i
+	"RUNTIME_RUNS_AS_ROOT" in warn_codes(d)
+	d.dev_variant == false
+}
+
+# A missing variant must not become a dev variant by accident, and must not
+# make the decision object undefined -- that is what `default false` buys.
+test_absent_variant_is_not_a_dev_variant if {
+	i := patch(base_mirror, [
+		{"op": "remove", "path": "/image/variant"},
+		{"op": "replace", "path": "/image/config_user", "value": "root"},
+	])
+	d := pdp.decision with input as i
+	d.dev_variant == false
+	"RUNTIME_RUNS_AS_ROOT" in warn_codes(d)
+}
+
+# --- The convention itself, enforced at the repo gate ----------------------
+
+test_variant_names_in_versions_are_conventional if {
+	d := pdp.repo_decision with input as base_repo with data.exceptions as []
+	not "VERSIONS_VARIANT_NAME_INVALID" in repo_codes(d)
+}
+
+test_unconventional_variant_name_denies if {
+	i := patch(base_repo, [{"op": "add", "path": "/versions/images/nexus3/variants/devel", "value": {"tag": "3.90.5-ubi", "track": "^3\\.90\\.[0-9]+-ubi$", "digest": D}}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_VARIANT_NAME_INVALID" in repo_codes(d)
+}
+
+test_dev_major_variant_name_is_accepted if {
+	i := patch(base_repo, [{"op": "add", "path": "/versions/images/nexus3/variants/dev17", "value": {"tag": "3.90.5-ubi", "track": "^3\\.90\\.[0-9]+-ubi$", "digest": D}}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	not "VERSIONS_VARIANT_NAME_INVALID" in repo_codes(d)
+}

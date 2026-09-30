@@ -151,13 +151,19 @@ while read -r key; do
     BUILD_ROWS+="| \`${key}\` | \`${ref}\` → \`${CAND}\` | \`${SHA:0:12}\` |"$'\n'
 
     # A pinned shortCommit is git's DYNAMIC abbreviation for the full repo, so
-    # it cannot be sliced from the full SHA. A blobless bare clone gives real
-    # history cheaply and lets git compute it. Getting the length wrong changes
+    # it cannot be sliced from the full SHA. Getting the length wrong changes
     # an embedded string and therefore the binary -- see
     # docs/build-track/dual-provenance.md.
+    #
+    # A FULL clone, never --filter=blob:none. git sizes an abbreviation from the
+    # number of objects it can see, and a blobless clone sees no blobs: for
+    # nats v2.14.7 it gave 8d8b69a8 where the release binaries embed
+    # 8d8b69a8c (goreleaser runs in a full checkout). A full bare clone gives
+    # 9, as it does for v2.14.5's d3bc04533. scripts/test-drift-upstream.sh
+    # holds a repository where the two differ.
     if jq -e --arg k "$key" '.sources[$k].shortCommit' "$VERSIONS" >/dev/null 2>&1; then
       TMPC=$(mktemp -d)
-      if git clone --quiet --filter=blob:none --bare "$url" "$TMPC/r" 2>/dev/null; then
+      if git clone --quiet --bare "$url" "$TMPC/r" 2>/dev/null; then
         SHORT=$(git -C "$TMPC/r" rev-parse --short "$SHA" 2>/dev/null || echo "")
         if [[ -n "$SHORT" && "$SHA" == "$SHORT"* ]]; then
           jq --arg k "$key" --arg s "$SHORT" '.sources[$k].shortCommit = $s' "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
@@ -166,7 +172,7 @@ while read -r key; do
           ALARMS+="- source \`${key}\`: could not compute shortCommit; determine it manually before merging (see docs/build-track/dual-provenance.md)."$'\n'
         fi
       else
-        ALARMS+="- source \`${key}\`: blobless clone failed; shortCommit not updated."$'\n'
+        ALARMS+="- source \`${key}\`: clone failed; shortCommit not updated."$'\n'
       fi
       rm -rf "$TMPC"
     fi

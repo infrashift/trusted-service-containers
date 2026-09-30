@@ -54,7 +54,10 @@ actually running the comparison:
    repository. We clone `--depth 1`, where git abbreviates to the 7-char
    minimum, so the correct value cannot be derived at build time — it is pinned
    as `sources.<key>.shortCommit` in `versions.json`, and `Ops.mk` asserts it is
-   a prefix of the full commit.
+   a prefix of the full commit. `drift-upstream.sh` recomputes it on a bump in a
+   **full** bare clone: a blobless clone (`--filter=blob:none`) sees fewer
+   objects and abbreviates shorter -- 8 characters for nats v2.14.7, whose
+   release binaries embed 9.
 2. **`fetch-source.sh` wrote its metadata inside the checkout**, leaving
    untracked files that made Go stamp `vcs.modified=true`. Metadata now goes to
    `src/.meta/`.

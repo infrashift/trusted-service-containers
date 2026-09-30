@@ -10,7 +10,9 @@
 # crosscheck pinned per platform, but only checks the digest's shape, so it
 # would have merged. The same run left dapr's crosscheck on 1.18.3 while the
 # source moved to v1.18.4, without a word, and carried the v2.14.5 NATS
-# release-tarball hashes into a v2.14.7 proposal.
+# release-tarball hashes into a v2.14.7 proposal. And its shortCommit was one
+# character short: computed in a blobless clone, which sees fewer objects than
+# the full checkout goreleaser abbreviates in.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,9 +26,27 @@ INDEX="sha256:$(printf 'i%.0s' {1..64} | tr i 1)"
 AMD64="sha256:$(printf 'a%.0s' {1..64})"
 ARM64="sha256:$(printf 'b%.0s' {1..64})"
 OLD="sha256:$(printf 'c%.0s' {1..64})"
-SHA40="$(printf 'd%.0s' {1..40})"
+REAL_GIT="$(command -v git)"
 
 mkdir -p "$TMP/bin" "$TMP/work"
+
+# --- A real nats source repository where the clone kind decides the answer --
+# git's automatic abbreviation grows with the object count it can see: 7 hex
+# below 2^14 objects, 8 from 2^14. One commit over 16500 files puts a FULL
+# clone at 8 while a blobless clone -- one commit, one tree -- stays at 7.
+"$REAL_GIT" init -q --bare "$TMP/nats.git"
+"$REAL_GIT" -C "$TMP/nats.git" config uploadpack.allowFilter true
+{
+  for i in $(seq 1 16500); do printf 'blob\nmark :%d\ndata %d\n%d\n' "$i" "$(( ${#i} + 1 ))" "$i"; done
+  printf 'commit refs/heads/main\ncommitter t <t@example.invalid> 1800000000 +0000\ndata 2\nv\n'
+  for i in $(seq 1 16500); do printf 'M 100644 :%d f%d\n' "$i" "$i"; done
+} | "$REAL_GIT" -C "$TMP/nats.git" fast-import --quiet
+SHA40="$("$REAL_GIT" -C "$TMP/nats.git" rev-parse refs/heads/main)"
+FULL_SHORT="$("$REAL_GIT" -C "$TMP/nats.git" rev-parse --short "$SHA40")"
+"$REAL_GIT" clone -q --bare --filter=blob:none "file://$TMP/nats.git" "$TMP/blobless.git" 2>/dev/null
+BLOBLESS_SHORT="$("$REAL_GIT" -C "$TMP/blobless.git" rev-parse --short "$SHA40")"
+[[ ${#FULL_SHORT} -eq 8 && ${#BLOBLESS_SHORT} -eq 7 ]] \
+  || fail "fixture does not discriminate: full=${FULL_SHORT} blobless=${BLOBLESS_SHORT}"
 
 # regctl: a multi-arch index for every tag. `manifest head` answers the index
 # digest unless --platform names a child -- which is how the real one behaves
@@ -41,10 +61,11 @@ case " \$* " in
 esac
 EOF
 
-# git: ls-remote only. Each source repo has one release past its pin.
+# git: ls-remote is faked -- each source repo has one release past its pin,
+# at the fixture commit. Everything else (clone, rev-parse) is real git.
 cat > "$TMP/bin/git" <<EOF
 #!/usr/bin/env bash
-[[ "\$1" == "ls-remote" ]] || exit 1
+[[ "\$1" == "ls-remote" ]] || exec "$REAL_GIT" "\$@"
 case "\$*" in
   *"--tags --refs"*nats*) printf '%s\trefs/tags/v2.14.5\n%s\trefs/tags/v2.14.7\n' "$SHA40" "$SHA40" ;;
   *"--tags --refs"*dapr*) printf '%s\trefs/tags/v1.18.4\n' "$SHA40" ;;
@@ -56,7 +77,7 @@ chmod +x "$TMP/bin/regctl" "$TMP/bin/git"
 cat > "$TMP/work/versions.json" <<EOF
 {
   "sources": {
-    "nats": { "url": "https://example.invalid/nats", "track": "^v2\\\\.14\\\\.[0-9]+\$", "ref": "v2.14.5", "commit": "$SHA40" },
+    "nats": { "url": "file://$TMP/nats.git", "track": "^v2\\\\.14\\\\.[0-9]+\$", "ref": "v2.14.5", "commit": "$SHA40", "shortCommit": "0000000" },
     "dapr": { "url": "https://example.invalid/dapr", "track": "^v1\\\\.18\\\\.[0-9]+\$", "ref": "v1.18.4-pre.233f2b49", "commit": "$SHA40" }
   },
   "images": {
@@ -85,6 +106,11 @@ xc() { jq -r --arg s "$1" --arg a "$2" --arg f "$3" '.images[$s].crosscheck[$a][
 [[ "$(xc nats amd64 digest)" == "$AMD64" ]] || fail "nats amd64 crosscheck pinned $(xc nats amd64 digest), want the linux/amd64 child"
 [[ "$(xc nats arm64 digest)" == "$ARM64" ]] || fail "nats arm64 crosscheck pinned $(xc nats arm64 digest), want the linux/arm64 child"
 
+# --- shortCommit: the full-clone abbreviation, never the blobless one ------
+got=$(jq -r '.sources.nats.shortCommit' "$V")
+[[ "$got" == "$FULL_SHORT" ]] \
+  || fail "nats shortCommit is ${got}; the full clone abbreviates to ${FULL_SHORT} (blobless: ${BLOBLESS_SHORT})"
+
 # --- dapr: not moved, and SAID so, per platform -----------------------------
 [[ "$(xc daprd amd64 tag)" == "1.18.3-linux-amd64" ]] || fail "daprd crosscheck tag changed unexpectedly"
 grep -q 'daprd` crosscheck amd64: tag `1.18.3-linux-amd64` does not embed' "$TMP/report.md" \
@@ -96,4 +122,4 @@ grep -q 'daprd` crosscheck arm64' "$TMP/report.md" \
 grep -q 'nats`: `crosscheck.releaseTarballSha256` still holds the `v2.14.5`' "$TMP/report.md" \
   || fail "no alarm for the stale nats releaseTarballSha256"
 
-echo "OK: drift-upstream.sh pins crosschecks per platform and flags what it cannot move"
+echo "OK: drift-upstream.sh pins crosschecks per platform, abbreviates in a full clone, and flags what it cannot move"

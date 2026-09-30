@@ -143,6 +143,12 @@ jobs:
         # here against a throwaway repo and a stubbed gh.
         run: ./scripts/test-propose-drift.sh
 
+      - name: Test the drift detection path
+        # drift-upstream.sh's build-track bump wrote an INDEX digest into a
+        # per-platform crosscheck pin and silently left stale ones behind.
+        # Fixture versions.json, stubbed regctl and git.
+        run: ./scripts/test-drift-upstream.sh
+
       - name: Policy self-test
         run: |
           set -euo pipefail

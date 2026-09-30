@@ -180,8 +180,19 @@ while read -r key; do
     xrepo=$(jq -r --arg s "$svc" '.images[$s].crosscheck.image' "$VERSIONS")
     xtag=$(jq -r  --arg s "$svc" --arg a "$arch" '.images[$s].crosscheck[$a].tag' "$VERSIONS")
     NEWTAG="${xtag//$ref/$CAND}"; NEWTAG="${NEWTAG//$OLD_BARE/$NEW_BARE}"
-    [[ "$NEWTAG" == "$xtag" ]] && continue
-    XD=$(regctl manifest head --format '{{.GetDescriptor.Digest}}' "${xrepo}:${NEWTAG}" 2>/dev/null || echo "")
+    # The source moved and this reference did not follow: its tag does not
+    # embed the old ref (dapr's source sat at v1.18.4-pre.* while its
+    # crosscheck tags said 1.18.3). Silently skipping it leaves the new build
+    # compared against the OLD release's binary.
+    if [[ "$NEWTAG" == "$xtag" ]]; then
+      ALARMS+="- \`${svc}\` crosscheck ${arch}: tag \`${xtag}\` does not embed the old source ref \`${ref}\`, so it was not moved to \`${CAND}\`. Re-pin it by hand (tag and per-platform digest) before merging."$'\n'
+      continue
+    fi
+    # --platform, always. A multi-arch tag (nats: 2.14.x-alpine3.22) heads to
+    # its INDEX digest, which the policy forbids here -- a crosscheck is pinned
+    # per platform. On a single-platform tag (ory, dapr) --platform returns
+    # the manifest itself, so this is correct for both shapes.
+    XD=$(regctl manifest head --platform "linux/${arch}" --format '{{.GetDescriptor.Digest}}' "${xrepo}:${NEWTAG}" 2>/dev/null || echo "")
     if [[ -z "$XD" ]]; then
       ALARMS+="- \`${svc}\`: crosscheck tag \`${NEWTAG}\` could not be resolved; re-pin it manually."$'\n'
       continue
@@ -194,6 +205,15 @@ while read -r key; do
             | select(.value.kind=="build" and .value.source==$k)
             | .key as $s | (.value.crosscheck | keys[] | select(. == "amd64" or . == "arm64")) as $a
             | [$s, $a] | @tsv' "$VERSIONS")
+
+  # Hashes of the vendor's release tarballs are a second anchor this script
+  # cannot recompute (they come from the vendor's Dockerfile). After a bump
+  # they still describe the OLD release; say so rather than carry them over.
+  while read -r svc; do
+    ALARMS+="- \`${svc}\`: \`crosscheck.releaseTarballSha256\` still holds the \`${ref}\` tarball hashes. Take the \`${CAND}\` values from the vendor's release and re-confirm them before merging."$'\n'
+  done < <(jq -r --arg k "$key" '.images | to_entries[]
+            | select(.value.kind=="build" and .value.source==$k and (.value.crosscheck.releaseTarballSha256 // null) != null)
+            | .key' "$VERSIONS")
 
   CHANGED=1
 done < <(jq -r '.sources | keys[]' "$VERSIONS")

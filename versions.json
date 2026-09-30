@@ -39,7 +39,7 @@
       "ref": "v2.14.7",
       "url": "https://github.com/nats-io/nats-server",
       "commit": "8d8b69a8c46a46a150eabb7f312607c4d9c58faf",
-      "shortCommit": "8d8b69a8",
+      "shortCommit": "8d8b69a8c",
       "shortCommitNote": "goreleaser stamps {{.ShortCommit}}, whose length is git's DYNAMIC abbreviation for the full repo. Verified empirically: the released v2.14.5 binary embeds 9 characters. It cannot be derived from our build, because fetch-source.sh makes a --depth 1 clone and git then abbreviates to the 7-char minimum. Pinning it as data is the only way to reproduce the vendor's binary; drift PRs must update it alongside `commit`.",
       "note": "Moved up from the 2.11 line the user ran previously. Upstream pins GOTOOLCHAIN and uses -trimpath, so this is the one service where a byte-identical cross-check is realistic."
     },
@@ -533,10 +533,10 @@
           "digest": "sha256:7db8dc39d5dc71ceb3718b705cd8e176bac506b82c24411e6825a809b02e15f7"
         },
         "releaseTarballSha256": {
-          "amd64": "5e3b603d47c447bda1f77f9ac16dbf91c90aac4ff3681f8fbbc7201e4ed99355",
-          "arm64": "673a98d3faa79dde3f9ebf16d6dfac36a5f694e7ad2015e4954dd7939c85cd4c"
+          "amd64": "e5c20b1cb2c0566b54c544312e91e011f9e130c5c80f16a14f4cf28ef30b8be2",
+          "arm64": "50e0258a1b7290f3fe2e4f17506b74a90ffb1dd77867ae3a402eb0c9e2b0d40f"
         },
-        "note": "Second, independent anchor: the official image does not compile the binary, it downloads the GitHub release tarball and verifies these sha256 values inline in nats-docker/2.14.x/alpine3.22/Dockerfile. Both were confirmed to match on 2026-08-18, and the binary inside the official image is byte-identical to the released tarball. TIER DOWNGRADED from flag-matched to best-effort after empirical testing: we reproduced every observable build input -- Go 1.26.5, identical dep set, -trimpath, CGO_ENABLED=0, GOAMD64=v1, DefaultGODEBUG, mod=v2.14.5, vcs.revision/time/modified=false, and the 9-char short commit -- and the binary still differs. Whatever remains is not visible in `go version -m`. Do not treat a NATS mismatch as alarming until someone identifies the residual input."
+        "note": "Second, independent anchor: the official image does not compile the binary, it downloads the GitHub release tarball and verifies these sha256 values inline in nats-docker/2.14.x/alpine3.22/Dockerfile. Both were confirmed to match on 2026-08-18, and the binary inside the official image is byte-identical to the released tarball. Re-confirmed for v2.14.7 on 2026-09-30: the hashes equal both the release's SHA256SUMS and nats-docker fe222b5f97 (2.14.x/alpine3.22/Dockerfile at NATS_SERVER=2.14.7), and the nats-server in each 2.14.7-alpine3.22 child is byte-identical to its tarball's (amd64 and arm64). TIER DOWNGRADED from flag-matched to best-effort after empirical testing: we reproduced every observable build input -- Go 1.26.5, identical dep set, -trimpath, CGO_ENABLED=0, GOAMD64=v1, DefaultGODEBUG, mod=v2.14.5, vcs.revision/time/modified=false, and the 9-char short commit -- and the binary still differs. Whatever remains is not visible in `go version -m`. Do not treat a NATS mismatch as alarming until someone identifies the residual input."
       },
       "runtime": {
         "ports": [
@@ -596,12 +596,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.3-linux-amd64",
-          "digest": "sha256:d06339fe9dcc4c7180d914d3d7b60b7e3324dc065955fedafe1bf434d266631d"
+          "tag": "1.18.4-linux-amd64",
+          "digest": "sha256:d52398b8ea0603c64a3f1c7e894dda1bec2adbec7bcecd3c6b292de321579109"
         },
         "arm64": {
-          "tag": "1.18.3-linux-arm64",
-          "digest": "sha256:faa4e053377c37c88ad39c176f8b26fc22617232857f54a8d2b5be6dea6be5d6"
+          "tag": "1.18.4-linux-arm64",
+          "digest": "sha256:2fc9f093d9a4c603efd720bcf0d123f04d0465486a32785e90fb6c282ef71a7b"
         }
       },
       "runtime": {
@@ -657,12 +657,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.3-linux-amd64",
-          "digest": "sha256:6f7e0b1b3325d1687d24500a19885bbfdb20d64cb63f0705ada8d78eff045b8e"
+          "tag": "1.18.4-linux-amd64",
+          "digest": "sha256:bf901d453b1103f6af9bee335ef60fd65dfdcc5b1a114cb51b42b17f586fdecb"
         },
         "arm64": {
-          "tag": "1.18.3-linux-arm64",
-          "digest": "sha256:c9fbd7f4bac60356efa5464ef5cb25060d7b1e57628e2945fd4a907c7fde5f9c"
+          "tag": "1.18.4-linux-arm64",
+          "digest": "sha256:bc1838084b509d371101c5aa78080c5e1b2319f31808d73f5003541be5154f19"
         },
         "note": "daprio/placement is the dedicated single-binary image. daprio/dapr is the kitchen-sink image carrying all six control-plane binaries and is the wrong cross-check source."
       },
@@ -718,12 +718,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.3-linux-amd64",
-          "digest": "sha256:4d128ec1cb0c8045f0a69fea11eb1977a6922c285a14115df52f6d84b491d7f0"
+          "tag": "1.18.4-linux-amd64",
+          "digest": "sha256:82d518d0447ee19d2fd035d821f9a1bf372d924d50fddcdc8538b78ea05b3f94"
         },
         "arm64": {
-          "tag": "1.18.3-linux-arm64",
-          "digest": "sha256:4d686122dc3d5e818908ef6f822816065708b4da9a8e28af1de0049f31bb9384"
+          "tag": "1.18.4-linux-arm64",
+          "digest": "sha256:f1972315067c41c550d3f6e0d196ef1d366e075a7021c95adb91e32f71237825"
         }
       },
       "runtime": {

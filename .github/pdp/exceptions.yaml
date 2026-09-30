@@ -221,6 +221,178 @@ exceptions:
       patching go.mod. Waived to a date, not accepted: decide before expiry
       whether to keep the Ory stack.
 
+  - id: EXC-2026-0008
+    image: postgres
+    variant: "*"
+    package: "libcurl4t64"
+    cves:
+      - CVE-2026-18924
+      - CVE-2026-19931
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      libcurl inside a Docker Hardened Image we mirror by digest and never
+      rebuild; Debian has published no fixed package. Neither the server
+      (/usr/bin/postgres) nor its JIT (llvmjit.so -> libLLVM.so.19.1) links
+      libcurl -- it is installed only as a package dependency of postgresql-16
+      and llvm-19 (readelf NEEDED, 2026-09-30). Also present in the digest
+      these pins replace. Cleared by the next DHI rebuild drift proposes.
+
+  - id: EXC-2026-0009
+    image: hydra
+    variant: "*"
+    package: "google.golang.org/grpc"
+    cves:
+      - GHSA-2v4p-qf9q-27wj
+      - GHSA-vp52-pcj8-j9qc
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      grpc v1.79.3 vendored by Ory v26.2.0, the latest upstream release; fixed in
+      grpc 1.82.2 / 1.83.1. We build upstream source unmodified at a pinned
+      commit, so clearing these means an upstream release or forking go.mod.
+      Also present in the digest currently promoted to trusted/.
+      Re-triage on the next upstream release drift proposes.
+
+  - id: EXC-2026-0010
+    image: kratos
+    variant: "*"
+    package: "google.golang.org/grpc"
+    cves:
+      - GHSA-2v4p-qf9q-27wj
+      - GHSA-vp52-pcj8-j9qc
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      grpc v1.79.3 vendored by Ory v26.2.0, the latest upstream release; fixed in
+      grpc 1.82.2 / 1.83.1. We build upstream source unmodified at a pinned
+      commit, so clearing these means an upstream release or forking go.mod.
+      Also present in the digest currently promoted to trusted/.
+      Re-triage on the next upstream release drift proposes.
+
+  - id: EXC-2026-0011
+    image: keto
+    variant: "*"
+    package: "google.golang.org/grpc"
+    cves:
+      - GHSA-2v4p-qf9q-27wj
+      - GHSA-vp52-pcj8-j9qc
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      grpc v1.79.3 vendored by Ory v26.2.0, the latest upstream release; fixed in
+      grpc 1.82.2 / 1.83.1. We build upstream source unmodified at a pinned
+      commit, so clearing these means an upstream release or forking go.mod.
+      Also present in the digest currently promoted to trusted/.
+      Re-triage on the next upstream release drift proposes.
+
+  - id: EXC-2026-0012
+    image: oathkeeper
+    variant: "*"
+    package: "google.golang.org/grpc"
+    cves:
+      - GHSA-2v4p-qf9q-27wj
+      - GHSA-vp52-pcj8-j9qc
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      grpc v1.79.3 vendored by Ory v26.2.0, the latest upstream release; fixed in
+      grpc 1.82.2 / 1.83.1. We build upstream source unmodified at a pinned
+      commit, so clearing these means an upstream release or forking go.mod.
+      Also present in the digest currently promoted to trusted/.
+      Re-triage on the next upstream release drift proposes.
+
+  - id: EXC-2026-0013
+    image: daprd
+    variant: "*"
+    package: "google.golang.org/grpc"
+    cves:
+      - GHSA-2v4p-qf9q-27wj
+      - GHSA-vp52-pcj8-j9qc
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      grpc v1.82.1 vendored by Dapr v1.18.4, the latest upstream release; fixed in
+      grpc 1.82.2 / 1.83.1. We build upstream source unmodified at a pinned
+      commit, so clearing these means an upstream release or forking go.mod.
+      Also present in the digest currently promoted to trusted/.
+      Re-triage on the next upstream release drift proposes.
+
+  - id: EXC-2026-0014
+    image: dapr-placement
+    variant: "*"
+    package: "google.golang.org/grpc"
+    cves:
+      - GHSA-2v4p-qf9q-27wj
+      - GHSA-vp52-pcj8-j9qc
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      grpc v1.82.1 vendored by Dapr v1.18.4, the latest upstream release; fixed in
+      grpc 1.82.2 / 1.83.1. We build upstream source unmodified at a pinned
+      commit, so clearing these means an upstream release or forking go.mod.
+      Also present in the digest currently promoted to trusted/.
+      Re-triage on the next upstream release drift proposes.
+
+  - id: EXC-2026-0015
+    image: dapr-scheduler
+    variant: "*"
+    package: "google.golang.org/grpc"
+    cves:
+      - GHSA-2v4p-qf9q-27wj
+      - GHSA-vp52-pcj8-j9qc
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      grpc v1.82.1 vendored by Dapr v1.18.4, the latest upstream release; fixed in
+      grpc 1.82.2 / 1.83.1. We build upstream source unmodified at a pinned
+      commit, so clearing these means an upstream release or forking go.mod.
+      Also present in the digest currently promoted to trusted/.
+      Re-triage on the next upstream release drift proposes.
+
+  - id: EXC-2026-0016
+    image: daprd
+    variant: "*"
+    package: "github.com/rabbitmq/amqp091-go"
+    cves:
+      - GHSA-27gv-rfvv-22mv
+      - GHSA-33mj-cw25-m34h
+      - GHSA-465g-fh3v-9jw4
+      - GHSA-4v58-74mf-rjx3
+      - GHSA-6c5v-hqjr-5xxp
+      - GHSA-c5pq-fr2g-9jpf
+      - GHSA-j497-x9hr-x34x
+      - GHSA-r9c8-gcjp-xfwh
+      - GHSA-rm6m-hrcw-jw33
+      - GHSA-xwwf-m8fg-p9q2
+    issued:  "2026-09-30T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/22"
+    justification: >-
+      amqp091-go v1.10.0 is pinned by Dapr v1.18.4 (fixed upstream in 1.13.0)
+      and compiled in only because daprd is built with -tags allcomponents.
+      Dapr runs a component's code only when a manifest of that type is
+      loaded; the one consumer (ansible-collection-infrashift-hashistack)
+      loads pubsub.jetstream, pubsub.kafka and bindings.cron, never RabbitMQ.
+      Also present in the digest currently promoted to trusted/.
+
 # --- Example. Delete before the first real entry. --------------------------
 #
 # - id: EXC-2026-0001

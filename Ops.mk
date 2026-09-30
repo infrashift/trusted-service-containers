@@ -59,7 +59,7 @@ help:
 	echo "  lint-workflows        cross-workflow drift checks (guard, context, paths, perms)"
 	echo "  lint-containerfiles   Containerfile shape + versions.json agreement"
 	echo "  lint-skills           every documented file path resolves"
-	echo "  test-scripts          run propose-drift.sh end to end against a throwaway repo"
+	echo "  test-scripts          drift-upstream.sh and propose-drift.sh against fixtures and stubs"
 	echo "  policy-test           opa check --strict, opa fmt, opa test --threshold 85"
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
 	echo "  verify-pins           re-resolve every upstream, base and crosscheck digest"
@@ -148,6 +148,7 @@ lint-shell:
 .PHONY: test-scripts
 test-scripts:
 	./scripts/test-propose-drift.sh
+	./scripts/test-drift-upstream.sh
 
 .PHONY: policy-test
 policy-test:

@@ -213,6 +213,49 @@
       "reason": "Pin moved 2026-09-15 from 2025-CU8-GDR1-rhel-10 (17.0.4085.5, sha256:54b58c3a) to 2025-CU9-rhel-10 (17.0.5005.3), the manifest 2025-latest now resolves to. Same repository, same RHEL 10 base, same bare amd64 manifest shape, Notary signature still present as an OCI referrer. This is the FIRST observed move of this rolling tag and it confirms the shape the initial pin predicted. Initial pin was SQL Server 2025 on the RHEL 10 base (mcr.microsoft.com/mssql/rhel/server, not the Ubuntu mssql/server repo) to match the repo's UBI posture. Rolling tag: Microsoft repoints 2025-latest on every CU and GDR, and a CU regex track would be a trap because `sort -V` orders 2025-CU8-GDR1-rhel-10 BEFORE 2025-CU8-rhel-10, so drift-upstream.sh would never propose a GDR security release. Track is therefore the exact tag and only the digest moves. Note this move goes GDR -> CU, which a CU-ordered track would also have mishandled. Trust class notation: the image carries a Notary Project signature as an OCI referrer, chained to Microsoft Supply Chain RSA Root CA 2022, which we vendor and verify against with the signing identity pinned. There is no cosign signature and no SBOM or provenance referrer, so no attestations are required of this class. Still `observe` until the day-one CVE triage lands in exceptions.yaml; CU9 is newer than the CU8-GDR1 it replaces, so the finding count should not rise.",
       "note": "amd64 ONLY, and a BARE manifest: the tag resolves to a single application/vnd.docker.distribution.manifest.v2+json with no index. Microsoft supports x86-64 hosts only and states emulation is untested. scripts/manifest-platforms.sh derives the platform set from the config os/arch for this shape. Runtime config: user mssql, port 1433, entrypoint /opt/mssql/bin/launch_sqlservr.sh, no declared volumes (data lives under /var/opt/mssql; mount it). The container starts only with ACCEPT_EULA=Y and a password supplied via the MSSQL_SA_PASSWORD environment variable at run time; MSSQL_PID defaults to developer and selecting a production edition asserts that the consumer holds a licence. The SQL build number is not in the tag; read the com.microsoft.version label from the evidence. The notation signature is an OCI referrer in the image's own repository; the mirror copies it with --referrers, and the first run's upstream-referrers.json should list artifactType application/vnd.cncf.notary.signature."
     },
+    "whoami": {
+      "kind": "mirror",
+      "upstreamTrust": "none",
+      "upstreamRepo": "docker.io/traefik/whoami",
+      "keyring": null,
+      "requiredPredicates": [],
+      "enforcement": "observe",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm",
+        "linux/arm64"
+      ],
+      "variants": {
+        "runtime": {
+          "tag": "v1.12.0",
+          "track": "^v1\\.[0-9]+\\.[0-9]+$",
+          "digest": "sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
+        }
+      },
+      "updated": "2026-09-30",
+      "reason": "Traefik's whoami echo server, the test backend infrashift/ansible-collection-infrashift-hashistack's sm-ingress runs behind the edge; it ran docker.io/traefik/whoami:latest. Pinned to v1.12.0, the release :latest resolves to on 2026-09-30 (same index digest). Track is the v1 release line: whoami is a stateless test fixture with no data or config contract, so a minor bump carries nothing a patch-only track would protect, and the regex excludes the per-arch (-amd64/-arm64/-armv7) and two-part rolling (v1.12) tags. Three platforms, not two: the upstream index carries linux/arm/v7, and a mirror copies the whole index, so the declared set must include it or PLATFORM_SET_MISMATCH denies. Trust class none: no cosign signature and no OCI referrers, only unsigned BuildKit attestation manifests inside the index. A scratch image holding one static Go binary with no USER, so it reports root (RUNTIME_RUNS_AS_ROOT, a warning). Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml; expect Go standard-library findings from the toolchain it was built with."
+    },
+    "openssh-server": {
+      "kind": "mirror",
+      "upstreamTrust": "none",
+      "upstreamRepo": "docker.io/linuxserver/openssh-server",
+      "keyring": null,
+      "requiredPredicates": [],
+      "enforcement": "observe",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "variants": {
+        "runtime": {
+          "tag": "10.3_p1-r1-ls237",
+          "track": "^10\\.3_p[0-9]+-r[0-9]+-ls[0-9]+$",
+          "digest": "sha256:946fa26105e0ec212fdf821b9ddc59aab65f2c2d07c02b25ff0f5001fc332ff0"
+        }
+      },
+      "updated": "2026-09-30",
+      "reason": "LinuxServer.io's OpenSSH server, the devcontainer test target infrashift/ansible-collection-infrashift-hashistack's sm-ingress runs behind the edge; it ran docker.io/linuxserver/openssh-server:latest. Pinned to 10.3_p1-r1-ls237, the build :latest resolves to on 2026-09-30 (same index digest). Pins the immutable -lsNNN build tag, not the rolling version-10.3_p1-r1 or :latest: LinuxServer rebuilds on a schedule and every rebuild gets a new lsNNN, so drift-upstream proposes each rebuild as a version bump, and a moved lsNNN digest is a real retag alarm. Track is the OpenSSH 10.3 line (any portable patch, Alpine package revision or LinuxServer build); a move to 10.4 is a new track in its own PR. Trust class none: no cosign signature and no OCI referrers, only unsigned BuildKit attestation manifests. Alpine with s6-overlay as PID 1 (/init) and no USER: s6 starts as root and drops sshd to PUID/PGID, so the config user is root (RUNTIME_RUNS_AS_ROOT, a warning). Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml."
+    },
     "kratos": {
       "kind": "build",
       "source": "ory",

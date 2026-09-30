@@ -10,7 +10,7 @@ no CVE rule.
 | `dhi` | `.github/pdp/keyring/dhi-latest.pub` (TOFU-pinned) | traefik, postgres |
 | `internal` | `.github/pdp/public-keys/upstream/trusted-base-images-release.pub` | our ubi9-micro base |
 | `notation` | `.github/pdp/keyring/microsoft-supply-chain-rsa-root-ca-2022.crt` (TOFU-pinned) plus the `notation.trustedIdentity` leaf subject in `versions.json` | mssql |
-| `none` | nothing — records "not applicable" | nexus3, and the vendor images we cross-check against |
+| `none` | nothing — records "not applicable" | nexus3, whoami, openssh-server, and the vendor images we cross-check against |
 
 ## Three states, never two
 

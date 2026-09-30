@@ -36,18 +36,18 @@
     },
     "nats": {
       "track": "^v2\\.14\\.[0-9]+$",
-      "ref": "v2.14.5",
+      "ref": "v2.14.7",
       "url": "https://github.com/nats-io/nats-server",
-      "commit": "d3bc0453384d00d37991b084263e59af828fa90d",
-      "shortCommit": "d3bc04533",
+      "commit": "8d8b69a8c46a46a150eabb7f312607c4d9c58faf",
+      "shortCommit": "8d8b69a8",
       "shortCommitNote": "goreleaser stamps {{.ShortCommit}}, whose length is git's DYNAMIC abbreviation for the full repo. Verified empirically: the released v2.14.5 binary embeds 9 characters. It cannot be derived from our build, because fetch-source.sh makes a --depth 1 clone and git then abbreviates to the 7-char minimum. Pinning it as data is the only way to reproduce the vendor's binary; drift PRs must update it alongside `commit`.",
       "note": "Moved up from the 2.11 line the user ran previously. Upstream pins GOTOOLCHAIN and uses -trimpath, so this is the one service where a byte-identical cross-check is realistic."
     },
     "dapr": {
       "track": "^v1\\.18\\.[0-9]+$",
-      "ref": "v1.18.4-pre.233f2b49",
+      "ref": "v1.18.4",
       "url": "https://github.com/dapr/dapr",
-      "commit": "233f2b4997f9a939619a3ec4a481f4d794e19759",
+      "commit": "6d1c53f430205c0c0f3bc3589ce5a3ec3f6f1647",
       "lockstep": [
         "daprd",
         "dapr-placement",
@@ -116,15 +116,15 @@
         "runtime": {
           "tag": "3-debian13",
           "track": "^3-debian13$",
-          "digest": "sha256:734fb24f3fbdf5e664fb750753e11edc54dcf99706b714612a66837466fd3ad8"
+          "digest": "sha256:1aedd73935670f671be29b8396d4667f391a0058c513911743bfdfde5447971a"
         },
         "dev": {
           "tag": "3-debian13-dev",
           "track": "^3-debian13-dev$",
-          "digest": "sha256:09733296caf52acf53c3ab12ab698fed48ca0cd408b374940c987460bc90cc39"
+          "digest": "sha256:2624d05ba0851b7cfd26dab7273f208049b9a3b00cd05979ec00fab16ea4f21d"
         }
       },
-      "updated": "2026-08-24",
+      "updated": "2026-09-30",
       "reason": "Placeholder digests resolved 2026-08-24 with an authenticated dhi.io login (regctl manifest head, index digest). DHI repoints 3-debian13 itself, so the tag string never changes and only the digest moves; track is therefore an exact match."
     },
     "postgres": {
@@ -145,25 +145,25 @@
         "runtime": {
           "tag": "16-debian",
           "track": "^16-debian$",
-          "digest": "sha256:c40f96887b66e68b6021f7b50193aea6ba9cbaad7006cc431bc21c00e2ae7812"
+          "digest": "sha256:ae316a451e7e609ed2f6d532a8a43e34e9d483840602cb011f0e7128aef28a0e"
         },
         "dev": {
           "tag": "16-debian-dev",
           "track": "^16-debian-dev$",
-          "digest": "sha256:ec61df9ae2947ac2c807473f2c46dcf33015499f31199132a2c8f5f3409fe675"
+          "digest": "sha256:72ed533181b9893eab1232bf8997790a645769f04e511dbab46603c531e7f3cb"
         },
         "runtime17": {
           "tag": "17-debian",
           "track": "^17-debian$",
-          "digest": "sha256:e207534f8946a6f24231f7114505686b196c989701aeef66cbafb2b0969d29e8"
+          "digest": "sha256:66dcbc496311685361b6a56e261e6694454daea3e297604dfd79590275f03910"
         },
         "dev17": {
           "tag": "17-debian-dev",
           "track": "^17-debian-dev$",
-          "digest": "sha256:afcafbca99f75ea91ee60c851ae527eea7a131a650ae5562300bc19d32a51a4d"
+          "digest": "sha256:cd0cd5444177137b5b469765f5b6fa7b9fcb6e8ddb623413b8f5526c09e04055"
         }
       },
-      "updated": "2026-09-15",
+      "updated": "2026-09-30",
       "reason": "Initial pin, runtime + dev. PostgreSQL 17 added 2026-09-15 as a second pair of variants (runtime17/dev17) rather than a second image entry, so both majors are served from one trusted/postgres repository under their own upstream tags. It exists because the platform runs PostgreSQL 17 in two places -- GitLab's database and chit-server -- and this line published only 16, so neither could leave Docker Hub: a PG17 data directory cannot be read by PG16, which makes it a dump-and-restore migration rather than a swap. CONSUMER CAUTION, and it is not the major version: 17-debian is debian-13 while the images it would replace are bookworm (debian-12). A different glibc is a different collation, so text index ordering can change -- REINDEX stored data after the move, exactly as for an alpine-to-debian move. Exact tags rather than a regex range, for the reason the 16 pair has them: only the digest moves, and drift-upstream proposes it."
     },
     "nexus3": {
@@ -184,7 +184,7 @@
           "digest": "sha256:3d6454ebafb3e807782c15dc9a500b83013107128e35db5da219fda05c07b68c"
         }
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Tracks the 3.90 patch line only; 3.91.0-ubi and 3.91.1-ubi already exist upstream, so a naive newest-tag check would jump a minor on its first run. Trust class none: public Docker Hub image with unsigned BuildKit attestations only. Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml -- a ~700MB JVM image will very likely quarantine."
     },
     "mssql": {
@@ -209,7 +209,7 @@
           "digest": "sha256:7ab5f0c3f96cbe234aa80d33e804c26c5e7c063266c91a891cf0b6d71c90b305"
         }
       },
-      "updated": "2026-09-15",
+      "updated": "2026-09-30",
       "reason": "Pin moved 2026-09-15 from 2025-CU8-GDR1-rhel-10 (17.0.4085.5, sha256:54b58c3a) to 2025-CU9-rhel-10 (17.0.5005.3), the manifest 2025-latest now resolves to. Same repository, same RHEL 10 base, same bare amd64 manifest shape, Notary signature still present as an OCI referrer. This is the FIRST observed move of this rolling tag and it confirms the shape the initial pin predicted. Initial pin was SQL Server 2025 on the RHEL 10 base (mcr.microsoft.com/mssql/rhel/server, not the Ubuntu mssql/server repo) to match the repo's UBI posture. Rolling tag: Microsoft repoints 2025-latest on every CU and GDR, and a CU regex track would be a trap because `sort -V` orders 2025-CU8-GDR1-rhel-10 BEFORE 2025-CU8-rhel-10, so drift-upstream.sh would never propose a GDR security release. Track is therefore the exact tag and only the digest moves. Note this move goes GDR -> CU, which a CU-ordered track would also have mishandled. Trust class notation: the image carries a Notary Project signature as an OCI referrer, chained to Microsoft Supply Chain RSA Root CA 2022, which we vendor and verify against with the signing identity pinned. There is no cosign signature and no SBOM or provenance referrer, so no attestations are required of this class. Still `observe` until the day-one CVE triage lands in exceptions.yaml; CU9 is newer than the CU8-GDR1 it replaces, so the finding count should not rise.",
       "note": "amd64 ONLY, and a BARE manifest: the tag resolves to a single application/vnd.docker.distribution.manifest.v2+json with no index. Microsoft supports x86-64 hosts only and states emulation is untested. scripts/manifest-platforms.sh derives the platform set from the config os/arch for this shape. Runtime config: user mssql, port 1433, entrypoint /opt/mssql/bin/launch_sqlservr.sh, no declared volumes (data lives under /var/opt/mssql; mount it). The container starts only with ACCEPT_EULA=Y and a password supplied via the MSSQL_SA_PASSWORD environment variable at run time; MSSQL_PID defaults to developer and selecting a production edition asserts that the consumer holds a licence. The SQL build number is not in the tag; read the com.microsoft.version label from the evidence. The notation signature is an OCI referrer in the image's own repository; the mirror copies it with --referrers, and the first run's upstream-referrers.json should list artifactType application/vnd.cncf.notary.signature."
     },
@@ -297,7 +297,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Initial pin. No official UBI-based Ory image exists; built from source onto ubi9-micro."
     },
     "hydra": {
@@ -360,7 +360,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Initial pin. Note the module path carries /v2. Hydra has no .docker/Dockerfile-build (it has Dockerfile-local-build); the ldflags paths come from .goreleaser.yml."
     },
     "keto": {
@@ -423,7 +423,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Initial pin."
     },
     "oathkeeper": {
@@ -486,7 +486,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Initial pin. Upstream's .docker/Dockerfile-build has a bug (COPY oryx/go.sum proto/go.sum); we do not use it."
     },
     "nats": {
@@ -525,12 +525,12 @@
         "trustClass": "docker-official",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "2.14.5-alpine3.22",
-          "digest": "sha256:bacc5a40233588bd10201a2576903d9bfcc3bf84261ed324e522df2666e5eefd"
+          "tag": "2.14.7-alpine3.22",
+          "digest": "sha256:b2301863d84fda2cf8260d308203708f5231b2db34d821cc518d5c4c3c79780a"
         },
         "arm64": {
-          "tag": "2.14.5-alpine3.22",
-          "digest": "sha256:205044f329047936e25b9946d4f8af0d13eb5af83993bb66b61a857631e94408"
+          "tag": "2.14.7-alpine3.22",
+          "digest": "sha256:7db8dc39d5dc71ceb3718b705cd8e176bac506b82c24411e6825a809b02e15f7"
         },
         "releaseTarballSha256": {
           "amd64": "5e3b603d47c447bda1f77f9ac16dbf91c90aac4ff3681f8fbbc7201e4ed99355",
@@ -559,7 +559,7 @@
         "configFile": "rootfs/nats/etc/nats/nats-server.conf",
         "configNote": "Ours, not upstream's. nats-docker ships a cluster block with hardcoded credentials ruser/T0pS3cr3t. All three ports are >1024 so non-root binding is fine."
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Initial pin on the 2.14 line, moved up from the 2.11-alpine image previously in use."
     },
     "daprd": {
@@ -621,7 +621,7 @@
         "userNote": "Upstream runs 65532:65532 and the Dapr Helm chart pins runAsUser: 65532. We use 1001 per repo convention, so a Helm deployment needs an override. The /daprd compat symlink exists because the injector may emit command: [\"/daprd\"].",
         "portNote": "Ports are from documentation, not from the pinned source. VERIFY against cmd/daprd options before relying on them."
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Initial pin. Moved up from 1.14.4, which is outside Dapr's N-2 support window."
     },
     "dapr-placement": {
@@ -682,7 +682,7 @@
         "tzdata": true,
         "portNote": "From documentation. VERIFY against cmd/placement options."
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Initial pin. Built from the same source checkout as daprd and dapr-scheduler; sources.dapr.lockstep prevents drift."
     },
     "dapr-scheduler": {
@@ -744,7 +744,7 @@
         "portNote": "From documentation. VERIFY against cmd/scheduler options.",
         "volumeNote": "The scheduler keeps an embedded etcd store; confirm the default data dir at the pinned tag before relying on this path."
       },
-      "updated": "2026-08-18",
+      "updated": "2026-09-30",
       "reason": "Initial pin. Required from Dapr 1.15+ for actor reminders and workflows; the user is migrating from 1.14 where it did not exist."
     }
   }

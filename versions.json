@@ -233,28 +233,7 @@
         }
       },
       "updated": "2026-09-30",
-      "reason": "Traefik's whoami echo server, the test backend infrashift/ansible-collection-infrashift-hashistack's sm-ingress runs behind the edge; it ran docker.io/traefik/whoami:latest. Pinned to v1.12.0, the release :latest resolves to on 2026-09-30 (same index digest). Track is the v1 release line: whoami is a stateless test fixture with no data or config contract, so a minor bump carries nothing a patch-only track would protect, and the regex excludes the per-arch (-amd64/-arm64/-armv7) and two-part rolling (v1.12) tags. Three platforms, not two: the upstream index carries linux/arm/v7, and a mirror copies the whole index, so the declared set must include it or PLATFORM_SET_MISMATCH denies. Trust class none: no cosign signature and no OCI referrers, only unsigned BuildKit attestation manifests inside the index. A scratch image holding one static Go binary with no USER, so it reports root (RUNTIME_RUNS_AS_ROOT, a warning). Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml; expect Go standard-library findings from the toolchain it was built with."
-    },
-    "openssh-server": {
-      "kind": "mirror",
-      "upstreamTrust": "none",
-      "upstreamRepo": "docker.io/linuxserver/openssh-server",
-      "keyring": null,
-      "requiredPredicates": [],
-      "enforcement": "observe",
-      "platforms": [
-        "linux/amd64",
-        "linux/arm64"
-      ],
-      "variants": {
-        "runtime": {
-          "tag": "10.3_p1-r1-ls237",
-          "track": "^10\\.3_p[0-9]+-r[0-9]+-ls[0-9]+$",
-          "digest": "sha256:946fa26105e0ec212fdf821b9ddc59aab65f2c2d07c02b25ff0f5001fc332ff0"
-        }
-      },
-      "updated": "2026-09-30",
-      "reason": "LinuxServer.io's OpenSSH server, the devcontainer test target infrashift/ansible-collection-infrashift-hashistack's sm-ingress runs behind the edge; it ran docker.io/linuxserver/openssh-server:latest. Pinned to 10.3_p1-r1-ls237, the build :latest resolves to on 2026-09-30 (same index digest). Pins the immutable -lsNNN build tag, not the rolling version-10.3_p1-r1 or :latest: LinuxServer rebuilds on a schedule and every rebuild gets a new lsNNN, so drift-upstream proposes each rebuild as a version bump, and a moved lsNNN digest is a real retag alarm. Track is the OpenSSH 10.3 line (any portable patch, Alpine package revision or LinuxServer build); a move to 10.4 is a new track in its own PR. Trust class none: no cosign signature and no OCI referrers, only unsigned BuildKit attestation manifests. Alpine with s6-overlay as PID 1 (/init) and no USER: s6 starts as root and drops sshd to PUID/PGID, so the config user is root (RUNTIME_RUNS_AS_ROOT, a warning). Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml."
+      "reason": "Traefik's whoami echo server, the test backend infrashift/ansible-collection-infrashift-hashistack's sm-ingress runs behind the edge; it ran docker.io/traefik/whoami:latest. Pinned to v1.12.0, the release :latest resolves to on 2026-09-30 (same index digest). Track is the v1 release line: whoami is a stateless test fixture with no data or config contract, so a minor bump carries nothing a patch-only track would protect, and the regex excludes the per-arch (-amd64/-arm64/-armv7) and two-part rolling (v1.12) tags. Three platforms, not two: the upstream index carries linux/arm/v7, and a mirror copies the whole index, so the declared set must include it or PLATFORM_SET_MISMATCH denies. Trust class none: no cosign signature and no OCI referrers, only unsigned BuildKit attestation manifests inside the index. A scratch image holding one static Go binary with no USER, so it reports root (RUNTIME_RUNS_AS_ROOT, a warning); the binary needs no privilege except a port below 1024, so consumers run it as a non-root uid on an unprivileged port (--user 65532:65532 --port=8080, proven 2026-09-30). Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml; expect Go standard-library findings from the toolchain it was built with."
     },
     "kratos": {
       "kind": "build",

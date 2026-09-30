@@ -12,7 +12,7 @@ someone who does not trust us.
 
 Two kinds of image, two integrity models.
 
-**Mirror track** (traefik, postgres, nexus3, mssql, whoami, openssh-server). These arrive as the vendor
+**Mirror track** (traefik, postgres, nexus3, mssql, whoami). These arrive as the vendor
 built them, and for DHI already attested. Rebuilding would destroy the vendor's signature and, for DHI,
 their zero-known-CVE claim. So we copy content-addressed, preserving OCI
 referrers, and layer our own scan, signing and policy gate on top.

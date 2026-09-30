@@ -59,6 +59,7 @@ help:
 	echo "  lint-workflows        cross-workflow drift checks (guard, context, paths, perms)"
 	echo "  lint-containerfiles   Containerfile shape + versions.json agreement"
 	echo "  lint-skills           every documented file path resolves"
+	echo "  test-scripts          run propose-drift.sh end to end against a throwaway repo"
 	echo "  policy-test           opa check --strict, opa fmt, opa test --threshold 85"
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
 	echo "  verify-pins           re-resolve every upstream, base and crosscheck digest"
@@ -71,7 +72,7 @@ help:
 	echo "  images:   $(words $(IMAGES)) ($(words $(MIRROR_IMAGES)) mirror, $(words $(BUILD_IMAGES)) build)"
 
 .PHONY: validate
-validate: check-versions check-schema check-keyring check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills lint-shell policy-test
+validate: check-versions check-schema check-keyring check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills lint-shell test-scripts policy-test
 	echo "OK: repository validation passed"
 
 .PHONY: check-versions
@@ -143,6 +144,10 @@ lint-shell:
 	else
 		echo "warning: shellcheck not installed; skipping shell lint" >&2
 	fi
+
+.PHONY: test-scripts
+test-scripts:
+	./scripts/test-propose-drift.sh
 
 .PHONY: policy-test
 policy-test:

@@ -221,6 +221,24 @@ while read -r key; do
             | select(.value.kind=="build" and .value.source==$k and (.value.crosscheck.releaseTarballSha256 // null) != null)
             | .key' "$VERSIONS")
 
+  # Release assets (Prometheus's prebuilt web UI) are named after the release,
+  # so the URL moves with the source. The hash cannot: this script has no
+  # trusted place to read it from. It is left on the OLD release's value, which
+  # scripts/fetch-assets.sh then rejects as a mismatch -- the proposal fails
+  # closed until someone copies the new value from the vendor's checksums.
+  while read -r aname; do
+    aurl=$(jq -r --arg k "$key" --arg n "$aname" '.sources[$k].assets[$n].url' "$VERSIONS")
+    NEWURL="${aurl//$ref/$CAND}"; NEWURL="${NEWURL//$OLD_BARE/$NEW_BARE}"
+    if [[ "$NEWURL" == "$aurl" ]]; then
+      ALARMS+="- source \`${key}\` asset \`${aname}\`: url does not embed \`${ref}\`, so it was not moved to \`${CAND}\`. Re-pin url and sha256 by hand before merging."$'\n'
+      continue
+    fi
+    jq --arg k "$key" --arg n "$aname" --arg u "$NEWURL" '.sources[$k].assets[$n].url = $u' \
+      "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
+    BUILD_ROWS+="| \`${key}\` asset ${aname} | \`${ref}\` → \`${CAND}\` | url only |"$'\n'
+    ALARMS+="- source \`${key}\` asset \`${aname}\`: url moved to \`${CAND}\`, but \`sha256\` still holds the \`${ref}\` hash. Copy the \`${CAND}\` value from the vendor's release checksums before merging; until then scripts/fetch-assets.sh fails the build on the mismatch."$'\n'
+  done < <(jq -r --arg k "$key" '.sources[$k].assets // {} | keys[]' "$VERSIONS")
+
   CHANGED=1
 done < <(jq -r '.sources | keys[]' "$VERSIONS")
 

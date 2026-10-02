@@ -77,7 +77,8 @@ chmod +x "$TMP/bin/regctl" "$TMP/bin/git"
 cat > "$TMP/work/versions.json" <<EOF
 {
   "sources": {
-    "nats": { "url": "file://$TMP/nats.git", "track": "^v2\\\\.14\\\\.[0-9]+\$", "ref": "v2.14.5", "commit": "$SHA40", "shortCommit": "0000000" },
+    "nats": { "url": "file://$TMP/nats.git", "track": "^v2\\\\.14\\\\.[0-9]+\$", "ref": "v2.14.5", "commit": "$SHA40", "shortCommit": "0000000",
+      "assets": { "ui": { "url": "https://example.invalid/releases/download/v2.14.5/ui-2.14.5.tar.gz", "sha256": "$(printf 'f%.0s' {1..64})" } } },
     "dapr": { "url": "https://example.invalid/dapr", "track": "^v1\\\\.18\\\\.[0-9]+\$", "ref": "v1.18.4-pre.233f2b49", "commit": "$SHA40" }
   },
   "images": {
@@ -122,4 +123,15 @@ grep -q 'daprd` crosscheck arm64' "$TMP/report.md" \
 grep -q 'nats`: `crosscheck.releaseTarballSha256` still holds the `v2.14.5`' "$TMP/report.md" \
   || fail "no alarm for the stale nats releaseTarballSha256"
 
-echo "OK: drift-upstream.sh pins crosschecks per platform, abbreviates in a full clone, and flags what it cannot move"
+# --- Release assets: URL follows the release, hash is flagged not carried ---
+# A URL left on the old release would embed the old UI in the new binary, and
+# its old hash would still match. Both forms of the version must move.
+got=$(jq -r '.sources.nats.assets.ui.url' "$V")
+[[ "$got" == "https://example.invalid/releases/download/v2.14.7/ui-2.14.7.tar.gz" ]] \
+  || fail "nats asset url not moved to the new release: ${got}"
+[[ "$(jq -r '.sources.nats.assets.ui.sha256' "$V")" == "$(printf 'f%.0s' {1..64})" ]] \
+  || fail "nats asset sha256 changed; drift has no trusted source for it and must leave it to fail closed"
+grep -q 'source `nats` asset `ui`: url moved to `v2.14.7`, but `sha256` still holds the `v2.14.5` hash' "$TMP/report.md" \
+  || fail "no alarm for the nats asset sha256 left on the old release"
+
+echo "OK: drift-upstream.sh pins crosschecks per platform, abbreviates in a full clone, moves asset URLs, and flags what it cannot move"

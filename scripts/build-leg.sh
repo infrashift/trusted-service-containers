@@ -77,6 +77,9 @@ DEST_TAG="pr-${PR_NUM}-${SRC_VERSION}-${ARCH}"
 # 2. Fetch the source at the pinned COMMIT.
 # ---------------------------------------------------------------------------
 ./scripts/fetch-source.sh "$SERVICE" "$SRC_URL" "$SRC_REF" "$SRC_VERSION"
+# Pinned vendor release assets the source build needs (Prometheus's web UI).
+# A no-op for sources that declare none.
+./scripts/fetch-assets.sh "$SERVICE" "$SRC_KEY"
 
 # Committer date, NOT `date -u`. Wall-clock time guarantees a different binary
 # on every rerun, which destroys any chance of self-consistency and makes the

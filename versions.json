@@ -54,6 +54,20 @@
         "dapr-scheduler"
       ],
       "note": "One source repo produces all three images. Moved up from 1.14.4, which is outside Dapr's N-2 support window. Scheduler is included because from 1.15+ actor reminders and workflows require it. Pinned to an untagged commit on release-1.18, deliberately: v1.18.3 vendors etcd 3.5.30, which carries GO-2026-6107 and GO-2026-6114, both High with an upstream fix and therefore blocking under our policy. No released version clears them -- v1.18.3 is the newest tag -- but the fix is backported and this commit is it. ref must be OCI-tag-safe: build-leg.sh interpolates it into DEST_TAG=pr-<n>-<ref>-<arch>, and a '+' there is rejected by the registry grammar, which surfaces only as buildah exit 125. Hence v1.18.4-pre.233f2b49 rather than a semver build-metadata suffix -- it is also the honest ordering, since this commit is on release-1.18 and precedes the v1.18.4 tag. `track` is unchanged, so drift-upstream will propose v1.18.4 as soon as it is tagged; replace this pin with that tag when it lands."
+    },
+    "prometheus": {
+      "track": "^v3\\.15\\.[0-9]+$",
+      "ref": "v3.15.0",
+      "url": "https://github.com/prometheus/prometheus",
+      "commit": "5241a27fe3c6983549fccc32f6e65917408c63cd",
+      "assets": {
+        "web-ui": {
+          "url": "https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-web-ui-3.15.0.tar.gz",
+          "sha256": "fa8c918ed05e3f89e232e9b69eccd6ed074602cd9e8a2cab7a92bec9651974ae",
+          "note": "The compiled web UI. A source build without Node and pnpm has no UI (`builtinassets` embeds web/ui/static, which only `make assets` populates), and upstream publishes this tarball for exactly that case -- its Makefile honours PREBUILT_ASSETS_STATIC_DIR. Its paths are static/..., the shape scripts/package_assets.sh writes. sha256 copied 2026-10-01 from the release's sha256sums.txt. Prometheus does not sign release assets, so this hash IS the trust claim. A drift bump moves the URL but cannot re-pin the hash; scripts/fetch-assets.sh refuses a URL that does not name the release being built."
+        }
+      },
+      "note": "Initial pin, the newest release (2026-09-24). Track is the 3.15 minor line, like nats. Upstream's .promu.yml builds with Go 1.27; go.mod only requires 1.26.0, so our go1.26 toolchain builds it with GOTOOLCHAIN=local (no toolchain download) and the cross-check is best-effort."
     }
   },
   "toolchains": {
@@ -746,6 +760,85 @@
       },
       "updated": "2026-09-30",
       "reason": "Initial pin. Required from Dapr 1.15+ for actor reminders and workflows; the user is migrating from 1.14 where it did not exist."
+    },
+    "prometheus": {
+      "kind": "build",
+      "source": "prometheus",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "archNote": "Upstream's index also carries arm/v7, ppc64le, riscv64 and s390x. We build linux/amd64 and linux/arm64 only.",
+      "containerfile": "Containerfiles/prometheus.Containerfile",
+      "build": {
+        "cgo": false,
+        "trimpath": true,
+        "goToolchain": "local",
+        "tags": [
+          "netgo",
+          "builtinassets"
+        ],
+        "mainPackage": "./cmd/prometheus",
+        "binary": "prometheus",
+        "installPath": "/usr/bin/prometheus",
+        "extraBinaries": [
+          {
+            "binary": "promtool",
+            "mainPackage": "./cmd/promtool",
+            "installPath": "/usr/bin/promtool"
+          }
+        ],
+        "commitForm": "full",
+        "ldflagsVars": {
+          "version": "github.com/prometheus/common/version.Version",
+          "revision": "github.com/prometheus/common/version.Revision",
+          "branch": "github.com/prometheus/common/version.Branch",
+          "buildUser": "github.com/prometheus/common/version.BuildUser",
+          "buildDate": "github.com/prometheus/common/version.BuildDate"
+        },
+        "note": "Binaries, tags and ldflags are upstream's .promu.yml at v3.15.0. Version takes the ref WITHOUT the leading v (promu stamps {{.Version}} from the VERSION file, 3.15.0). BuildDate is the source commit date, not wall-clock, so a rerun stamps the same string. promtool ships on purpose: it is the image's only HTTP client (ubi9-micro has no curl), and consumers use `promtool check healthy --http.config.file` as a health check that can present a client certificate.",
+        "extraLdflags": "-s -w"
+      },
+      "crosscheck": {
+        "image": "quay.io/prometheus/prometheus",
+        "binaryPath": "/bin/prometheus",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "v3.15.0",
+          "digest": "sha256:86b17a25c2db1d16a61b16b3c8f336679eb19e26333d03e808da387206e40faa"
+        },
+        "arm64": {
+          "tag": "v3.15.0",
+          "digest": "sha256:6b41f7a45cfbd1d259a78701ee5e14fc2ad9383c9aa5d0427345a18539bc3c91"
+        },
+        "note": "Upstream's own image (busybox base, USER nobody, ENTRYPOINT /bin/prometheus), per-platform children of the v3.15.0 index sha256:efd719c9... resolved 2026-10-01. Unsigned, so trust class none. best-effort: upstream compiles with Go 1.27 and we use 1.26, so a mismatch is expected and proves nothing."
+      },
+      "runtime": {
+        "ports": [
+          9090
+        ],
+        "volumes": [
+          "/prometheus"
+        ],
+        "entrypoint": [
+          "prometheus"
+        ],
+        "cmd": [
+          "--config.file=/etc/prometheus/prometheus.yml",
+          "--storage.tsdb.path=/prometheus"
+        ],
+        "user": 1001,
+        "tzdata": true,
+        "configNote": "CMD and /etc/prometheus/prometheus.yml are upstream's (documentation/examples/prometheus.yml, from the pinned source tree), so the image runs standalone exactly as quay.io/prometheus/prometheus does. Real deployments mount their own config, and a web config for TLS."
+      },
+      "updated": "2026-10-01",
+      "reason": "Initial pin. No usable UBI-based Prometheus exists: Red Hat's registry.redhat.io/openshift4/ose-prometheus-rhel9 needs an entitled, authenticated pull and ships OpenShift's fork on the OCP release train (v4.22), not upstream; DHI's is Debian-based. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; move to enforce after the first clean release. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/prometheus."
     }
   }
 }

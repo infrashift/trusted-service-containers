@@ -768,7 +768,7 @@
       "toolchain": "go1.26",
       "base": "ubi9-micro",
       "caSource": "ubi9-minimal",
-      "enforcement": "observe",
+      "enforcement": "enforce",
       "arches": [
         "amd64",
         "arm64"
@@ -838,7 +838,7 @@
         "configNote": "CMD and /etc/prometheus/prometheus.yml are upstream's (documentation/examples/prometheus.yml, from the pinned source tree), so the image runs standalone exactly as quay.io/prometheus/prometheus does. Real deployments mount their own config, and a web config for TLS."
       },
       "updated": "2026-10-01",
-      "reason": "Initial pin. No usable UBI-based Prometheus exists: Red Hat's registry.redhat.io/openshift4/ose-prometheus-rhel9 needs an entitled, authenticated pull and ships OpenShift's fork on the OCP release train (v4.22), not upstream; DHI's is Debian-based. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; move to enforce after the first clean release. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/prometheus."
+      "reason": "Initial pin. No usable UBI-based Prometheus exists: Red Hat's registry.redhat.io/openshift4/ose-prometheus-rhel9 needs an entitled, authenticated pull and ships OpenShift's fork on the OCP release train (v4.22), not upstream; DHI's is Debian-based. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; moved to enforce 2026-10-01 after the first review (PR #25) came back clean on both arches: allow=true, blocking=0, waived=0, 6 recorded (non-blocking), so no exception was needed. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/prometheus."
     }
   }
 }

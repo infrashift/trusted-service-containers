@@ -68,6 +68,15 @@
         }
       },
       "note": "Initial pin, the newest release (2026-09-24). Track is the 3.15 minor line, like nats. Upstream's .promu.yml builds with Go 1.27; go.mod only requires 1.26.0, so our go1.26 toolchain builds it with GOTOOLCHAIN=local (no toolchain download) and the cross-check is best-effort."
+    },
+    "loki": {
+      "track": "^v3\\.7\\.[0-9]+$",
+      "ref": "v3.7.8",
+      "url": "https://github.com/grafana/loki",
+      "commit": "09e6ce2ff1bdc19763a10265b870c86f51c98655",
+      "shortCommit": "09e6ce2f",
+      "shortCommitNote": "Loki's Makefile stamps Revision from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo. Verified on the vendor's v3.7.8 binary (`loki -version`, 2026-10-06): revision 09e6ce2f, 8 characters. fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`.",
+      "note": "Initial pin, the newest release (2026-09-17). v3.7.8 is a lightweight tag on 09e6ce2f. Track is the 3.7 minor line, like prometheus and nats. go.mod requires go 1.26.5 and upstream's cmd/loki/Dockerfile builds with 1.26.6, the same patch our go1.26 toolchain pin carries."
     }
   },
   "toolchains": {
@@ -839,6 +848,83 @@
       },
       "updated": "2026-10-01",
       "reason": "Initial pin. No usable UBI-based Prometheus exists: Red Hat's registry.redhat.io/openshift4/ose-prometheus-rhel9 needs an entitled, authenticated pull and ships OpenShift's fork on the OCP release train (v4.22), not upstream; DHI's is Debian-based. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; moved to enforce 2026-10-01 after the first review (PR #25) came back clean on both arches: allow=true, blocking=0, waived=0, 6 recorded (non-blocking), so no exception was needed. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/prometheus."
+    },
+    "loki": {
+      "kind": "build",
+      "source": "loki",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "archNote": "Upstream's index also carries arm/v7. We build linux/amd64 and linux/arm64 only.",
+      "containerfile": "Containerfiles/loki.Containerfile",
+      "build": {
+        "cgo": false,
+        "trimpath": true,
+        "goToolchain": "local",
+        "tags": [
+          "netgo"
+        ],
+        "mainPackage": "./cmd/loki",
+        "binary": "loki",
+        "installPath": "/usr/bin/loki",
+        "extraBinaries": [
+          {
+            "binary": "logcli",
+            "mainPackage": "./cmd/logcli",
+            "installPath": "/usr/bin/logcli"
+          }
+        ],
+        "commitForm": "short",
+        "ldflagsVars": {
+          "version": "github.com/grafana/loki/v3/pkg/util/build.Version",
+          "revision": "github.com/grafana/loki/v3/pkg/util/build.Revision",
+          "branch": "github.com/grafana/loki/v3/pkg/util/build.Branch",
+          "buildUser": "github.com/grafana/loki/v3/pkg/util/build.BuildUser",
+          "buildDate": "github.com/grafana/loki/v3/pkg/util/build.BuildDate"
+        },
+        "note": "Tags and ldflags are upstream's Makefile at v3.7.8 (GO_FLAGS: -s -w, -tags netgo, CGO_ENABLED=0; VPREFIX pkg/util/build). Version is the ref WITHOUT the leading v (tools/image-tag strips it; the vendor binary reports 3.7.8). Revision is the pinned shortCommit. Branch is HEAD (the vendor's CI reports release-3.7.x, which is not pinned data). BuildDate is the source commit date, not wall-clock. -trimpath is ours. logcli ships on purpose: it is the operator's query client, and consumers run it from this signed image rather than an unpinned download.",
+        "extraLdflags": "-s -w"
+      },
+      "crosscheck": {
+        "image": "docker.io/grafana/loki",
+        "binaryPath": "/usr/bin/loki",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "3.7.8",
+          "digest": "sha256:81a6802ec4bd1b88c564494f06376889ed022998a188826190d26d2754ac2aae"
+        },
+        "arm64": {
+          "tag": "3.7.8",
+          "digest": "sha256:a2753977b07471e0bb271f421677036fb1c84a2fd409e14fa19dfc7cc3b789b5"
+        },
+        "note": "Upstream's own image (distroless/static:nonroot, USER 10001, ENTRYPOINT /usr/bin/loki), per-platform children of the 3.7.8 index sha256:1107dd52... resolved 2026-10-06. best-effort: upstream builds without -trimpath and stamps a wall-clock BuildDate and root@buildkitsandbox, so a byte mismatch is expected and proves nothing even on the same Go patch."
+      },
+      "runtime": {
+        "ports": [
+          3100
+        ],
+        "volumes": [
+          "/loki"
+        ],
+        "entrypoint": [
+          "loki"
+        ],
+        "cmd": [
+          "-config.file=/etc/loki/local-config.yaml"
+        ],
+        "user": 1001,
+        "tzdata": true,
+        "configNote": "CMD and /etc/loki/local-config.yaml are upstream's (cmd/loki/loki-docker-config.yaml, from the pinned source tree), so the image runs standalone exactly as docker.io/grafana/loki does. Real deployments mount their own config."
+      },
+      "updated": "2026-10-06",
+      "reason": "Initial pin. No usable UBI-based Loki exists: Red Hat's logging-loki-rhel9 is an entitled, authenticated pull on the OpenShift Logging release train; the vendor image is distroless/static (Debian). Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md. Licence AGPL-3.0-only (LICENSING.md; pkg/ subfolders Apache-2.0); unmodified and run internally. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/loki (PLAN-Logging.md Part A)."
     }
   }
 }

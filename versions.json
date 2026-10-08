@@ -77,6 +77,15 @@
       "shortCommit": "09e6ce2f",
       "shortCommitNote": "Loki's Makefile stamps Revision from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo. Verified on the vendor's v3.7.8 binary (`loki -version`, 2026-10-06): revision 09e6ce2f, 8 characters. fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`.",
       "note": "Initial pin, the newest release (2026-09-17). v3.7.8 is a lightweight tag on 09e6ce2f. Track is the 3.7 minor line, like prometheus and nats. go.mod requires go 1.26.5 and upstream's cmd/loki/Dockerfile builds with 1.26.6, the same patch our go1.26 toolchain pin carries."
+    },
+    "seaweedfs": {
+      "track": "^4\\.[0-9]+$",
+      "ref": "4.48",
+      "url": "https://github.com/seaweedfs/seaweedfs",
+      "commit": "530be3e37337488ecc34d58441e0bc476e121c93",
+      "shortCommit": "530be3e37",
+      "shortCommitNote": "Upstream's container build stamps COMMIT from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo. Verified on the vendor's 4.48 binary (`weed version`, 2026-10-08): \"version 30GB 4.48 530be3e37 linux amd64\", 9 characters. fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`.",
+      "note": "Initial pin, the newest release (2026-09-28). Tags carry no leading v (4.48, 4.47, ...), and every release bumps the minor, so the track is the whole 4.x line. go.mod requires go 1.26.6, the patch our go1.26 toolchain pin carries."
     }
   },
   "toolchains": {
@@ -925,6 +934,79 @@
       },
       "updated": "2026-10-06",
       "reason": "Initial pin. No usable UBI-based Loki exists: Red Hat's logging-loki-rhel9 is an entitled, authenticated pull on the OpenShift Logging release train; the vendor image is distroless/static (Debian). Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md. Licence AGPL-3.0-only (LICENSING.md; pkg/ subfolders Apache-2.0); unmodified and run internally. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/loki (PLAN-Logging.md Part A)."
+    },
+    "seaweedfs": {
+      "kind": "build",
+      "source": "seaweedfs",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "archNote": "Upstream's index also carries 386 and arm/v7. We build linux/amd64 and linux/arm64 only.",
+      "containerfile": "Containerfiles/seaweedfs.Containerfile",
+      "build": {
+        "cgo": false,
+        "trimpath": true,
+        "goToolchain": "local",
+        "mainPackage": "./weed",
+        "binary": "weed",
+        "installPath": "/usr/bin/weed",
+        "commitForm": "short",
+        "ldflagsVars": {
+          "commit": "github.com/seaweedfs/seaweedfs/weed/util/version.COMMIT"
+        },
+        "note": "ldflags are upstream's release workflow at 4.48 (binaries_release0.yml: -s -w -extldflags -static -X weed/util/version.COMMIT). The version NUMBER is compiled in from weed/util/version/constants.go, not stamped, so the Containerfile's version grep also proves the source constants agree with the ref. COMMIT is the pinned shortCommit, as upstream's container image stamps it. No build tags: the standard build (30GB volumes), not 5BytesOffset (large_disk), whose volume files a standard build cannot read -- switching later is a data migration, not a rebuild. -trimpath is ours. Only the Go weed binary ships; upstream's image also carries an optional Rust volume server and maintenance worker.",
+        "extraLdflags": "-s -w -extldflags -static"
+      },
+      "crosscheck": {
+        "image": "docker.io/chrislusf/seaweedfs",
+        "binaryPath": "/usr/bin/weed",
+        "trustClass": "none",
+        "reproducibilityTier": "best-effort",
+        "amd64": {
+          "tag": "4.48",
+          "digest": "sha256:aba492e2a4e4c90bff795745e8e660affa1f09e7650f5981bd7bccd1a06cd931"
+        },
+        "arm64": {
+          "tag": "4.48",
+          "digest": "sha256:f1f303474940e9e088edbd2c1658f7ac38cb0dd90f91a2b0a51916d74b8575a1"
+        },
+        "note": "Upstream's own image (Alpine 3.23, ENTRYPOINT /entrypoint.sh, CMD mini -dir=/data, unsigned), per-platform children of the 4.48 index sha256:4e61d15f... resolved 2026-10-08. best-effort: upstream builds without -trimpath on golang:1.26-alpine with a floating patch, so a byte mismatch is expected and proves nothing."
+      },
+      "runtime": {
+        "ports": [
+          8333,
+          8888,
+          18888,
+          9333,
+          19333,
+          8080,
+          18080
+        ],
+        "volumes": [
+          "/data"
+        ],
+        "entrypoint": [
+          "weed"
+        ],
+        "cmd": [
+          "server",
+          "-dir=/data",
+          "-s3",
+          "-s3.port.iceberg=0",
+          "-s3.port.lance=0"
+        ],
+        "user": 1001,
+        "tzdata": true,
+        "configNote": "CMD is ours, not upstream's `mini` (which also opens an admin UI and WebDAV): a single-node master + volume + filer + S3 gateway, so the image runs standalone. Real deployments pass their own flags and an -s3.config identity file; without one the S3 gateway is open to anonymous requests."
+      },
+      "updated": "2026-10-08",
+      "reason": "Initial pin. Replaces MinIO, whose public images (quay.io/minio/minio, docker.io/minio/minio) answer 401 since 2026-10-07, as the S3 blob store of Sonatype Nexus. The vendor image is Alpine and unsigned; no UBI-based SeaweedFS exists. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md. Licence Apache-2.0; unmodified and run internally. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/nexus-uar (PLAN-SeaweedFS.md Part A)."
     }
   }
 }

@@ -15,6 +15,8 @@ REPORT="${DRIFT_REPORT:-/tmp/drift-upstream.md}"
 CHANGED=0
 MIRROR_ROWS=""
 BUILD_ROWS=""
+TOOLCHAIN_ROWS=""
+TC_MOVED=""
 ALARMS=""
 : > "$REPORT"
 
@@ -243,6 +245,71 @@ while read -r key; do
 done < <(jq -r '.sources | keys[]' "$VERSIONS")
 
 # ===========================================================================
+# Toolchains
+# ===========================================================================
+# The builder images every build-track leg compiles with. Their tag is a
+# ROLLING minor tag (golang 1.26-trixie), and Go ships stdlib security fixes as
+# patch releases behind it, so the digest moving is the whole signal -- exactly
+# like a rolling mirror tag. Until 2026-10-13 nothing watched these: Go 1.26.9
+# fixed a Critical and seven Highs on 2026-10-08, and the pin sat on 1.26.6
+# until a new image's review tripped over them.
+#
+# goVersion is per toolchain and rewritten by the first arch that moves, so
+# the "from" side of the report comes from a snapshot taken before any arch.
+TC_WAS=$(jq -c '.toolchains // {} | map_values(.goVersion // "?")' "$VERSIONS")
+while IFS=$'\t' read -r tc arch; do
+  img=$(jq -r    --arg t "$tc" '.toolchains[$t].image' "$VERSIONS")
+  tag=$(jq -r    --arg t "$tc" '.toolchains[$t].tag'   "$VERSIONS")
+  pinned=$(jq -r --arg t "$tc" --arg a "$arch" '.toolchains[$t][$a].digest' "$VERSIONS")
+  oldver=$(jq -r --arg t "$tc" '.[$t]' <<<"$TC_WAS")
+  # --platform: the per-arch child, never the index. Same rule as the bases.
+  LIVE=$(regctl manifest head --platform "linux/${arch}" --format '{{.GetDescriptor.Digest}}' "${img}:${tag}" 2>/dev/null || echo "")
+  if [[ -z "$LIVE" ]]; then
+    ALARMS+="- toolchain \`${tc}\` ${arch}: \`${img}:${tag}\` could not be resolved."$'\n'
+    continue
+  fi
+  if [[ "$LIVE" == "$pinned" ]]; then
+    printf '  %-22s current (go%s)\n' "toolchain/${tc}/${arch}" "$oldver"
+    continue
+  fi
+  # The patch the new digest ships, from its own config. A digest bump with
+  # goVersion left behind would put a wrong compiler version in front of the
+  # reviewer, which is the thing goVersion exists to prevent.
+  NEWVER=$(regctl image config "${img}@${LIVE}" 2>/dev/null \
+             | jq -r '.config.Env[]? | select(startswith("GOLANG_VERSION=")) | ltrimstr("GOLANG_VERSION=")' || true)
+  if [[ ! "$NEWVER" =~ ^1\.[0-9]+\.[0-9]+$ ]]; then
+    ALARMS+="- toolchain \`${tc}\` ${arch}: \`${LIVE:0:19}…\` reports no readable GOLANG_VERSION; not re-pinned."$'\n'
+    continue
+  fi
+  jq --arg t "$tc" --arg a "$arch" --arg d "$LIVE" --arg v "$NEWVER" \
+    '.toolchains[$t][$a].digest = $d | .toolchains[$t].goVersion = $v' \
+    "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
+  TOOLCHAIN_ROWS+="| \`${tc}\` | ${arch} | go${oldver} → go${NEWVER} | \`${pinned:0:19}…\` | \`${LIVE:0:19}…\` |"$'\n'
+  TC_MOVED+="${tc}"$'\n'
+  printf '  %-22s rolling tag moved: go%s -> go%s\n' "toolchain/${tc}/${arch}" "$oldver" "$NEWVER"
+  CHANGED=1
+done < <(jq -r '.toolchains // {} | to_entries[] | .key as $t
+                | .value | keys[] | select(. == "amd64" or . == "arm64") | [$t, .] | @tsv' "$VERSIONS")
+
+# Every arch of a re-pinned toolchain must ship the version now recorded.
+# Docker Official Images publish arches minutes apart, so a run that lands
+# between them moves one arch and leaves the other -- and goVersion, which is
+# per toolchain, would then describe only one of them. Read each pinned
+# config back rather than trust the arch that happened to move.
+while read -r tc; do
+  [[ -n "$tc" ]] || continue
+  img=$(jq -r --arg t "$tc" '.toolchains[$t].image' "$VERSIONS")
+  rec=$(jq -r --arg t "$tc" '.toolchains[$t].goVersion' "$VERSIONS")
+  while read -r arch; do
+    d=$(jq -r --arg t "$tc" --arg a "$arch" '.toolchains[$t][$a].digest' "$VERSIONS")
+    v=$(regctl image config "${img}@${d}" 2>/dev/null           | jq -r '.config.Env[]? | select(startswith("GOLANG_VERSION=")) | ltrimstr("GOLANG_VERSION=")' || true)
+    if [[ "$v" != "$rec" ]]; then
+      ALARMS+="- toolchain \`${tc}\` ${arch}: pinned digest ships go${v:-?}, but goVersion records go${rec}. The arches are out of step; re-run once the registry settles, before merging."$'\n'
+    fi
+  done < <(jq -r --arg t "$tc" '.toolchains[$t] | keys[] | select(. == "amd64" or . == "arm64")' "$VERSIONS")
+done < <(printf '%s' "$TC_MOVED" | sort -u)
+
+# ===========================================================================
 # Report
 # ===========================================================================
 if [[ "$CHANGED" -eq 1 || -n "$ALARMS" ]]; then
@@ -256,6 +323,9 @@ if [[ "$CHANGED" -eq 1 || -n "$ALARMS" ]]; then
     echo
     [[ -n "$MIRROR_ROWS" ]] && { echo "### Mirror track"; echo; echo "| Image | Kind | Tag | Pinned | Current | |"; echo "|---|---|---|---|---|---|"; printf '%s' "$MIRROR_ROWS"; echo; }
     [[ -n "$BUILD_ROWS" ]]  && { echo "### Build track"; echo; echo "| Entry | Ref | New value |"; echo "|---|---|---|"; printf '%s' "$BUILD_ROWS"; echo; }
+    [[ -n "$TOOLCHAIN_ROWS" ]] && { echo "### Toolchains"; echo; echo "| Toolchain | Arch | Compiler | Pinned | Current |"; echo "|---|---|---|---|---|"; printf '%s' "$TOOLCHAIN_ROWS"; echo
+      echo "A toolchain bump rebuilds **every build-track image that compiles with it**. Go patch releases are"
+      echo "usually security releases; check https://go.dev/doc/devel/release for what this one fixes."; echo; }
     [[ -n "$ALARMS" ]] && { echo "### Needs attention"; echo; printf '%s' "$ALARMS"; echo; }
     echo "### Before merging"
     echo

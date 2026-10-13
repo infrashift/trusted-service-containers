@@ -64,7 +64,7 @@ help:
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
 	echo "  verify-pins           re-resolve every upstream, base and crosscheck digest"
 	echo "  verify-mirror-pins    mirror-track pins only"
-	echo "  verify-build-pins     build-track base + crosscheck pins only"
+	echo "  verify-build-pins     build-track base, toolchain + crosscheck pins only"
 	echo "  list-images           target_namespace=development|trusted|quarantine"
 	echo "  clean-ghcr-namespace  target_namespace=development  (refuses trusted/)"
 	echo
@@ -203,11 +203,28 @@ verify-build-pins:
 			stale=$$((stale + 1))
 		fi
 	done < <(jq -r '. as $$d | $$d.images | to_entries[] | select(.value.kind=="build") | .key as $$k | .value.base as $$b | .value.arches[] as $$a | [$$k, $$d.bases[$$b].image, $$d.bases[$$b][$$a].digest, $$a] | @tsv' $(VERSIONS))
+	# Toolchains sit on a rolling tag that Go security releases move. A stale
+	# one compiles every build-track image with a known-vulnerable stdlib --
+	# go1.26 sat on 1.26.6 for five days past a Critical, until a review caught it.
+	echo "Toolchains:"
+	while IFS=$$'\t' read -r tc img tag arch pinned gover; do
+		actual=$$(regctl manifest head --platform "linux/$$arch" --format '{{.GetDescriptor.Digest}}' "$$img:$$tag" 2>/dev/null || echo '<unresolvable>')
+		shipped=$$(regctl image config "$$img@$$pinned" 2>/dev/null | jq -r '.config.Env[]? | select(startswith("GOLANG_VERSION=")) | ltrimstr("GOLANG_VERSION=")' || true)
+		if [ "$$actual" != "$$pinned" ]; then
+			printf '  %-16s %-6s STALE  pinned=%s %s=%s\n' "$$tc" "$$arch" "$$pinned" "$$tag" "$$actual"
+			stale=$$((stale + 1))
+		elif [ "$$shipped" != "$$gover" ]; then
+			printf '  %-16s %-6s MISMATCH  pinned digest ships go%s, goVersion says go%s\n' "$$tc" "$$arch" "$${shipped:-?}" "$$gover"
+			stale=$$((stale + 1))
+		else
+			printf '  %-16s %-6s current (go%s)\n' "$$tc" "$$arch" "$$gover"
+		fi
+	done < <(jq -r '.toolchains | to_entries[] | .key as $$t | .value as $$v | ($$v | keys[] | select(. == "amd64" or . == "arm64")) as $$a | [$$t, $$v.image, $$v.tag, $$a, $$v[$$a].digest, $$v.goVersion] | @tsv' $(VERSIONS))
 	echo "Source pins:"
 	jq -r '.sources | to_entries[] | .key as $$s | (if (.value.repos // empty) then (.value.repos | to_entries[] | "  \($$s)/\(.key)  \(.value.commit[0:12])") else "  \($$s)  \(.value.commit[0:12])" end)' $(VERSIONS)
 	echo "Crosscheck pins:"
 	jq -r '.images | to_entries[] | select(.value.kind=="build") | .key as $$k | .value.crosscheck as $$c | $$c.arches // ["amd64","arm64"] | .[] as $$a | "  \($$k) \($$a)  \($$c[$$a].tag // "-")"' $(VERSIONS) 2>/dev/null || true
-	if [ "$$stale" -ne 0 ]; then echo "$$stale base pin(s) stale." >&2; exit 1; fi
+	if [ "$$stale" -ne 0 ]; then echo "$$stale base or toolchain pin(s) stale." >&2; exit 1; fi
 
 .PHONY: list-images
 list-images:

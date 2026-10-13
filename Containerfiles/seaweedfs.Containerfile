@@ -36,8 +36,10 @@ WORKDIR /src
 # asserted to resolve to it).
 COPY src/seaweedfs/ /src/
 
-# GOTOOLCHAIN=local: go.mod asks for go 1.26.6, exactly the patch the pinned
-# toolchain image carries. `local` makes a future go.mod that wants more fail
+# GOTOOLCHAIN=local: go.mod asks for go 1.26.6 and the pinned toolchain image
+# satisfies it. The image's patch lives in versions.json
+# (toolchains.go1.26.goVersion), never here: a comment naming it goes stale on
+# the next security release. `local` makes a future go.mod that wants more fail
 # the build instead of silently downloading an unpinned compiler.
 ENV CGO_ENABLED=0 \
     GOOS=linux \

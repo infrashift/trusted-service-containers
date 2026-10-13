@@ -34,9 +34,10 @@ WORKDIR /src
 COPY src/prometheus-nats-exporter/ /src/
 
 # GOTOOLCHAIN=local: go.mod asks for go 1.25.10 and the pinned toolchain image
-# (1.26.6, the same patch the vendor's v0.20.2 binary reports in `go version -m`)
-# satisfies it. `local` makes a future go.mod that wants more fail the build
-# instead of silently downloading an unpinned compiler.
+# satisfies it. The image's patch lives in versions.json
+# (toolchains.go1.26.goVersion), never here: a comment naming it goes stale on
+# the next security release. `local` makes a future go.mod that wants more fail
+# the build instead of silently downloading an unpinned compiler.
 ENV CGO_ENABLED=0 \
     GOOS=linux \
     GOTOOLCHAIN=local

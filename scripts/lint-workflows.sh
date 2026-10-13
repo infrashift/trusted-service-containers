@@ -187,5 +187,52 @@ if not bad:
 sys.exit(1 if bad else 0)
 PY2
 
+# --- 11. The build matrix follows references, not just image entries ------
+# build.yml selects legs by diffing .images. A toolchain bump that also touched
+# one image entry used to rebuild only that image: every other Go image kept
+# the old compiler, and the PR stayed green because the legs that would have
+# failed review never ran. Run build.yml's own expression, extracted from the
+# workflow, against a fixture -- a behavioural check, not a grep for its text.
+python3 - <<'PY3' || fail=1
+import json, re, subprocess, sys, yaml
+w = yaml.safe_load(open('.github/workflows/build.yml'))
+prog = None
+for job in w['jobs'].values():
+    for st in job.get('steps') or []:
+        m = re.search(r"CHANGED=\$\(jq -c --argjson base \"\$BASE\" '(.*?)' versions\.json\)", st.get('run') or '', re.S)
+        if m:
+            prog = m.group(1)
+if prog is None:
+    print("error: build.yml: cannot find the CHANGED=$(jq ...) matrix expression", file=sys.stderr); sys.exit(1)
+d = lambda c: {"digest": "sha256:" + c * 64}
+img = lambda **kw: {"kind": "build", "source": "s", "toolchain": "t", "base": "b", "caSource": "c", "arches": ["amd64"], **kw}
+base = {"sources": {"s": {"commit": "1" * 40}, "s2": {"commit": "2" * 40}},
+        "toolchains": {"t": {"amd64": d("a")}},
+        "bases": {"b": {"amd64": d("a")}, "c": {"amd64": d("a")}},
+        "images": {"one": img(), "two": img(), "other": img(source="s2"),
+                   "mirror": {"kind": "mirror", "variants": {"v": d("a")}}}}
+def changed(mut):
+    head = json.loads(json.dumps(base)); mut(head)
+    out = subprocess.run(['jq', '-c', '--argjson', 'base', json.dumps(base), prog],
+                         input=json.dumps(head), capture_output=True, text=True, check=True).stdout
+    return sorted({x['service'] for x in json.loads(out)})
+cases = {
+    "toolchain + one image entry": (lambda h: (h['toolchains']['t'].update(amd64=d("b")), h['images']['one'].update(note="x")),
+                                    ["one", "other", "two"]),
+    "base only":                   (lambda h: h['bases']['b'].update(amd64=d("b")), ["one", "other", "two"]),
+    "CA donor only":               (lambda h: h['bases']['c'].update(amd64=d("b")), ["one", "other", "two"]),
+    "one source only":             (lambda h: h['sources']['s2'].update(commit="3" * 40), ["other"]),
+    "nothing":                     (lambda h: None, []),
+}
+bad = False
+for name, (mut, want) in cases.items():
+    got = changed(mut)
+    if got != want:
+        print(f"error: build.yml matrix, {name}: rebuilds {got}, want {want}", file=sys.stderr); bad = True
+if not bad:
+    print("  %-52s %s" % ("build matrix follows source/toolchain/base refs", "OK"))
+sys.exit(1 if bad else 0)
+PY3
+
 [[ "$fail" -eq 0 ]] && echo "OK: workflow lint passed"
 exit "$fail"

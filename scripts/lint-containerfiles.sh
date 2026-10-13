@@ -179,6 +179,22 @@ for svc, img in sorted(build_imgs.items()):
         err(p, f"build does not produce /out/{b['binary']} from {b['mainPackage']}")
     if f"/out/{b['binary']} {b['installPath']}" not in code:
         err(p, f"binary is not installed to {b['installPath']}")
+    if b.get('tags') and f"-tags={','.join(b['tags'])}" not in code:
+        err(p, f"versions.json declares tags {b['tags']} but the build does not pass "
+               f"-tags={','.join(b['tags'])}")
+    for x in b.get('extraBinaries', []):
+        if f"-o /out/{x['binary']} {x['mainPackage']}" not in code:
+            err(p, f"extra binary /out/{x['binary']} is not built from {x['mainPackage']}")
+        if f"/out/{x['binary']} {x['installPath']}" not in code:
+            err(p, f"extra binary {x['binary']} is not installed to {x['installPath']}")
+
+    # --- Declared release assets actually reach the builder -------------
+    # scripts/fetch-assets.sh verifies them into src/.assets/<service>/. A
+    # Containerfile that never copies them builds without them: for Prometheus
+    # that is a binary with no UI, which still starts and still passes a
+    # health check.
+    if V['sources'].get(img['source'], {}).get('assets') and f"src/.assets/{svc}/" not in code:
+        err(p, f"sources.{img['source']} declares assets but the build never copies src/.assets/{svc}/")
 
 if fail:
     for m in fail:

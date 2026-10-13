@@ -137,6 +137,18 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck -S warning scripts/*.sh
 
+      - name: Test the drift proposal path
+        # propose-drift.sh's CHANGED=1 path ran only on a schedule and only when
+        # drift existed; a git usage error there hid two weeks of drift. Run it
+        # here against a throwaway repo and a stubbed gh.
+        run: ./scripts/test-propose-drift.sh
+
+      - name: Test the drift detection path
+        # drift-upstream.sh's build-track bump wrote an INDEX digest into a
+        # per-platform crosscheck pin and silently left stale ones behind.
+        # Fixture versions.json, stubbed regctl and git.
+        run: ./scripts/test-drift-upstream.sh
+
       - name: Policy self-test
         run: |
           set -euo pipefail

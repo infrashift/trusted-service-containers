@@ -51,6 +51,21 @@
           "shortCommit": { "type": "string", "pattern": "^[0-9a-f]{7,12}$" },
           "lockstep": { "type": "array", "items": { "type": "string" }, "minItems": 2 },
           "note": { "type": "string" },
+          "assets": {
+            "type": "object",
+            "minProperties": 1,
+            "description": "Vendor release files the build needs but cannot produce from the checkout with our toolchain (Prometheus's prebuilt web UI). scripts/fetch-assets.sh fetches each into src/.assets/<service>/<name>, verifies the sha256, and refuses a URL that does not name this source's ref.",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["url", "sha256"],
+              "additionalProperties": false,
+              "properties": {
+                "url": { "type": "string", "pattern": "^https://" },
+                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "note": { "type": "string" }
+              }
+            }
+          },
           "repos": {
             "type": "object",
             "additionalProperties": {
@@ -171,6 +186,22 @@
                     "cgo": { "const": false, "description": "Every service in this repo is a static CGO_ENABLED=0 Go binary. CGO=1 on a Debian builder produces glibc-2.41 binaries that cannot run on ubi9's glibc 2.34." },
                     "trimpath": { "type": "boolean" },
                     "goToolchain": { "type": "string" },
+                    "tags": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9_.]+$" }, "minItems": 1,
+                      "description": "Go build tags. scripts/lint-containerfiles.sh asserts the build passes exactly -tags=<these, comma-joined>." },
+                    "extraBinaries": {
+                      "type": "array", "minItems": 1,
+                      "description": "Further binaries built from the same checkout and shipped beside the primary one (promtool beside prometheus). Only `binary` is cross-checked against the vendor's image.",
+                      "items": {
+                        "type": "object",
+                        "required": ["binary", "mainPackage", "installPath"],
+                        "additionalProperties": false,
+                        "properties": {
+                          "binary": { "type": "string" },
+                          "mainPackage": { "type": "string" },
+                          "installPath": { "type": "string", "pattern": "^/usr/bin/" }
+                        }
+                      }
+                    },
                     "mainPackage": { "type": "string" },
                     "binary": { "type": "string" },
                     "installPath": { "type": "string", "pattern": "^/usr/bin/" },

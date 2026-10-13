@@ -46,7 +46,11 @@ if [[ "$CHANGED" == "1" ]]; then
     git config user.email "drift@infrashift.io"
     git checkout -B "$BRANCH"
     git add versions.json
-    git commit -q -m "chore(pins): ${TITLE}" -F - <<EOF
+    # -F alone: the heredoc carries the subject line too. `-m` with `-F` is a
+    # fatal usage error in git, and it killed every drift run that found drift
+    # (2026-09-16..30) before the branch or the tracking issue existed, so the
+    # drift was invisible. scripts/test-propose-drift.sh runs this path.
+    git commit -q -F - <<EOF
 chore(pins): ${TITLE}
 
 $(cat "$REPORT")

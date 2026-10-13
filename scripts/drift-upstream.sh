@@ -151,13 +151,19 @@ while read -r key; do
     BUILD_ROWS+="| \`${key}\` | \`${ref}\` → \`${CAND}\` | \`${SHA:0:12}\` |"$'\n'
 
     # A pinned shortCommit is git's DYNAMIC abbreviation for the full repo, so
-    # it cannot be sliced from the full SHA. A blobless bare clone gives real
-    # history cheaply and lets git compute it. Getting the length wrong changes
+    # it cannot be sliced from the full SHA. Getting the length wrong changes
     # an embedded string and therefore the binary -- see
     # docs/build-track/dual-provenance.md.
+    #
+    # A FULL clone, never --filter=blob:none. git sizes an abbreviation from the
+    # number of objects it can see, and a blobless clone sees no blobs: for
+    # nats v2.14.7 it gave 8d8b69a8 where the release binaries embed
+    # 8d8b69a8c (goreleaser runs in a full checkout). A full bare clone gives
+    # 9, as it does for v2.14.5's d3bc04533. scripts/test-drift-upstream.sh
+    # holds a repository where the two differ.
     if jq -e --arg k "$key" '.sources[$k].shortCommit' "$VERSIONS" >/dev/null 2>&1; then
       TMPC=$(mktemp -d)
-      if git clone --quiet --filter=blob:none --bare "$url" "$TMPC/r" 2>/dev/null; then
+      if git clone --quiet --bare "$url" "$TMPC/r" 2>/dev/null; then
         SHORT=$(git -C "$TMPC/r" rev-parse --short "$SHA" 2>/dev/null || echo "")
         if [[ -n "$SHORT" && "$SHA" == "$SHORT"* ]]; then
           jq --arg k "$key" --arg s "$SHORT" '.sources[$k].shortCommit = $s' "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
@@ -166,7 +172,7 @@ while read -r key; do
           ALARMS+="- source \`${key}\`: could not compute shortCommit; determine it manually before merging (see docs/build-track/dual-provenance.md)."$'\n'
         fi
       else
-        ALARMS+="- source \`${key}\`: blobless clone failed; shortCommit not updated."$'\n'
+        ALARMS+="- source \`${key}\`: clone failed; shortCommit not updated."$'\n'
       fi
       rm -rf "$TMPC"
     fi
@@ -180,8 +186,19 @@ while read -r key; do
     xrepo=$(jq -r --arg s "$svc" '.images[$s].crosscheck.image' "$VERSIONS")
     xtag=$(jq -r  --arg s "$svc" --arg a "$arch" '.images[$s].crosscheck[$a].tag' "$VERSIONS")
     NEWTAG="${xtag//$ref/$CAND}"; NEWTAG="${NEWTAG//$OLD_BARE/$NEW_BARE}"
-    [[ "$NEWTAG" == "$xtag" ]] && continue
-    XD=$(regctl manifest head --format '{{.GetDescriptor.Digest}}' "${xrepo}:${NEWTAG}" 2>/dev/null || echo "")
+    # The source moved and this reference did not follow: its tag does not
+    # embed the old ref (dapr's source sat at v1.18.4-pre.* while its
+    # crosscheck tags said 1.18.3). Silently skipping it leaves the new build
+    # compared against the OLD release's binary.
+    if [[ "$NEWTAG" == "$xtag" ]]; then
+      ALARMS+="- \`${svc}\` crosscheck ${arch}: tag \`${xtag}\` does not embed the old source ref \`${ref}\`, so it was not moved to \`${CAND}\`. Re-pin it by hand (tag and per-platform digest) before merging."$'\n'
+      continue
+    fi
+    # --platform, always. A multi-arch tag (nats: 2.14.x-alpine3.22) heads to
+    # its INDEX digest, which the policy forbids here -- a crosscheck is pinned
+    # per platform. On a single-platform tag (ory, dapr) --platform returns
+    # the manifest itself, so this is correct for both shapes.
+    XD=$(regctl manifest head --platform "linux/${arch}" --format '{{.GetDescriptor.Digest}}' "${xrepo}:${NEWTAG}" 2>/dev/null || echo "")
     if [[ -z "$XD" ]]; then
       ALARMS+="- \`${svc}\`: crosscheck tag \`${NEWTAG}\` could not be resolved; re-pin it manually."$'\n'
       continue
@@ -194,6 +211,33 @@ while read -r key; do
             | select(.value.kind=="build" and .value.source==$k)
             | .key as $s | (.value.crosscheck | keys[] | select(. == "amd64" or . == "arm64")) as $a
             | [$s, $a] | @tsv' "$VERSIONS")
+
+  # Hashes of the vendor's release tarballs are a second anchor this script
+  # cannot recompute (they come from the vendor's Dockerfile). After a bump
+  # they still describe the OLD release; say so rather than carry them over.
+  while read -r svc; do
+    ALARMS+="- \`${svc}\`: \`crosscheck.releaseTarballSha256\` still holds the \`${ref}\` tarball hashes. Take the \`${CAND}\` values from the vendor's release and re-confirm them before merging."$'\n'
+  done < <(jq -r --arg k "$key" '.images | to_entries[]
+            | select(.value.kind=="build" and .value.source==$k and (.value.crosscheck.releaseTarballSha256 // null) != null)
+            | .key' "$VERSIONS")
+
+  # Release assets (Prometheus's prebuilt web UI) are named after the release,
+  # so the URL moves with the source. The hash cannot: this script has no
+  # trusted place to read it from. It is left on the OLD release's value, which
+  # scripts/fetch-assets.sh then rejects as a mismatch -- the proposal fails
+  # closed until someone copies the new value from the vendor's checksums.
+  while read -r aname; do
+    aurl=$(jq -r --arg k "$key" --arg n "$aname" '.sources[$k].assets[$n].url' "$VERSIONS")
+    NEWURL="${aurl//$ref/$CAND}"; NEWURL="${NEWURL//$OLD_BARE/$NEW_BARE}"
+    if [[ "$NEWURL" == "$aurl" ]]; then
+      ALARMS+="- source \`${key}\` asset \`${aname}\`: url does not embed \`${ref}\`, so it was not moved to \`${CAND}\`. Re-pin url and sha256 by hand before merging."$'\n'
+      continue
+    fi
+    jq --arg k "$key" --arg n "$aname" --arg u "$NEWURL" '.sources[$k].assets[$n].url = $u' \
+      "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
+    BUILD_ROWS+="| \`${key}\` asset ${aname} | \`${ref}\` → \`${CAND}\` | url only |"$'\n'
+    ALARMS+="- source \`${key}\` asset \`${aname}\`: url moved to \`${CAND}\`, but \`sha256\` still holds the \`${ref}\` hash. Copy the \`${CAND}\` value from the vendor's release checksums before merging; until then scripts/fetch-assets.sh fails the build on the mismatch."$'\n'
+  done < <(jq -r --arg k "$key" '.sources[$k].assets // {} | keys[]' "$VERSIONS")
 
   CHANGED=1
 done < <(jq -r '.sources | keys[]' "$VERSIONS")

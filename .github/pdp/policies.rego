@@ -780,16 +780,25 @@ remediation_hint := "DHI advertises a near-zero known-CVE baseline, so a finding
 	track == "build"
 } else := "Check whether a newer release on the declared track clears this before considering an exception."
 
+# Per finding. On the build track `stdlib` is the Go standard library, and it
+# comes from OUR compiler, not from the source or the base: neither bump clears
+# it. Go 1.26.9 fixed GO-2026-6603..6613 five days before PR #29's review
+# flagged them, and the generic hint pointed at the base and the source.
+cve_hint(pkg) := "stdlib is compiled in by the pinned Go toolchain, so neither a base nor a source bump clears it. Re-pin versions.json toolchains to a Go patch that carries the fix (make -f Ops.mk verify-build-pins shows whether the pin is stale); scripts/drift-upstream.sh proposes this automatically." if {
+	track == "build"
+	pkg == "stdlib"
+} else := remediation_hint
+
 violations contains v if {
 	some f in blocking_findings
 	f.severity == "Critical"
-	v := {"code": "CVE_CRITICAL", "cve": f.id, "package": f.package, "fix_state": f.fix_state, "remediation_hint": remediation_hint, "message": sprintf("Critical %v in %v (fix: %v). Criticals block unconditionally, fix available or not. Denying.", [f.id, f.package, f.fix_state])}
+	v := {"code": "CVE_CRITICAL", "cve": f.id, "package": f.package, "fix_state": f.fix_state, "remediation_hint": cve_hint(f.package), "message": sprintf("Critical %v in %v (fix: %v). Criticals block unconditionally, fix available or not. Denying.", [f.id, f.package, f.fix_state])}
 }
 
 violations contains v if {
 	some f in blocking_findings
 	f.severity == "High"
-	v := {"code": "CVE_HIGH_FIXABLE", "cve": f.id, "package": f.package, "remediation_hint": remediation_hint, "message": sprintf("High %v in %v has an available upstream fix, so it is actionable. Denying.", [f.id, f.package])}
+	v := {"code": "CVE_HIGH_FIXABLE", "cve": f.id, "package": f.package, "remediation_hint": cve_hint(f.package), "message": sprintf("High %v in %v has an available upstream fix, so it is actionable. Denying.", [f.id, f.package])}
 }
 
 # --- Exception hygiene, leg-scoped -----------------------------------------

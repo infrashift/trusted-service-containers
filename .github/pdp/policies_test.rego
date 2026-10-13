@@ -555,6 +555,29 @@ test_fixable_high_denies if {
 	not d.allow
 }
 
+# A stdlib finding on the build track is our compiler's, so the hint must
+# point at the toolchain pin -- the generic build hint names only the base and
+# the source, neither of which clears it. Every other package keeps that hint.
+stdlib_crit := {"id": "GO-2026-6612", "severity": "Critical", "fix_state": "fixed", "package": "stdlib"}
+
+hints(dec, code) := {v.package: v.remediation_hint | some v in dec.violations; v.code == code}
+
+test_build_stdlib_finding_hints_at_the_toolchain if {
+	d := pdp.decision with input as with_findings(base_build, [stdlib_crit, crit], 2, 0)
+	h := hints(d, "CVE_CRITICAL")
+	contains(h.stdlib, "toolchain")
+	not contains(h.libcrit, "toolchain")
+	contains(h.libcrit, "current base")
+}
+
+# On the mirror track stdlib is the vendor's, so the toolchain hint would be
+# wrong advice.
+test_mirror_stdlib_finding_keeps_the_track_hint if {
+	d := pdp.decision with input as with_findings(base_mirror, [stdlib_crit], 1, 0)
+	h := hints(d, "CVE_CRITICAL")
+	not contains(h.stdlib, "toolchain")
+}
+
 # No action we control clears these, so blocking would gate every image on a
 # vendor's backport schedule.
 test_unfixable_high_is_recorded_not_blocking if {

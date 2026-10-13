@@ -83,10 +83,22 @@ jobs:
           # A change ANYWHERE in an image entry means re-run that leg. Comparing
           # whole objects rather than field-by-field means a newly added field
           # cannot slip through unnoticed.
+          #
+          # So does a change in anything the entry REFERENCES: its source, its
+          # toolchain, its base and its CA donor. Without this, a toolchain
+          # bump that also touched one image entry rebuilt only that image --
+          # every other Go image kept the vulnerable compiler, and the PR
+          # looked green because the legs that would fail never ran.
           CHANGED=$(jq -c --argjson base "$BASE" '
-            [ .images | to_entries[]
+            . as $head
+            | [ .images | to_entries[]
               | .key as $svc | .value as $v
-              | select( ($base.images[$svc] // null) != $v )
+              | select( ($base.images[$svc] // null) != $v
+                        or ( $v.kind == "build" and (
+                               ($base.sources[$v.source]       // null) != ($head.sources[$v.source]       // null)
+                            or ($base.toolchains[$v.toolchain] // null) != ($head.toolchains[$v.toolchain] // null)
+                            or ($base.bases[$v.base]           // null) != ($head.bases[$v.base]           // null)
+                            or ($base.bases[$v.caSource]       // null) != ($head.bases[$v.caSource]       // null) ) ) )
               | if $v.kind == "mirror"
                 then ( $v.variants | to_entries[]
                        | { service: $svc, variant: .key, leg: ($svc + "-" + .key) } )

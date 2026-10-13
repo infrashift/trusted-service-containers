@@ -76,7 +76,7 @@
       "commit": "09e6ce2ff1bdc19763a10265b870c86f51c98655",
       "shortCommit": "09e6ce2f",
       "shortCommitNote": "Loki's Makefile stamps Revision from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo. Verified on the vendor's v3.7.8 binary (`loki -version`, 2026-10-06): revision 09e6ce2f, 8 characters. fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`.",
-      "note": "Initial pin, the newest release (2026-09-17). v3.7.8 is a lightweight tag on 09e6ce2f. Track is the 3.7 minor line, like prometheus and nats. go.mod requires go 1.26.5 and upstream's cmd/loki/Dockerfile builds with 1.26.6, the same patch our go1.26 toolchain pin carries."
+      "note": "Initial pin, the newest release (2026-09-17). v3.7.8 is a lightweight tag on 09e6ce2f. Track is the 3.7 minor line, like prometheus and nats. go.mod requires go 1.26.5 and upstream's cmd/loki/Dockerfile builds with 1.26.6, the patch our go1.26 toolchain pin carried at the time; it has since moved to 1.26.9 (see toolchains.go1.26.goVersion)."
     },
     "seaweedfs": {
       "track": "^4\\.[0-9]+$",
@@ -85,7 +85,7 @@
       "commit": "530be3e37337488ecc34d58441e0bc476e121c93",
       "shortCommit": "530be3e37",
       "shortCommitNote": "Upstream's container build stamps COMMIT from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo. Verified on the vendor's 4.48 binary (`weed version`, 2026-10-08): \"version 30GB 4.48 530be3e37 linux amd64\", 9 characters. fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`.",
-      "note": "Initial pin, the newest release (2026-09-28). Tags carry no leading v (4.48, 4.47, ...), and every release bumps the minor, so the track is the whole 4.x line. go.mod requires go 1.26.6, the patch our go1.26 toolchain pin carries."
+      "note": "Initial pin, the newest release (2026-09-28). Tags carry no leading v (4.48, 4.47, ...), and every release bumps the minor, so the track is the whole 4.x line. go.mod requires go 1.26.6, the patch our go1.26 toolchain pin carried at the time; it has since moved to 1.26.9 (see toolchains.go1.26.goVersion)."
     },
     "prometheus-nats-exporter": {
       "track": "^v0\\.20\\.[0-9]+$",
@@ -99,13 +99,14 @@
     "go1.26": {
       "image": "docker.io/library/golang",
       "tag": "1.26-trixie",
+      "goVersion": "1.26.9",
       "amd64": {
-        "digest": "sha256:23fdfd3a6abc97c81e32a724cdd1cf541c06c416eb04d717815f4ed7c75623d0"
+        "digest": "sha256:cf7e928cb9edc2ed8b3cc6fe77ee1ee30b9fea28149564c8840097321a7600ea"
       },
       "arm64": {
-        "digest": "sha256:a0c0dd6888e2a1df54a00fcafe855e3035dcf9b5733cdf803d6ccf70a56df809"
+        "digest": "sha256:0275e2ab63da9ae2f4f714b2c5a20544b2470d1867919633ebb8d4a8a3d8e6e0"
       },
-      "note": "Also the donor for /usr/share/zoneinfo, which ubi9-micro does not ship."
+      "note": "Also the donor for /usr/share/zoneinfo, which ubi9-micro does not ship. goVersion is the image's own GOLANG_VERSION, recorded so a reviewer can see the compiler patch without pulling the image; scripts/drift-upstream.sh re-pins the digests when the rolling tag moves and rewrites goVersion from the new image's config. 1.26.9 (2026-10-13) clears GO-2026-6603/6605/6607/6608/6610/6611/6612/6613, the net/http, crypto/tls and net/textproto advisories published 2026-10-08 that 1.26.6 carried."
     }
   },
   "bases": {
@@ -545,7 +546,7 @@
       "build": {
         "cgo": false,
         "trimpath": true,
-        "goToolchain": "go1.26.6",
+        "goToolchain": "local",
         "mainPackage": ".",
         "binary": "nats-server",
         "installPath": "/usr/bin/nats-server",
@@ -556,7 +557,7 @@
           "version": "github.com/nats-io/nats-server/v2/server.serverVersion",
           "commit": "github.com/nats-io/nats-server/v2/server.gitCommit"
         },
-        "note": "Flags mirror upstream .goreleaser.yml exactly: -trimpath, CGO_ENABLED=0, GOTOOLCHAIN=go1.26.5, -w (not -s -w). serverVersion takes the tag; gitCommit takes goreleaser's .ShortCommit."
+        "note": "Flags mirror upstream .goreleaser.yml: -trimpath, CGO_ENABLED=0, -w (not -s -w). serverVersion takes the tag; gitCommit takes goreleaser's .ShortCommit. GOTOOLCHAIN deliberately diverges from upstream's go1.26.5: it is `local`, the pinned go1.26 toolchain image's own compiler (see Containerfiles/nats.Containerfile)."
       },
       "crosscheck": {
         "image": "docker.io/library/nats",
@@ -1055,7 +1056,7 @@
           "tag": "0.20.2",
           "digest": "sha256:4a2d0db5cf559c57f70a353d9eddddcd2a6a769ef9b7ac4212503ad1e45e8e6e"
         },
-        "note": "Upstream's own image (Alpine, ENTRYPOINT /entrypoint.sh exec'ing /prometheus-nats-exporter -> /usr/local/bin/prometheus-nats-exporter), per-platform children of the 0.20.2 index sha256:c623b608... resolved 2026-10-12. Checked for a signature, found none: `cosign download signature` -> no signatures associated; `cosign tree` -> no supply-chain artifacts. Hence trust class none. best-effort: the vendor binary reports go1.26.6 and -trimpath like ours, but goreleaser's environment (GOAMD64, buildvcs) is not pinned data, so a byte mismatch proves nothing."
+        "note": "Upstream's own image (Alpine, ENTRYPOINT /entrypoint.sh exec'ing /prometheus-nats-exporter -> /usr/local/bin/prometheus-nats-exporter), per-platform children of the 0.20.2 index sha256:c623b608... resolved 2026-10-12. Checked for a signature, found none: `cosign download signature` -> no signatures associated; `cosign tree` -> no supply-chain artifacts. Hence trust class none. best-effort: the vendor binary reports go1.26.6 and -trimpath, while ours is built with toolchains.go1.26.goVersion (1.26.9 since 2026-10-13), and goreleaser's environment (GOAMD64, buildvcs) is not pinned data, so a byte mismatch proves nothing."
       },
       "runtime": {
         "ports": [

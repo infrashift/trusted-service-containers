@@ -51,8 +51,20 @@ BLOBLESS_SHORT="$("$REAL_GIT" -C "$TMP/blobless.git" rev-parse --short "$SHA40")
 # regctl: a multi-arch index for every tag. `manifest head` answers the index
 # digest unless --platform names a child -- which is how the real one behaves
 # on nats:2.14.x-alpine3.22.
+# `image config` answers a golang image's config. The skew image's arches
+# ship different patches, as a registry caught mid-publish does.
 cat > "$TMP/bin/regctl" <<EOF
 #!/usr/bin/env bash
+if [[ "\$1 \$2" == "image config" ]]; then
+  case "\$3" in
+    *golang-skew@$ARM64) v=1.27.1 ;;
+    *golang-skew@*)      v=1.27.2 ;;
+    *golang@*)           v=1.26.9 ;;
+    *) exit 1 ;;
+  esac
+  printf '{"config":{"Env":["PATH=/usr/local/go/bin","GOLANG_VERSION=%s"]}}\n' "\$v"
+  exit 0
+fi
 [[ "\$1 \$2" == "manifest head" ]] || exit 1
 case " \$* " in
   *" --platform linux/amd64 "*) echo "$AMD64" ;;
@@ -80,6 +92,12 @@ cat > "$TMP/work/versions.json" <<EOF
     "nats": { "url": "file://$TMP/nats.git", "track": "^v2\\\\.14\\\\.[0-9]+\$", "ref": "v2.14.5", "commit": "$SHA40", "shortCommit": "0000000",
       "assets": { "ui": { "url": "https://example.invalid/releases/download/v2.14.5/ui-2.14.5.tar.gz", "sha256": "$(printf 'f%.0s' {1..64})" } } },
     "dapr": { "url": "https://example.invalid/dapr", "track": "^v1\\\\.18\\\\.[0-9]+\$", "ref": "v1.18.4-pre.233f2b49", "commit": "$SHA40" }
+  },
+  "toolchains": {
+    "go1.26": { "image": "docker.io/library/golang", "tag": "1.26-trixie", "goVersion": "1.26.6",
+      "amd64": { "digest": "$OLD" }, "arm64": { "digest": "$OLD" } },
+    "go1.27": { "image": "docker.io/library/golang-skew", "tag": "1.27-trixie", "goVersion": "1.27.0",
+      "amd64": { "digest": "$OLD" }, "arm64": { "digest": "$OLD" } }
   },
   "images": {
     "nats": { "kind": "build", "source": "nats", "crosscheck": {
@@ -134,4 +152,23 @@ got=$(jq -r '.sources.nats.assets.ui.url' "$V")
 grep -q 'source `nats` asset `ui`: url moved to `v2.14.7`, but `sha256` still holds the `v2.14.5` hash' "$TMP/report.md" \
   || fail "no alarm for the nats asset sha256 left on the old release"
 
-echo "OK: drift-upstream.sh pins crosschecks per platform, abbreviates in a full clone, moves asset URLs, and flags what it cannot move"
+# --- Toolchains: the rolling tag moved, so re-pin per platform and record ---
+# the compiler patch from the new image's own config. Nothing watched these
+# until 2026-10-13, when go1.26 had sat on 1.26.6 for five days past a Critical.
+tc() { jq -r --arg t "$1" --arg f "$2" '.toolchains[$t] | getpath($f | split("."))' "$V"; }
+[[ "$(tc go1.26 amd64.digest)" == "$AMD64" ]] || fail "go1.26 amd64 toolchain pinned $(tc go1.26 amd64.digest), want the linux/amd64 child"
+[[ "$(tc go1.26 arm64.digest)" == "$ARM64" ]] || fail "go1.26 arm64 toolchain pinned $(tc go1.26 arm64.digest), want the linux/arm64 child"
+[[ "$(tc go1.26 goVersion)" == "1.26.9" ]] || fail "go1.26 goVersion is $(tc go1.26 goVersion), want 1.26.9 from the new image's config"
+for a in amd64 arm64; do
+  grep -q "| \`go1.26\` | ${a} | go1.26.6 → go1.26.9 |" "$TMP/report.md" \
+    || fail "the report does not show the go1.26 ${a} compiler moving from 1.26.6"
+done
+grep -q 'go1.26`.*out of step' "$TMP/report.md" \
+  && fail "go1.26 flagged out of step although both arches ship 1.26.9"
+
+# --- ...and arches that ship different patches are flagged, not averaged ----
+# goVersion takes whichever arch moved last, so the alarm names the other one.
+grep -qE 'toolchain `go1\.27` (amd64|arm64): pinned digest ships go1\.27\.[12], but goVersion records go1\.27\.[12]\. The arches are out of step' "$TMP/report.md" \
+  || fail "no out-of-step alarm for go1.27, whose two arches ship different patches"
+
+echo "OK: drift-upstream.sh pins crosschecks and toolchains per platform, records the toolchain's compiler patch, abbreviates in a full clone, moves asset URLs, and flags what it cannot move"

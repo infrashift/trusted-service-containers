@@ -90,8 +90,17 @@
       "additionalProperties": {
         "allOf": [{ "$ref": "#/$defs/archMap" }],
         "type": "object",
-        "required": ["image", "tag", "amd64", "arm64"],
-        "properties": { "image": { "type": "string" }, "tag": { "type": "string" }, "note": { "type": "string" } }
+        "required": ["image", "tag", "goVersion", "amd64", "arm64"],
+        "properties": {
+          "image": { "type": "string" },
+          "tag": { "type": "string" },
+          "goVersion": {
+            "type": "string",
+            "pattern": "^1\\.[0-9]+\\.[0-9]+$",
+            "description": "The compiler patch the pinned digests ship (the image's GOLANG_VERSION). A rolling tag like 1.26-trixie hides it; recording it puts a stale compiler in front of every reviewer. drift-upstream.sh rewrites it with the digests."
+          },
+          "note": { "type": "string" }
+        }
       }
     },
 

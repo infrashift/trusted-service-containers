@@ -11,7 +11,7 @@ make -f Ops.mk validate
 ```
 
 Schema, gitleaks config, single-policy check, workflow lint, Containerfile
-lint, shellcheck, and 85 policy tests. It is fast. There is no reason to skip it.
+lint, shellcheck, script tests and the policy tests (85% coverage floor). It is fast. There is no reason to skip it.
 
 ## versions.json is the only place a digest lives
 
@@ -67,6 +67,26 @@ reference had to fix, and both the Containerfile lint and the policy's
 the checked-out `versions.json`, never from the evidence bundle. That is what
 makes downgrading an image's verification require a CODEOWNERS-reviewed commit
 rather than a workflow edit. Keep it that way.
+
+## `observe` is not a pass
+
+An `observe` leg with blocking findings gets a green `review/cve-policy` and
+lands in `quarantine/`. PR #29 was merged two minutes after a review comment
+showing a Critical and seven Highs per arch, because the check was green. Before
+merging any image PR, **read the review comment**: Blocking must be 0, or the
+PR must say why quarantine is the intended outcome. Scan the local build first
+(`.ai/skills/adding-an-upstream.md` step 6) so the review is not where you
+find out.
+
+## Toolchains are pins that rot
+
+`toolchains` sit on a rolling tag that Go security releases move. A `stdlib`
+finding on a build leg is **our compiler's**, not the source's or the base's:
+re-pin the toolchain (`goVersion` records the patch). `drift-upstream.sh` and
+`verify-build-pins` both watch it now; before 2026-10-13 nothing did. Never set
+`GOTOOLCHAIN` to a version string -- it downloads that compiler and silently
+ignores a bumped image. And a toolchain, base or source change rebuilds every
+image that references it; `lint-workflows.sh` check 11 holds `build.yml` to that.
 
 ## Dual provenance is an observation, never a gate
 

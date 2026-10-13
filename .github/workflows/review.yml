@@ -220,13 +220,30 @@ jobs:
             jq -r '
               . as $v
               | ($v.cve_policy.per_platform | to_entries) as $pp
-              | "| `\($v.subject.leg)` | \($v.subject.kind) | \($v.subject.trustClass) | **\($v.verdict)** | `\($v.namespace // "quarantine")` | \([$pp[].value.counts.blocking] | add // 0) | \([$pp[].value.counts.waived] | add // 0) | \([$pp[].value.counts.recorded] | add // 0) |"
+              # PASS with Blocking > 0 is `observe`: the check is green, the image
+              # still lands in quarantine/. PR #29 was merged two minutes after a
+              # comment whose Verdict column read a bare **PASS** over eight
+              # blocking findings per arch. Never print it bare in that state.
+              | (if $v.verdict == "PASS" and ($v.namespace // "quarantine") != "trusted"
+                 then "**PASS (observe)** :warning:" else "**\($v.verdict)**" end) as $shown
+              | "| `\($v.subject.leg)` \([$pp[].key] | map("`" + . + "`") | join(" ")) | \($v.subject.kind) | \($v.subject.trustClass) | \($shown) | `\($v.namespace // "quarantine")` | \([$pp[].value.counts.blocking] | add // 0) | \([$pp[].value.counts.waived] | add // 0) | \([$pp[].value.counts.recorded] | add // 0) |"
             ' "$f" >> /tmp/report.md
             [[ "$(jq -r '.verdict' "$f")" == "PASS" ]] || OVERALL=failure
             [[ "$(jq -r '.namespace // "quarantine"' "$f")" == "trusted" ]] || QUARANTINED=$((QUARANTINED + 1))
           done
           echo "OVERALL=$OVERALL" > /tmp/overall
           echo "QUARANTINED=$QUARANTINED" > /tmp/quarantined
+
+          if [[ "$OVERALL" == "success" && "$QUARANTINED" -gt 0 ]]; then
+            {
+              echo
+              echo "> [!WARNING]"
+              echo "> **${QUARANTINED} leg(s) will be promoted to \`quarantine/\`, not \`trusted/\`.** \`observe\` keeps this check green"
+              echo "> while day-one triage happens; it does not make the image usable. Triage the blocking findings below"
+              echo "> (a newer source, a newer toolchain, or a reviewed waiver) before merging, or say in the PR why"
+              echo "> landing in quarantine is the intended outcome."
+            } >> /tmp/report.md
+          fi
 
           # Violations, per leg.
           {
@@ -240,6 +257,10 @@ jobs:
               echo "**\`${leg}\`**"
               echo
               jq -r '[.cve_policy.per_platform | to_entries[] | .key as $p | .value.violations[] | "- `\($p)` **\(.code)** — \(.message)"] | unique | .[]' "$f"
+              echo
+              # The policy's triage advice, once per distinct hint. It was in
+              # every signed decision and printed nowhere a reviewer reads.
+              jq -r '[.cve_policy.per_platform[].violations[].remediation_hint // empty] | unique | .[] | "> **Next step:** \(.)"' "$f"
               echo
             done
             echo "</details>"

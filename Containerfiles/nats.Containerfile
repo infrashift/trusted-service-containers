@@ -45,26 +45,29 @@ COPY src/nats/ /src/
 
 ENV CGO_ENABLED=0 \
     GOOS=linux \
-    GOTOOLCHAIN=go1.26.6
+    GOTOOLCHAIN=local
 # -trimpath is copied from upstream's .goreleaser.yml at the pinned tag, and so
 # was GOTOOLCHAIN until 2026-08-24. Matching both is what made this the one
 # service where a byte-identical cross-check against the vendor binary was
 # realistic.
 #
 # GOTOOLCHAIN now deliberately diverges. Upstream pins go1.26.5, which carries
-# GO-2026-5026, -5972, -6089 and -6090 -- four stdlib advisories, all High with a
-# fix, all blocking under our policy. They are fixed in 1.26.6. v2.14.5 is the
-# newest nats release, so there is no source bump that clears them; the only
-# lever is the compiler.
+# stdlib advisories that are High or Critical with a fix, all blocking under our
+# policy. The source has no bump that clears them; the only lever is the
+# compiler.
+#
+# It is `local`, the pinned toolchain image's own compiler, and NOT a version
+# string. From 2026-08-24 it was `go1.26.6`, which matched the image at the
+# time. When the image moved to 1.26.9 to clear GO-2026-6603..6613, that string
+# would have made `go` DOWNLOAD 1.26.6 and build with it, quietly keeping every
+# advisory the bump existed to fix. `local` means the compiler is exactly
+# versions.json's toolchains.go1.26 (goVersion records its patch), and a go.mod
+# that needs more fails the build instead of fetching an unpinned toolchain.
 #
 # The cost is the cross-check, which compares our binary against the vendor's
-# 1.26.5 build and will now differ. That comparison is explicitly an observation
-# and not a gate -- provenance records it as such -- so trading it for four
-# fixable Highs is the right way round. Restore the match by bumping this to
-# whatever upstream's .goreleaser.yml pins once they move past 1.26.5.
-#
-# go1.26.6 is also exactly what the pinned toolchain image ships, so the build
-# uses that image's compiler rather than downloading one.
+# 1.26.5 build and will differ. That comparison is explicitly an observation
+# and not a gate -- provenance records it as such -- so trading it for fixable
+# advisories is the right way round.
 RUN set -euo pipefail; \
     GOARCH="${TARGETARCH}" go build -trimpath \
       -ldflags="-w \

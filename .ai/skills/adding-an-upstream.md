@@ -55,15 +55,51 @@ Build entries pin a 40-hex commit. If the vendor stamps a short commit, pin
 `shortCommit` too: it is git's *dynamic* abbreviation and cannot be sliced from
 the full SHA. See [`../../docs/build-track/dual-provenance.md`](../../docs/build-track/dual-provenance.md).
 
+### Build entries: the toolchain must be current, not merely the vendor's
+
+Matching the vendor's compiler is a cross-check concern; being current is a CVE
+concern, and only the second gates. PR #29 justified go1.26 at 1.26.6 because
+"the vendor binary reports the same patch" -- five days after Go 1.26.9 fixed a
+Critical and seven Highs in `stdlib`. Both arches came back blocked.
+
+`toolchains.<name>.goVersion` in `versions.json` is the compiler patch. Before
+pinning, compare it with https://go.dev/doc/devel/release, and run
+`make -f Ops.mk verify-build-pins`, which fails on a toolchain whose rolling tag
+has moved. Use `GOTOOLCHAIN=local`: a version string makes `go` download that
+compiler instead of using the pinned one, and the Containerfile lint rejects it
+unless it equals `goVersion`.
+
 ## 5. Onboard in `observe`
 
 `enforcement: "observe"` still computes and publishes every violation and still
 routes to `quarantine`. It only stops the pipeline hard-failing while the
 day-one CVE triage happens. It is **not** a route into `trusted/`.
 
-## 6. Validate
+## 6. Validate, and scan what you built
 
 ```bash
 make -f Ops.mk validate
 make -f Ops.mk verify-pins
 ```
+
+Then scan the local build with the policy's own thresholds -- a Critical blocks
+whether or not it has a fix, a High blocks when it has one:
+
+```bash
+grype <local-image> --fail-on critical
+grype <local-image> --only-fixed --fail-on high
+```
+
+A local build that runs is not a local build that passes review. If either
+command fails, fix it (newer source, newer toolchain) before opening the PR; if
+it cannot be fixed, the PR must say so and say why landing in `quarantine/` is
+the intended outcome.
+
+## 7. Read the review comment before merging
+
+`observe` keeps `review/cve-policy` green with blocking findings, so a green
+check is not the signal. The comment is: any leg reading **PASS (observe)**, or
+a non-zero Blocking count, is an image headed for `quarantine/`, where its
+consumer cannot use it. Triage first -- each leg's violations end with the
+policy's suggested next step. Merging anyway is a decision to state in the PR,
+never a default.

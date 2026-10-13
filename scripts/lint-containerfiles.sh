@@ -173,6 +173,19 @@ for svc, img in sorted(build_imgs.items()):
         err(p, "versions.json declares trimpath but the build does not pass -trimpath")
     if b.get('goToolchain') and f"GOTOOLCHAIN={b['goToolchain']}" not in code:
         err(p, f"versions.json pins goToolchain {b['goToolchain']} but the build does not set it")
+    # A version-string GOTOOLCHAIN that differs from the toolchain image makes
+    # `go` DOWNLOAD that compiler and build with it. nats carried go1.26.6 this
+    # way; bumping the image to 1.26.9 for a Critical would have left nats on
+    # 1.26.6 with every advisory intact, while the pin said otherwise.
+    tc = V['toolchains'].get(img.get('toolchain'), {})
+    gt = b.get('goToolchain', 'local')
+    if gt != 'local' and gt != f"go{tc.get('goVersion')}":
+        err(p, f"goToolchain {gt} is not the pinned toolchain's go{tc.get('goVersion')}; "
+               f"`go` would download {gt} instead of using the image's compiler. Use `local`")
+    for m in re.finditer(r'GOTOOLCHAIN=(\S+)', code):
+        if m.group(1) not in ('local', f"go{tc.get('goVersion')}"):
+            err(p, f"sets GOTOOLCHAIN={m.group(1)}, which is not the pinned toolchain's "
+                   f"go{tc.get('goVersion')}; use `local`")
     if b.get('compatSymlink') and f"ln -sf {b['installPath']} {b['compatSymlink']}" not in code:
         err(p, f"versions.json declares compatSymlink {b['compatSymlink']} but it is not created")
     if f"-o /out/{b['binary']} {b['mainPackage']}" not in code:

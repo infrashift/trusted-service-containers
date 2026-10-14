@@ -116,12 +116,13 @@
       "trustClass": "internal",
       "verifyKey": ".github/pdp/public-keys/upstream/trusted-base-images-release.pub",
       "amd64": {
-        "digest": "sha256:b2485542880b0f6482469c60934e97eb0446b09959e96106907481816e74c230"
+        "digest": "sha256:f024088541e1220e3809020f238809cc048cb5e5123527e26e39a11d75440efe"
       },
       "arm64": {
-        "digest": "sha256:dab2fd48fdccb15aab566a629ab2f086f45014723a86f2ce7c49395d4d765290"
+        "digest": "sha256:4f93842687d19ffa7abf51233bc538bf4e0783f6e11a6a6990114949214aefb7"
       },
-      "note": "VERIFIED 2026-08-18: ships NO CA trust bundle, NO tzdata, and NO UID 1001 in /etc/passwd. It DOES have bash, coreutils and glibc, so RUN works. Registry path is trusted-base-images, not trusted-base-oci-images (the sibling's directory name differs from its git remote). arm64 is published as arm64/v8; always pin by digest."
+      "note": "VERIFIED 2026-08-18: ships NO CA trust bundle, NO tzdata, and NO UID 1001 in /etc/passwd. It DOES have bash, coreutils and glibc, so RUN works. Registry path is trusted-base-images, not trusted-base-oci-images (the sibling's directory name differs from its git remote). arm64 is published as arm64/v8; always pin by digest.",
+      "updated": "2026-10-14"
     },
     "ubi9-minimal": {
       "image": "ghcr.io/infrashift/trusted-base-images/trusted/ubi9-minimal",
@@ -134,7 +135,8 @@
       "arm64": {
         "digest": "sha256:b458b9a9b9c90f7d579a353cb4c3f7e9e71f90698a2521a657197b7c32644e5a"
       },
-      "note": "Donor for /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem only. Assert the copied bundle is >100000 bytes so a truncated one fails loudly."
+      "note": "Donor for /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem only. Assert the copied bundle is >100000 bytes so a truncated one fails loudly.",
+      "updated": "2026-10-14"
     }
   },
   "images": {
@@ -1023,7 +1025,7 @@
       "toolchain": "go1.26",
       "base": "ubi9-micro",
       "caSource": "ubi9-minimal",
-      "enforcement": "observe",
+      "enforcement": "enforce",
       "arches": [
         "amd64",
         "arm64"
@@ -1072,8 +1074,8 @@
         "tzdata": true,
         "configNote": "Stateless; no config file. CMD is upstream's `--help`, so the image runs standalone and exits. Deployments pass the endpoint flags and the NATS monitoring URL as the positional argument (e.g. `-varz -connz -subz -healthz -jsz=all http://127.0.0.1:8222`)."
       },
-      "updated": "2026-10-12",
-      "reason": "Initial pin. No UBI-based exporter exists: the vendor image is Alpine and unsigned. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md. Licence Apache-2.0. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/nats (a sidecar behind an mTLS metrics door; PLAN-SSHadowForge-Dashboards-20261012.md Part A/B, the deferred E5 of PLAN-SSHadowForge-Review-20261012.md)."
+      "updated": "2026-10-14",
+      "reason": "Initial pin. No UBI-based exporter exists: the vendor image is Alpine and unsigned. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; moved to enforce 2026-10-14 after its first review on a pcre2-patched ubi9-micro (PR #32) came back clean on both arches: allow=true, blocking=0, waived=0, recorded=0, namespace trusted, so no exception was needed. Licence Apache-2.0. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/nats (a sidecar behind an mTLS metrics door; PLAN-SSHadowForge-Dashboards-20261012.md Part A/B, the deferred E5 of PLAN-SSHadowForge-Review-20261012.md)."
     }
   }
 }

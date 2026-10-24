@@ -36,18 +36,18 @@
     },
     "nats": {
       "track": "^v2\\.14\\.[0-9]+$",
-      "ref": "v2.14.7",
+      "ref": "v2.14.8",
       "url": "https://github.com/nats-io/nats-server",
-      "commit": "8d8b69a8c46a46a150eabb7f312607c4d9c58faf",
-      "shortCommit": "8d8b69a8c",
+      "commit": "3e47c8fa715b0e3b2feaeedc378c25fff88a966e",
+      "shortCommit": "3e47c8fa7",
       "shortCommitNote": "goreleaser stamps {{.ShortCommit}}, whose length is git's DYNAMIC abbreviation for the full repo. Verified empirically: the released v2.14.5 binary embeds 9 characters. It cannot be derived from our build, because fetch-source.sh makes a --depth 1 clone and git then abbreviates to the 7-char minimum. Pinning it as data is the only way to reproduce the vendor's binary; drift PRs must update it alongside `commit`.",
       "note": "Moved up from the 2.11 line the user ran previously. Upstream pins GOTOOLCHAIN and uses -trimpath, so this is the one service where a byte-identical cross-check is realistic."
     },
     "dapr": {
       "track": "^v1\\.18\\.[0-9]+$",
-      "ref": "v1.18.4",
+      "ref": "v1.18.9",
       "url": "https://github.com/dapr/dapr",
-      "commit": "6d1c53f430205c0c0f3bc3589ce5a3ec3f6f1647",
+      "commit": "7b4c3832127d09af128e1d8f121117a1ffbc502f",
       "lockstep": [
         "daprd",
         "dapr-placement",
@@ -57,12 +57,12 @@
     },
     "prometheus": {
       "track": "^v3\\.15\\.[0-9]+$",
-      "ref": "v3.15.0",
+      "ref": "v3.15.1",
       "url": "https://github.com/prometheus/prometheus",
-      "commit": "5241a27fe3c6983549fccc32f6e65917408c63cd",
+      "commit": "bae3eced0a5369e050e83ea73bc381d7c4b1a719",
       "assets": {
         "web-ui": {
-          "url": "https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-web-ui-3.15.0.tar.gz",
+          "url": "https://github.com/prometheus/prometheus/releases/download/v3.15.1/prometheus-web-ui-3.15.1.tar.gz",
           "sha256": "fa8c918ed05e3f89e232e9b69eccd6ed074602cd9e8a2cab7a92bec9651974ae",
           "note": "The compiled web UI. A source build without Node and pnpm has no UI (`builtinassets` embeds web/ui/static, which only `make assets` populates), and upstream publishes this tarball for exactly that case -- its Makefile honours PREBUILT_ASSETS_STATIC_DIR. Its paths are static/..., the shape scripts/package_assets.sh writes. sha256 copied 2026-10-01 from the release's sha256sums.txt. Prometheus does not sign release assets, so this hash IS the trust claim. A drift bump moves the URL but cannot re-pin the hash; scripts/fetch-assets.sh refuses a URL that does not name the release being built."
         }
@@ -71,27 +71,27 @@
     },
     "loki": {
       "track": "^v3\\.7\\.[0-9]+$",
-      "ref": "v3.7.8",
+      "ref": "v3.7.9",
       "url": "https://github.com/grafana/loki",
-      "commit": "09e6ce2ff1bdc19763a10265b870c86f51c98655",
-      "shortCommit": "09e6ce2f",
+      "commit": "d3b4a2f76bfc5625abee7ceb00b8896fa3c31549",
+      "shortCommit": "d3b4a2f76b",
       "shortCommitNote": "Loki's Makefile stamps Revision from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo. Verified on the vendor's v3.7.8 binary (`loki -version`, 2026-10-06): revision 09e6ce2f, 8 characters. fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`.",
       "note": "Initial pin, the newest release (2026-09-17). v3.7.8 is a lightweight tag on 09e6ce2f. Track is the 3.7 minor line, like prometheus and nats. go.mod requires go 1.26.5 and upstream's cmd/loki/Dockerfile builds with 1.26.6, the patch our go1.26 toolchain pin carried at the time; it has since moved to 1.26.9 (see toolchains.go1.26.goVersion)."
     },
     "seaweedfs": {
       "track": "^4\\.[0-9]+$",
-      "ref": "4.48",
+      "ref": "4.49",
       "url": "https://github.com/seaweedfs/seaweedfs",
-      "commit": "530be3e37337488ecc34d58441e0bc476e121c93",
-      "shortCommit": "530be3e37",
+      "commit": "b65832bdc9bbbcf3682465b1be598627ac386206",
+      "shortCommit": "b65832bdc",
       "shortCommitNote": "Upstream's container build stamps COMMIT from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo. Verified on the vendor's 4.48 binary (`weed version`, 2026-10-08): \"version 30GB 4.48 530be3e37 linux amd64\", 9 characters. fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`.",
       "note": "Initial pin, the newest release (2026-09-28). Tags carry no leading v (4.48, 4.47, ...), and every release bumps the minor, so the track is the whole 4.x line. go.mod requires go 1.26.6, the patch our go1.26 toolchain pin carried at the time; it has since moved to 1.26.9 (see toolchains.go1.26.goVersion)."
     },
     "prometheus-nats-exporter": {
       "track": "^v0\\.20\\.[0-9]+$",
-      "ref": "v0.20.2",
+      "ref": "v0.20.3",
       "url": "https://github.com/nats-io/prometheus-nats-exporter",
-      "commit": "6d32406b146cfe4da108c073ecbd70d134abc792",
+      "commit": "efe75c93605a379af2abcb6f4490e95bce46c0b4",
       "note": "Initial pin, the newest release (2026-08-19). v0.20.2 is a lightweight tag on 6d32406b. No shortCommit: goreleaser passes -X main.commit={{.ShortCommit}}, but main.go declares only `version`, so the vendor binary stamps no commit and there is nothing to reproduce. Track is the 0.20 minor line."
     }
   },
@@ -99,12 +99,12 @@
     "go1.26": {
       "image": "docker.io/library/golang",
       "tag": "1.26-trixie",
-      "goVersion": "1.26.9",
+      "goVersion": "1.26.10",
       "amd64": {
-        "digest": "sha256:cf7e928cb9edc2ed8b3cc6fe77ee1ee30b9fea28149564c8840097321a7600ea"
+        "digest": "sha256:3eca740eb349175cc59f462d409fc324a8239ab3ffdf73d8e63175a041c08b6b"
       },
       "arm64": {
-        "digest": "sha256:0275e2ab63da9ae2f4f714b2c5a20544b2470d1867919633ebb8d4a8a3d8e6e0"
+        "digest": "sha256:76182005c4267c55933318fd01e8766d6615011564fc3bdd7b4dec28d8dec249"
       },
       "note": "Also the donor for /usr/share/zoneinfo, which ubi9-micro does not ship. goVersion is the image's own GOLANG_VERSION, recorded so a reviewer can see the compiler patch without pulling the image; scripts/drift-upstream.sh re-pins the digests when the rolling tag moves and rewrites goVersion from the new image's config. 1.26.9 (2026-10-13) clears GO-2026-6603/6605/6607/6608/6610/6611/6612/6613, the net/http, crypto/tls and net/textproto advisories published 2026-10-08 that 1.26.6 carried."
     }
@@ -158,15 +158,15 @@
         "runtime": {
           "tag": "3-debian13",
           "track": "^3-debian13$",
-          "digest": "sha256:1aedd73935670f671be29b8396d4667f391a0058c513911743bfdfde5447971a"
+          "digest": "sha256:6bda6cb02db098057796a26856b1afb45b875dc1e9ac671ff080b0bf21b3fa3a"
         },
         "dev": {
           "tag": "3-debian13-dev",
           "track": "^3-debian13-dev$",
-          "digest": "sha256:2624d05ba0851b7cfd26dab7273f208049b9a3b00cd05979ec00fab16ea4f21d"
+          "digest": "sha256:50b988ca01a610743600d75614658770c6b17836f0288dac9bc4b044d86dba54"
         }
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Placeholder digests resolved 2026-08-24 with an authenticated dhi.io login (regctl manifest head, index digest). DHI repoints 3-debian13 itself, so the tag string never changes and only the digest moves; track is therefore an exact match."
     },
     "postgres": {
@@ -187,25 +187,25 @@
         "runtime": {
           "tag": "16-debian",
           "track": "^16-debian$",
-          "digest": "sha256:ae316a451e7e609ed2f6d532a8a43e34e9d483840602cb011f0e7128aef28a0e"
+          "digest": "sha256:d07e0aeeb654180038f9de15a4c9ed571bb38f53f7529fc65cd28b62f7811374"
         },
         "dev": {
           "tag": "16-debian-dev",
           "track": "^16-debian-dev$",
-          "digest": "sha256:72ed533181b9893eab1232bf8997790a645769f04e511dbab46603c531e7f3cb"
+          "digest": "sha256:fef3d94c30a098a2a6368489083dcb9be5dcb277085d9499f6d00622e90a0179"
         },
         "runtime17": {
           "tag": "17-debian",
           "track": "^17-debian$",
-          "digest": "sha256:66dcbc496311685361b6a56e261e6694454daea3e297604dfd79590275f03910"
+          "digest": "sha256:3a0c216f370a2260563e63ed73768d09b2ee359061da26603380b120626a70eb"
         },
         "dev17": {
           "tag": "17-debian-dev",
           "track": "^17-debian-dev$",
-          "digest": "sha256:cd0cd5444177137b5b469765f5b6fa7b9fcb6e8ddb623413b8f5526c09e04055"
+          "digest": "sha256:96cf9c89cec47195a2db14c958b5b77c0c23a1796784f14bd868d81fda11c20a"
         }
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin, runtime + dev. PostgreSQL 17 added 2026-09-15 as a second pair of variants (runtime17/dev17) rather than a second image entry, so both majors are served from one trusted/postgres repository under their own upstream tags. It exists because the platform runs PostgreSQL 17 in two places -- GitLab's database and chit-server -- and this line published only 16, so neither could leave Docker Hub: a PG17 data directory cannot be read by PG16, which makes it a dump-and-restore migration rather than a swap. CONSUMER CAUTION, and it is not the major version: 17-debian is debian-13 while the images it would replace are bookworm (debian-12). A different glibc is a different collation, so text index ordering can change -- REINDEX stored data after the move, exactly as for an alpine-to-debian move. Exact tags rather than a regex range, for the reason the 16 pair has them: only the digest moves, and drift-upstream proposes it."
     },
     "nexus3": {
@@ -226,7 +226,7 @@
           "digest": "sha256:3d6454ebafb3e807782c15dc9a500b83013107128e35db5da219fda05c07b68c"
         }
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Tracks the 3.90 patch line only; 3.91.0-ubi and 3.91.1-ubi already exist upstream, so a naive newest-tag check would jump a minor on its first run. Trust class none: public Docker Hub image with unsigned BuildKit attestations only. Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml -- a ~700MB JVM image will very likely quarantine."
     },
     "mssql": {
@@ -248,10 +248,10 @@
         "runtime": {
           "tag": "2025-latest",
           "track": "^2025-latest$",
-          "digest": "sha256:7ab5f0c3f96cbe234aa80d33e804c26c5e7c063266c91a891cf0b6d71c90b305"
+          "digest": "sha256:d81583568257109e7dd48d27fcd0acda8585f108ec29451f1008ad998a23daed"
         }
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Pin moved 2026-09-15 from 2025-CU8-GDR1-rhel-10 (17.0.4085.5, sha256:54b58c3a) to 2025-CU9-rhel-10 (17.0.5005.3), the manifest 2025-latest now resolves to. Same repository, same RHEL 10 base, same bare amd64 manifest shape, Notary signature still present as an OCI referrer. This is the FIRST observed move of this rolling tag and it confirms the shape the initial pin predicted. Initial pin was SQL Server 2025 on the RHEL 10 base (mcr.microsoft.com/mssql/rhel/server, not the Ubuntu mssql/server repo) to match the repo's UBI posture. Rolling tag: Microsoft repoints 2025-latest on every CU and GDR, and a CU regex track would be a trap because `sort -V` orders 2025-CU8-GDR1-rhel-10 BEFORE 2025-CU8-rhel-10, so drift-upstream.sh would never propose a GDR security release. Track is therefore the exact tag and only the digest moves. Note this move goes GDR -> CU, which a CU-ordered track would also have mishandled. Trust class notation: the image carries a Notary Project signature as an OCI referrer, chained to Microsoft Supply Chain RSA Root CA 2022, which we vendor and verify against with the signing identity pinned. There is no cosign signature and no SBOM or provenance referrer, so no attestations are required of this class. Still `observe` until the day-one CVE triage lands in exceptions.yaml; CU9 is newer than the CU8-GDR1 it replaces, so the finding count should not rise.",
       "note": "amd64 ONLY, and a BARE manifest: the tag resolves to a single application/vnd.docker.distribution.manifest.v2+json with no index. Microsoft supports x86-64 hosts only and states emulation is untested. scripts/manifest-platforms.sh derives the platform set from the config os/arch for this shape. Runtime config: user mssql, port 1433, entrypoint /opt/mssql/bin/launch_sqlservr.sh, no declared volumes (data lives under /var/opt/mssql; mount it). The container starts only with ACCEPT_EULA=Y and a password supplied via the MSSQL_SA_PASSWORD environment variable at run time; MSSQL_PID defaults to developer and selecting a production edition asserts that the consumer holds a licence. The SQL build number is not in the tag; read the com.microsoft.version label from the evidence. The notation signature is an OCI referrer in the image's own repository; the mirror copies it with --referrers, and the first run's upstream-referrers.json should list artifactType application/vnd.cncf.notary.signature."
     },
@@ -274,7 +274,7 @@
           "digest": "sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
         }
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Traefik's whoami echo server, the test backend infrashift/ansible-collection-infrashift-hashistack's sm-ingress runs behind the edge; it ran docker.io/traefik/whoami:latest. Pinned to v1.12.0, the release :latest resolves to on 2026-09-30 (same index digest). Track is the v1 release line: whoami is a stateless test fixture with no data or config contract, so a minor bump carries nothing a patch-only track would protect, and the regex excludes the per-arch (-amd64/-arm64/-armv7) and two-part rolling (v1.12) tags. Three platforms, not two: the upstream index carries linux/arm/v7, and a mirror copies the whole index, so the declared set must include it or PLATFORM_SET_MISMATCH denies. Trust class none: no cosign signature and no OCI referrers, only unsigned BuildKit attestation manifests inside the index. A scratch image holding one static Go binary with no USER, so it reports root (RUNTIME_RUNS_AS_ROOT, a warning); the binary needs no privilege except a port below 1024, so consumers run it as a non-root uid on an unprivileged port (--user 65532:65532 --port=8080, proven 2026-09-30). Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml; expect Go standard-library findings from the toolchain it was built with."
     },
     "kratos": {
@@ -339,7 +339,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin. No official UBI-based Ory image exists; built from source onto ubi9-micro."
     },
     "hydra": {
@@ -402,7 +402,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin. Note the module path carries /v2. Hydra has no .docker/Dockerfile-build (it has Dockerfile-local-build); the ldflags paths come from .goreleaser.yml."
     },
     "keto": {
@@ -465,7 +465,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin."
     },
     "oathkeeper": {
@@ -528,7 +528,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin. Upstream's .docker/Dockerfile-build has a bug (COPY oryx/go.sum proto/go.sum); we do not use it."
     },
     "nats": {
@@ -567,12 +567,12 @@
         "trustClass": "docker-official",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "2.14.7-alpine3.22",
-          "digest": "sha256:b2301863d84fda2cf8260d308203708f5231b2db34d821cc518d5c4c3c79780a"
+          "tag": "2.14.8-alpine3.22",
+          "digest": "sha256:12f2961f14c98a174431c7692853e59808db8b3ef2c94f2196c7378dbacc9942"
         },
         "arm64": {
-          "tag": "2.14.7-alpine3.22",
-          "digest": "sha256:7db8dc39d5dc71ceb3718b705cd8e176bac506b82c24411e6825a809b02e15f7"
+          "tag": "2.14.8-alpine3.22",
+          "digest": "sha256:7bf6a80dc39377f2e35accd7a674f03c329d501b7b7b4a7b777d6a19cd17fad1"
         },
         "releaseTarballSha256": {
           "amd64": "e5c20b1cb2c0566b54c544312e91e011f9e130c5c80f16a14f4cf28ef30b8be2",
@@ -601,7 +601,7 @@
         "configFile": "rootfs/nats/etc/nats/nats-server.conf",
         "configNote": "Ours, not upstream's. nats-docker ships a cluster block with hardcoded credentials ruser/T0pS3cr3t. All three ports are >1024 so non-root binding is fine."
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin on the 2.14 line, moved up from the 2.11-alpine image previously in use."
     },
     "daprd": {
@@ -638,12 +638,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.4-linux-amd64",
-          "digest": "sha256:d52398b8ea0603c64a3f1c7e894dda1bec2adbec7bcecd3c6b292de321579109"
+          "tag": "1.18.9-linux-amd64",
+          "digest": "sha256:88b0dfe3868042b1fb96a2cd12bfa5b3045cf075526508b2ba793c9ec0b3af40"
         },
         "arm64": {
-          "tag": "1.18.4-linux-arm64",
-          "digest": "sha256:2fc9f093d9a4c603efd720bcf0d123f04d0465486a32785e90fb6c282ef71a7b"
+          "tag": "1.18.9-linux-arm64",
+          "digest": "sha256:780cf44422b9f0d3e9acd9a9335407fc7de9ed5d19cd57531de75b883d0e66ef"
         }
       },
       "runtime": {
@@ -663,7 +663,7 @@
         "userNote": "Upstream runs 65532:65532 and the Dapr Helm chart pins runAsUser: 65532. We use 1001 per repo convention, so a Helm deployment needs an override. The /daprd compat symlink exists because the injector may emit command: [\"/daprd\"].",
         "portNote": "Ports are from documentation, not from the pinned source. VERIFY against cmd/daprd options before relying on them."
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin. Moved up from 1.14.4, which is outside Dapr's N-2 support window."
     },
     "dapr-placement": {
@@ -699,12 +699,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.4-linux-amd64",
-          "digest": "sha256:bf901d453b1103f6af9bee335ef60fd65dfdcc5b1a114cb51b42b17f586fdecb"
+          "tag": "1.18.9-linux-amd64",
+          "digest": "sha256:8248d286a216d8054a550524c05714b479bdc11190ad268b410ebffd4c136606"
         },
         "arm64": {
-          "tag": "1.18.4-linux-arm64",
-          "digest": "sha256:bc1838084b509d371101c5aa78080c5e1b2319f31808d73f5003541be5154f19"
+          "tag": "1.18.9-linux-arm64",
+          "digest": "sha256:f92cdd73d4b06d2e7a14a16fb872805c177b65ae6a1a17f30d344246f19ed9a9"
         },
         "note": "daprio/placement is the dedicated single-binary image. daprio/dapr is the kitchen-sink image carrying all six control-plane binaries and is the wrong cross-check source."
       },
@@ -724,7 +724,7 @@
         "tzdata": true,
         "portNote": "From documentation. VERIFY against cmd/placement options."
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin. Built from the same source checkout as daprd and dapr-scheduler; sources.dapr.lockstep prevents drift."
     },
     "dapr-scheduler": {
@@ -760,12 +760,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.4-linux-amd64",
-          "digest": "sha256:82d518d0447ee19d2fd035d821f9a1bf372d924d50fddcdc8538b78ea05b3f94"
+          "tag": "1.18.9-linux-amd64",
+          "digest": "sha256:485d8d6fcf3554ed6d8cfe410ccd0dd5554aa83e58a02b70779a50e5d2a9dcd5"
         },
         "arm64": {
-          "tag": "1.18.4-linux-arm64",
-          "digest": "sha256:f1972315067c41c550d3f6e0d196ef1d366e075a7021c95adb91e32f71237825"
+          "tag": "1.18.9-linux-arm64",
+          "digest": "sha256:d3513877158267544002ce3ddf9b06acee649fcd3704962ed5b4d05636a8e180"
         }
       },
       "runtime": {
@@ -786,7 +786,7 @@
         "portNote": "From documentation. VERIFY against cmd/scheduler options.",
         "volumeNote": "The scheduler keeps an embedded etcd store; confirm the default data dir at the pinned tag before relying on this path."
       },
-      "updated": "2026-09-30",
+      "updated": "2026-10-24",
       "reason": "Initial pin. Required from Dapr 1.15+ for actor reminders and workflows; the user is migrating from 1.14 where it did not exist."
     },
     "prometheus": {
@@ -838,12 +838,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "v3.15.0",
-          "digest": "sha256:86b17a25c2db1d16a61b16b3c8f336679eb19e26333d03e808da387206e40faa"
+          "tag": "v3.15.1",
+          "digest": "sha256:d445d1806b38f85b5c394a1b87f94113fde0473b45245922c2e8b1bd41fa68ae"
         },
         "arm64": {
-          "tag": "v3.15.0",
-          "digest": "sha256:6b41f7a45cfbd1d259a78701ee5e14fc2ad9383c9aa5d0427345a18539bc3c91"
+          "tag": "v3.15.1",
+          "digest": "sha256:13020b7e520d56fef031135b91f5635888de441d6c4cfda3608bfbf6f4916dcb"
         },
         "note": "Upstream's own image (busybox base, USER nobody, ENTRYPOINT /bin/prometheus), per-platform children of the v3.15.0 index sha256:efd719c9... resolved 2026-10-01. Unsigned, so trust class none. best-effort: upstream compiles with Go 1.27 and we use 1.26, so a mismatch is expected and proves nothing."
       },
@@ -865,7 +865,7 @@
         "tzdata": true,
         "configNote": "CMD and /etc/prometheus/prometheus.yml are upstream's (documentation/examples/prometheus.yml, from the pinned source tree), so the image runs standalone exactly as quay.io/prometheus/prometheus does. Real deployments mount their own config, and a web config for TLS."
       },
-      "updated": "2026-10-01",
+      "updated": "2026-10-24",
       "reason": "Initial pin. No usable UBI-based Prometheus exists: Red Hat's registry.redhat.io/openshift4/ose-prometheus-rhel9 needs an entitled, authenticated pull and ships OpenShift's fork on the OCP release train (v4.22), not upstream; DHI's is Debian-based. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; moved to enforce 2026-10-01 after the first review (PR #25) came back clean on both arches: allow=true, blocking=0, waived=0, 6 recorded (non-blocking), so no exception was needed. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/prometheus."
     },
     "loki": {
@@ -916,12 +916,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "3.7.8",
-          "digest": "sha256:81a6802ec4bd1b88c564494f06376889ed022998a188826190d26d2754ac2aae"
+          "tag": "3.7.9",
+          "digest": "sha256:569e5cab050b7705eb82080335ff9a8bd329650b358bb0d42131e3ced8d9492e"
         },
         "arm64": {
-          "tag": "3.7.8",
-          "digest": "sha256:a2753977b07471e0bb271f421677036fb1c84a2fd409e14fa19dfc7cc3b789b5"
+          "tag": "3.7.9",
+          "digest": "sha256:1a779c5f714e795ac698b125fc265ae97292f792a91535fa29726073d03d5580"
         },
         "note": "Upstream's own image (distroless/static:nonroot, USER 10001, ENTRYPOINT /usr/bin/loki), per-platform children of the 3.7.8 index sha256:1107dd52... resolved 2026-10-06. best-effort: upstream builds without -trimpath and stamps a wall-clock BuildDate and root@buildkitsandbox, so a byte mismatch is expected and proves nothing even on the same Go patch."
       },
@@ -942,7 +942,7 @@
         "tzdata": true,
         "configNote": "CMD and /etc/loki/local-config.yaml are upstream's (cmd/loki/loki-docker-config.yaml, from the pinned source tree), so the image runs standalone exactly as docker.io/grafana/loki does. Real deployments mount their own config."
       },
-      "updated": "2026-10-06",
+      "updated": "2026-10-24",
       "reason": "Initial pin. No usable UBI-based Loki exists: Red Hat's logging-loki-rhel9 is an entitled, authenticated pull on the OpenShift Logging release train; the vendor image is distroless/static (Debian). Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md. Licence AGPL-3.0-only (LICENSING.md; pkg/ subfolders Apache-2.0); unmodified and run internally. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/loki (PLAN-Logging.md Part A)."
     },
     "seaweedfs": {
@@ -1015,7 +1015,7 @@
         "tzdata": true,
         "configNote": "CMD is ours, not upstream's `mini` (which also opens an admin UI and WebDAV): a single-node master + volume + filer + S3 gateway, so the image runs standalone. Real deployments pass their own flags and an -s3.config identity file; without one the S3 gateway is open to anonymous requests."
       },
-      "updated": "2026-10-08",
+      "updated": "2026-10-24",
       "reason": "Initial pin. Replaces MinIO, whose public images (quay.io/minio/minio, docker.io/minio/minio) answer 401 since 2026-10-07, as the S3 blob store of Sonatype Nexus. The vendor image is Alpine and unsigned; no UBI-based SeaweedFS exists. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md. Licence Apache-2.0; unmodified and run internally. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/nexus-uar (PLAN-SeaweedFS.md Part A)."
     },
     "prometheus-nats-exporter": {
@@ -1051,12 +1051,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "0.20.2",
-          "digest": "sha256:a7eef712e7b6daf98f5a2da5a4a1fa23fdc97fdcded67a4d2794523fcc758938"
+          "tag": "0.20.3",
+          "digest": "sha256:d6d0dcd75f37d6703638ab843f7e886e4f580a4fc284417d669098f3a4107e5f"
         },
         "arm64": {
-          "tag": "0.20.2",
-          "digest": "sha256:4a2d0db5cf559c57f70a353d9eddddcd2a6a769ef9b7ac4212503ad1e45e8e6e"
+          "tag": "0.20.3",
+          "digest": "sha256:591b31a08dbf355ac9dc46a78a2701734ee058374f8b77c34ad516f1e5c954a6"
         },
         "note": "Upstream's own image (Alpine, ENTRYPOINT /entrypoint.sh exec'ing /prometheus-nats-exporter -> /usr/local/bin/prometheus-nats-exporter), per-platform children of the 0.20.2 index sha256:c623b608... resolved 2026-10-12. Checked for a signature, found none: `cosign download signature` -> no signatures associated; `cosign tree` -> no supply-chain artifacts. Hence trust class none. best-effort: the vendor binary reports go1.26.6 and -trimpath, while ours is built with toolchains.go1.26.goVersion (1.26.9 since 2026-10-13), and goreleaser's environment (GOAMD64, buildvcs) is not pinned data, so a byte mismatch proves nothing."
       },
@@ -1074,7 +1074,7 @@
         "tzdata": true,
         "configNote": "Stateless; no config file. CMD is upstream's `--help`, so the image runs standalone and exits. Deployments pass the endpoint flags and the NATS monitoring URL as the positional argument (e.g. `-varz -connz -subz -healthz -jsz=all http://127.0.0.1:8222`)."
       },
-      "updated": "2026-10-14",
+      "updated": "2026-10-24",
       "reason": "Initial pin. No UBI-based exporter exists: the vendor image is Alpine and unsigned. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; moved to enforce 2026-10-14 after its first review on a pcre2-patched ubi9-micro (PR #32) came back clean on both arches: allow=true, blocking=0, waived=0, recorded=0, namespace trusted, so no exception was needed. Licence Apache-2.0. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/nats (a sidecar behind an mTLS metrics door; PLAN-SSHadowForge-Dashboards-20261012.md Part A/B, the deferred E5 of PLAN-SSHadowForge-Review-20261012.md)."
     }
   }

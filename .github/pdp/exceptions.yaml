@@ -393,6 +393,60 @@ exceptions:
       loads pubsub.jetstream, pubsub.kafka and bindings.cron, never RabbitMQ.
       Also present in the digest currently promoted to trusted/.
 
+  - id: EXC-2026-0017
+    image: daprd
+    variant: "*"
+    package: "github.com/go-jose/go-jose/v4"
+    cves:
+      - GHSA-mgcc-cww5-fp2q
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/37"
+    justification: >-
+      go-jose v4.1.4 is pinned (indirect) by Dapr v1.18.9, the newest release on
+      track; fixed in go-jose 4.1.6. The advisory (JWK parsing DoS) was published
+      2026-10-27 and release-1.18 HEAD still requires 4.1.4; the upstream bump is
+      dapr/dapr#10945, open. We build upstream source unmodified at a pinned
+      commit. Short window on purpose: take the first dapr release that carries
+      go-jose >= 4.1.6 and delete this entry.
+
+  - id: EXC-2026-0018
+    image: dapr-placement
+    variant: "*"
+    package: "github.com/go-jose/go-jose/v4"
+    cves:
+      - GHSA-mgcc-cww5-fp2q
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/37"
+    justification: >-
+      go-jose v4.1.4 is pinned (indirect) by Dapr v1.18.9, the newest release on
+      track; fixed in go-jose 4.1.6. The advisory (JWK parsing DoS) was published
+      2026-10-27 and release-1.18 HEAD still requires 4.1.4; the upstream bump is
+      dapr/dapr#10945, open. We build upstream source unmodified at a pinned
+      commit. Short window on purpose: take the first dapr release that carries
+      go-jose >= 4.1.6 and delete this entry.
+
+  - id: EXC-2026-0019
+    image: dapr-scheduler
+    variant: "*"
+    package: "github.com/go-jose/go-jose/v4"
+    cves:
+      - GHSA-mgcc-cww5-fp2q
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/37"
+    justification: >-
+      go-jose v4.1.4 is pinned (indirect) by Dapr v1.18.9, the newest release on
+      track; fixed in go-jose 4.1.6. The advisory (JWK parsing DoS) was published
+      2026-10-27 and release-1.18 HEAD still requires 4.1.4; the upstream bump is
+      dapr/dapr#10945, open. We build upstream source unmodified at a pinned
+      commit. Short window on purpose: take the first dapr release that carries
+      go-jose >= 4.1.6 and delete this entry.
+
 # --- Example. Delete before the first real entry. --------------------------
 #
 # - id: EXC-2026-0001

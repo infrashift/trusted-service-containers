@@ -122,7 +122,7 @@
         "digest": "sha256:4f93842687d19ffa7abf51233bc538bf4e0783f6e11a6a6990114949214aefb7"
       },
       "note": "VERIFIED 2026-08-18: ships NO CA trust bundle, NO tzdata, and NO UID 1001 in /etc/passwd. It DOES have bash, coreutils and glibc, so RUN works. Registry path is trusted-base-images, not trusted-base-oci-images (the sibling's directory name differs from its git remote). arm64 is published as arm64/v8; always pin by digest.",
-      "updated": "2026-10-14"
+      "updated": "2026-10-28"
     },
     "ubi9-minimal": {
       "image": "ghcr.io/infrashift/trusted-base-images/trusted/ubi9-minimal",
@@ -130,13 +130,13 @@
       "trustClass": "internal",
       "verifyKey": ".github/pdp/public-keys/upstream/trusted-base-images-release.pub",
       "amd64": {
-        "digest": "sha256:8073bce76a1842ce7559e6870f88b7473ff14d0ee2f0af0d49fe44749a17e4bf"
+        "digest": "sha256:419f18caf8425f5c95c8f5aadd7b05dc947a85e4ae9c41ac9299dcd80036fc24"
       },
       "arm64": {
-        "digest": "sha256:b458b9a9b9c90f7d579a353cb4c3f7e9e71f90698a2521a657197b7c32644e5a"
+        "digest": "sha256:073a8431f9610056ef5ba271a28e0d836de1fdd7f29bda13cf97dc2cb8642fcc"
       },
       "note": "Donor for /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem only. Assert the copied bundle is >100000 bytes so a truncated one fails loudly.",
-      "updated": "2026-10-14"
+      "updated": "2026-10-28"
     }
   },
   "images": {

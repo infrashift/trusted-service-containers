@@ -36,10 +36,10 @@
     },
     "nats": {
       "track": "^v2\\.14\\.[0-9]+$",
-      "ref": "v2.14.7",
+      "ref": "v2.14.9",
       "url": "https://github.com/nats-io/nats-server",
-      "commit": "8d8b69a8c46a46a150eabb7f312607c4d9c58faf",
-      "shortCommit": "8d8b69a8c",
+      "commit": "9ece5884153a3e39a3904d53210b9b8b26dd7364",
+      "shortCommit": "9ece58841",
       "shortCommitNote": "goreleaser stamps {{.ShortCommit}}, whose length is git's DYNAMIC abbreviation for the full repo. Verified empirically: the released v2.14.5 binary embeds 9 characters. It cannot be derived from our build, because fetch-source.sh makes a --depth 1 clone and git then abbreviates to the 7-char minimum. Pinning it as data is the only way to reproduce the vendor's binary; drift PRs must update it alongside `commit`.",
       "note": "Moved up from the 2.11 line the user ran previously. Upstream pins GOTOOLCHAIN and uses -trimpath, so this is the one service where a byte-identical cross-check is realistic."
     },
@@ -57,14 +57,14 @@
     },
     "prometheus": {
       "track": "^v3\\.15\\.[0-9]+$",
-      "ref": "v3.15.0",
+      "ref": "v3.15.1",
       "url": "https://github.com/prometheus/prometheus",
-      "commit": "5241a27fe3c6983549fccc32f6e65917408c63cd",
+      "commit": "bae3eced0a5369e050e83ea73bc381d7c4b1a719",
       "assets": {
         "web-ui": {
-          "url": "https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-web-ui-3.15.0.tar.gz",
-          "sha256": "fa8c918ed05e3f89e232e9b69eccd6ed074602cd9e8a2cab7a92bec9651974ae",
-          "note": "The compiled web UI. A source build without Node and pnpm has no UI (`builtinassets` embeds web/ui/static, which only `make assets` populates), and upstream publishes this tarball for exactly that case -- its Makefile honours PREBUILT_ASSETS_STATIC_DIR. Its paths are static/..., the shape scripts/package_assets.sh writes. sha256 copied 2026-10-01 from the release's sha256sums.txt. Prometheus does not sign release assets, so this hash IS the trust claim. A drift bump moves the URL but cannot re-pin the hash; scripts/fetch-assets.sh refuses a URL that does not name the release being built."
+          "url": "https://github.com/prometheus/prometheus/releases/download/v3.15.1/prometheus-web-ui-3.15.1.tar.gz",
+          "sha256": "adf30f35abf0d23ffd25616afe75d1966a7ceb18ddad4161fe8ad76e28f2b48f",
+          "note": "The compiled web UI. A source build without Node and pnpm has no UI (`builtinassets` embeds web/ui/static, which only `make assets` populates), and upstream publishes this tarball for exactly that case -- its Makefile honours PREBUILT_ASSETS_STATIC_DIR. Its paths are static/..., the shape scripts/package_assets.sh writes. sha256 for v3.15.1 copied 2026-10-28 from the release's sha256sums.txt and confirmed against the downloaded tarball. Prometheus does not sign release assets, so this hash IS the trust claim. A drift bump moves the URL but cannot re-pin the hash; scripts/fetch-assets.sh refuses a URL that does not name the release being built."
         }
       },
       "note": "Initial pin, the newest release (2026-09-24). Track is the 3.15 minor line, like nats. Upstream's .promu.yml builds with Go 1.27; go.mod only requires 1.26.0, so our go1.26 toolchain builds it with GOTOOLCHAIN=local (no toolchain download) and the cross-check is best-effort."
@@ -80,11 +80,11 @@
     },
     "seaweedfs": {
       "track": "^4\\.[0-9]+$",
-      "ref": "4.48",
+      "ref": "4.51",
       "url": "https://github.com/seaweedfs/seaweedfs",
-      "commit": "530be3e37337488ecc34d58441e0bc476e121c93",
-      "shortCommit": "530be3e37",
-      "shortCommitNote": "Upstream's container build stamps COMMIT from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo. Verified on the vendor's 4.48 binary (`weed version`, 2026-10-08): \"version 30GB 4.48 530be3e37 linux amd64\", 9 characters. fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`.",
+      "commit": "153ab668c99731a6d29492bf6c61d0b4fa701101",
+      "shortCommit": "153ab668c",
+      "shortCommitNote": "Upstream's container build stamps COMMIT from `git rev-parse --short HEAD`, git's DYNAMIC abbreviation for the full repo: 9 characters on 4.48 (`weed version`: \"version 30GB 4.48 530be3e37 linux amd64\", 2026-10-08). fetch-source.sh's --depth 1 clone would abbreviate to 7, so it is pinned as data; drift PRs must update it alongside `commit`. 4.51 exception (2026-10-28): the vendor's 4.51 image reports ffa87c25f, one commit past the 4.51 tag on master (ffa87c25 changes only three .github/workflows files, so the Go sources are identical). We build the tag and stamp what we built, 153ab668c; the vendor revision string will differ on this release.",
       "note": "Initial pin, the newest release (2026-09-28). Tags carry no leading v (4.48, 4.47, ...), and every release bumps the minor, so the track is the whole 4.x line. go.mod requires go 1.26.6, the patch our go1.26 toolchain pin carried at the time; it has since moved to 1.26.9 (see toolchains.go1.26.goVersion)."
     },
     "prometheus-nats-exporter": {
@@ -567,18 +567,18 @@
         "trustClass": "docker-official",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "2.14.7-alpine3.22",
-          "digest": "sha256:b2301863d84fda2cf8260d308203708f5231b2db34d821cc518d5c4c3c79780a"
+          "tag": "2.14.9-alpine3.22",
+          "digest": "sha256:ba2203721dcbde1c611155c921782a56d711694981ed31b310093d63b560009c"
         },
         "arm64": {
-          "tag": "2.14.7-alpine3.22",
-          "digest": "sha256:7db8dc39d5dc71ceb3718b705cd8e176bac506b82c24411e6825a809b02e15f7"
+          "tag": "2.14.9-alpine3.22",
+          "digest": "sha256:d97e52662ef6867f53e970bd6cfe182a9d18f85b1454be20eedccb1dd432a37e"
         },
         "releaseTarballSha256": {
-          "amd64": "e5c20b1cb2c0566b54c544312e91e011f9e130c5c80f16a14f4cf28ef30b8be2",
-          "arm64": "50e0258a1b7290f3fe2e4f17506b74a90ffb1dd77867ae3a402eb0c9e2b0d40f"
+          "amd64": "74f20433c5b39d7cc6db54155ec1e669671c728f625e54cf307298924b2b4259",
+          "arm64": "e4f437b27c5966f65efdc5c17e5e50a02daea424cd2efc71df2ca514119ee4bc"
         },
-        "note": "Second, independent anchor: the official image does not compile the binary, it downloads the GitHub release tarball and verifies these sha256 values inline in nats-docker/2.14.x/alpine3.22/Dockerfile. Both were confirmed to match on 2026-08-18, and the binary inside the official image is byte-identical to the released tarball. Re-confirmed for v2.14.7 on 2026-09-30: the hashes equal both the release's SHA256SUMS and nats-docker fe222b5f97 (2.14.x/alpine3.22/Dockerfile at NATS_SERVER=2.14.7), and the nats-server in each 2.14.7-alpine3.22 child is byte-identical to its tarball's (amd64 and arm64). TIER DOWNGRADED from flag-matched to best-effort after empirical testing: we reproduced every observable build input -- Go 1.26.5, identical dep set, -trimpath, CGO_ENABLED=0, GOAMD64=v1, DefaultGODEBUG, mod=v2.14.5, vcs.revision/time/modified=false, and the 9-char short commit -- and the binary still differs. Whatever remains is not visible in `go version -m`. Do not treat a NATS mismatch as alarming until someone identifies the residual input."
+        "note": "Second, independent anchor: the official image does not compile the binary, it downloads the GitHub release tarball and verifies these sha256 values inline in nats-docker/2.14.x/alpine3.22/Dockerfile. Both were confirmed to match on 2026-08-18, and the binary inside the official image is byte-identical to the released tarball. Re-confirmed for v2.14.9 on 2026-10-28: the hashes equal both the release's SHA256SUMS and nats-docker 2027d0acef (2.14.x/alpine3.22/Dockerfile at NATS_SERVER=2.14.9), and the nats-server in each 2.14.9-alpine3.22 child is byte-identical to its tarball's (amd64 and arm64). The vendor binary embeds the 9-char short commit 9ece58841. TIER DOWNGRADED from flag-matched to best-effort after empirical testing: we reproduced every observable build input -- Go 1.26.5, identical dep set, -trimpath, CGO_ENABLED=0, GOAMD64=v1, DefaultGODEBUG, mod=v2.14.5, vcs.revision/time/modified=false, and the 9-char short commit -- and the binary still differs. Whatever remains is not visible in `go version -m`. Do not treat a NATS mismatch as alarming until someone identifies the residual input."
       },
       "runtime": {
         "ports": [
@@ -838,14 +838,14 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "v3.15.0",
-          "digest": "sha256:86b17a25c2db1d16a61b16b3c8f336679eb19e26333d03e808da387206e40faa"
+          "tag": "v3.15.1",
+          "digest": "sha256:d445d1806b38f85b5c394a1b87f94113fde0473b45245922c2e8b1bd41fa68ae"
         },
         "arm64": {
-          "tag": "v3.15.0",
-          "digest": "sha256:6b41f7a45cfbd1d259a78701ee5e14fc2ad9383c9aa5d0427345a18539bc3c91"
+          "tag": "v3.15.1",
+          "digest": "sha256:13020b7e520d56fef031135b91f5635888de441d6c4cfda3608bfbf6f4916dcb"
         },
-        "note": "Upstream's own image (busybox base, USER nobody, ENTRYPOINT /bin/prometheus), per-platform children of the v3.15.0 index sha256:efd719c9... resolved 2026-10-01. Unsigned, so trust class none. best-effort: upstream compiles with Go 1.27 and we use 1.26, so a mismatch is expected and proves nothing."
+        "note": "Upstream's own image (busybox base, USER nobody, ENTRYPOINT /bin/prometheus), per-platform children of the v3.15.1 index sha256:fa330227... resolved 2026-10-28. Unsigned, so trust class none. best-effort: upstream compiles with Go 1.27 and we use 1.26, so a mismatch is expected and proves nothing."
       },
       "runtime": {
         "ports": [
@@ -979,14 +979,14 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "4.48",
-          "digest": "sha256:aba492e2a4e4c90bff795745e8e660affa1f09e7650f5981bd7bccd1a06cd931"
+          "tag": "4.51",
+          "digest": "sha256:3a522c379599e163433a636e75022630848b63a74f08ea37bf06f8d776e9a707"
         },
         "arm64": {
-          "tag": "4.48",
-          "digest": "sha256:f1f303474940e9e088edbd2c1658f7ac38cb0dd90f91a2b0a51916d74b8575a1"
+          "tag": "4.51",
+          "digest": "sha256:7e68a388de0806ed8d96f30cb7e927182a3d80d42920cb87d97d23311a7a1a77"
         },
-        "note": "Upstream's own image (Alpine 3.23, ENTRYPOINT /entrypoint.sh, CMD mini -dir=/data, unsigned), per-platform children of the 4.48 index sha256:4e61d15f... resolved 2026-10-08. best-effort: upstream builds without -trimpath on golang:1.26-alpine with a floating patch, so a byte mismatch is expected and proves nothing."
+        "note": "Upstream's own image (Alpine 3.23, ENTRYPOINT /entrypoint.sh, CMD mini -dir=/data, unsigned), per-platform children of the 4.51 index sha256:f7a49e3f... resolved 2026-10-28. best-effort: upstream builds without -trimpath on golang:1.26-alpine with a floating patch, so a byte mismatch is expected and proves nothing."
       },
       "runtime": {
         "ports": [

@@ -447,6 +447,198 @@ exceptions:
       commit. Short window on purpose: take the first dapr release that carries
       go-jose >= 4.1.6 and delete this entry.
 
+  - id: EXC-2026-0020
+    image: hydra
+    variant: "*"
+    package: "golang.org/x/net"
+    cves:
+      - GO-2026-6603
+      - GO-2026-6611
+      - GO-2026-6612
+      - GO-2026-6617
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      x/net v0.48.0 is pinned by Ory hydra v26.2.0, still the newest release
+      of all four lockstep services (2026-03-20); ory master (last commit
+      2026-07-29) is only at v0.56.0, and the fix is v0.60.0. These are the
+      HTTP/2 advisories of 2026-10-08 (memory, CPU and flow-control DoS;
+      GO-2026-6612 is Critical). Accepted by the owner on 2026-10-28 so the
+      stack can ship on the current base and toolchain, knowing #7 asks
+      whether to keep Ory at all. Re-decide at expiry rather than renew.
+
+  - id: EXC-2026-0021
+    image: hydra
+    variant: "*"
+    package: "golang.org/x/text"
+    cves:
+      - GO-2026-6629
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      x/text v0.32.0 is pinned by Ory hydra v26.2.0, the newest release; fixed
+      in v0.41.0. GO-2026-6629 is a panic on crafted input to
+      x/text/secure/precis (2026-10-07). No Ory release or master commit on
+      track carries the fix. Accepted by the owner on 2026-10-28; see #7 for
+      the open question of keeping Ory.
+
+  - id: EXC-2026-0022
+    image: keto
+    variant: "*"
+    package: "golang.org/x/net"
+    cves:
+      - GO-2026-6603
+      - GO-2026-6611
+      - GO-2026-6612
+      - GO-2026-6617
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      x/net v0.48.0 is pinned by Ory keto v26.2.0, still the newest release of
+      all four lockstep services (2026-03-20); ory master (last commit
+      2026-07-29) is only at v0.56.0, and the fix is v0.60.0. These are the
+      HTTP/2 advisories of 2026-10-08 (memory, CPU and flow-control DoS;
+      GO-2026-6612 is Critical). Accepted by the owner on 2026-10-28 so the
+      stack can ship on the current base and toolchain, knowing #7 asks
+      whether to keep Ory at all. Re-decide at expiry rather than renew.
+
+  - id: EXC-2026-0023
+    image: keto
+    variant: "*"
+    package: "golang.org/x/text"
+    cves:
+      - GO-2026-6629
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      x/text v0.32.0 is pinned by Ory keto v26.2.0, the newest release; fixed
+      in v0.41.0. GO-2026-6629 is a panic on crafted input to
+      x/text/secure/precis (2026-10-07). No Ory release or master commit on
+      track carries the fix. Accepted by the owner on 2026-10-28; see #7 for
+      the open question of keeping Ory.
+
+  - id: EXC-2026-0024
+    image: kratos
+    variant: "*"
+    package: "golang.org/x/net"
+    cves:
+      - GO-2026-6603
+      - GO-2026-6611
+      - GO-2026-6612
+      - GO-2026-6617
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      x/net v0.48.0 is pinned by Ory kratos v26.2.0, still the newest release
+      of all four lockstep services (2026-03-20); ory master (last commit
+      2026-07-29) is only at v0.56.0, and the fix is v0.60.0. These are the
+      HTTP/2 advisories of 2026-10-08 (memory, CPU and flow-control DoS;
+      GO-2026-6612 is Critical). Accepted by the owner on 2026-10-28 so the
+      stack can ship on the current base and toolchain, knowing #7 asks
+      whether to keep Ory at all. Re-decide at expiry rather than renew.
+
+  - id: EXC-2026-0025
+    image: kratos
+    variant: "*"
+    package: "golang.org/x/text"
+    cves:
+      - GO-2026-6629
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      x/text v0.32.0 is pinned by Ory kratos v26.2.0, the newest release;
+      fixed in v0.41.0. GO-2026-6629 is a panic on crafted input to
+      x/text/secure/precis (2026-10-07). No Ory release or master commit on
+      track carries the fix. Accepted by the owner on 2026-10-28; see #7 for
+      the open question of keeping Ory.
+
+  - id: EXC-2026-0026
+    image: kratos
+    variant: "*"
+    package: "github.com/go-jose/go-jose/v4"
+    cves:
+      - GHSA-mgcc-cww5-fp2q
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/37"
+    justification: >-
+      go-jose/v4 v4.1.3 is pinned (indirect) by Ory kratos v26.2.0, the newest
+      release on track; fixed in 4.1.6. GHSA-mgcc-cww5-fp2q (JWK parsing DoS)
+      was published 2026-10-27, after that release shipped. Ory has no newer
+      release (#7). Take the first release on track that carries go-jose >=
+      4.1.6 and delete this entry.
+
+  - id: EXC-2026-0027
+    image: oathkeeper
+    variant: "*"
+    package: "golang.org/x/net"
+    cves:
+      - GO-2026-6603
+      - GO-2026-6610
+      - GO-2026-6611
+      - GO-2026-6612
+      - GO-2026-6617
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    justification: >-
+      x/net v0.48.0 is pinned by Ory oathkeeper v26.2.0, still the newest
+      release of all four lockstep services (2026-03-20); ory master (last
+      commit 2026-07-29) is only at v0.56.0, and the fix is v0.60.0. These are
+      the HTTP/2 advisories of 2026-10-08 (memory, CPU and flow-control DoS;
+      GO-2026-6612 is Critical). Accepted by the owner on 2026-10-28 so the
+      stack can ship on the current base and toolchain, knowing #7 asks
+      whether to keep Ory at all. Re-decide at expiry rather than renew.
+
+  - id: EXC-2026-0028
+    image: oathkeeper
+    variant: "*"
+    package: "github.com/go-jose/go-jose/v4"
+    cves:
+      - GHSA-mgcc-cww5-fp2q
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/37"
+    justification: >-
+      go-jose/v4 v4.1.3 is pinned (indirect) by Ory oathkeeper v26.2.0, the
+      newest release on track; fixed in 4.1.6. GHSA-mgcc-cww5-fp2q (JWK
+      parsing DoS) was published 2026-10-27, after that release shipped. Ory
+      has no newer release (#7). Take the first release on track that carries
+      go-jose >= 4.1.6 and delete this entry.
+
+  - id: EXC-2026-0029
+    image: seaweedfs
+    variant: "*"
+    package: "github.com/go-jose/go-jose/v4"
+    cves:
+      - GHSA-mgcc-cww5-fp2q
+    issued:  "2026-10-28T00:00:00Z"
+    expires: "2026-11-27T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/37"
+    justification: >-
+      go-jose/v4 v4.1.5 is pinned (indirect) by SeaweedFS 4.51, the newest
+      release on track; fixed in 4.1.6. GHSA-mgcc-cww5-fp2q (JWK parsing DoS)
+      was published 2026-10-27, after that release shipped. seaweedfs master
+      already requires 4.1.6, so the next release should clear it. Take the
+      first release on track that carries go-jose >= 4.1.6 and delete this
+      entry.
+
 # --- Example. Delete before the first real entry. --------------------------
 #
 # - id: EXC-2026-0001

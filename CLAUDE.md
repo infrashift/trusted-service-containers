@@ -11,7 +11,8 @@ make -f Ops.mk validate
 ```
 
 Schema, gitleaks config, single-policy check, workflow lint, Containerfile
-lint, shellcheck, script tests and the policy tests (85% coverage floor). It is fast. There is no reason to skip it.
+lint, doc path lint, the wiki check (`okfw` must be on PATH), shellcheck, script
+tests and the policy tests (85% coverage floor). It is fast. There is no reason to skip it.
 
 ## versions.json is the only place a digest lives
 
@@ -75,8 +76,8 @@ lands in `quarantine/`. PR #29 was merged two minutes after a review comment
 showing a Critical and seven Highs per arch, because the check was green. Before
 merging any image PR, **read the review comment**: Blocking must be 0, or the
 PR must say why quarantine is the intended outcome. Scan the local build first
-(`.ai/skills/adding-an-upstream.md` step 6) so the review is not where you
-find out.
+([Add an upstream image](./.okfw/operations/add-an-upstream-image--01a18383d9be.md),
+step 6) so the review is not where you find out.
 
 ## Toolchains are pins that rot
 
@@ -90,10 +91,11 @@ image that references it; `lint-workflows.sh` check 11 holds `build.yml` to that
 
 ## Dual provenance is an observation, never a gate
 
-Go builds are not reproducible here — we measured, in detail, in
-`docs/build-track/dual-provenance.md`. The policy gates that the comparison was
-**performed** and is **well-formed**, never its outcome. If someone proposes
-promoting it to a gate, read that document first.
+Go builds are not reproducible here — we measured, in detail
+([the measurement](./.okfw/findings/a-nats-binary-built-from-source-did-not-match-the-vendor-binary-on-2026-08-18--01a1838a6cfc.md)).
+The policy gates that the comparison was **performed** and is **well-formed**,
+never its outcome. If someone proposes promoting it to a gate, read
+[ADR-004](./.okfw/decisions/adr-004-dual-provenance-is-an-observation-not-a-gate--01a18382f4a6.md) first.
 
 ## Workflow conventions
 
@@ -118,7 +120,57 @@ promoting it to a gate, read that document first.
 
 ## Documentation follows the code
 
-Write `.ai/` cards and docs **after** the thing they describe exists.
-`scripts/lint-skills.sh` fails CI if a backticked path in a card does not
+Write wiki concepts and docs **after** the thing they describe exists.
+`scripts/lint-skills.sh` fails CI if a backticked path in a doc does not
 resolve — the direct fix for the reference's cards citing four files that were
-never created.
+never created. It does not scan `.okfw/` yet (an open wiki issue), so check
+every path you cite in a concept by hand.
+
+## Project knowledge lives in the wiki
+
+The `.ai/` cards, the PRD and `docs/build-track/` moved into the OKF wiki in
+`.okfw/`; the old files are pointers. Issues, plans and dated findings are
+tracked there too — the wiki, not GitHub Issues, is the tracker of record.
+
+* Write all prose in `.okfw/` in Simplified Technical English (ASD-STE100). The rules and examples are in the wiki: run `okfw search "simplified technical english"`.
+* Start at the [wiki map](./.okfw/wiki-map--01a1837da4d8.md). Open a bundle overview before you open the concepts in that bundle.
+* Track issues and plans in the wiki. List the open issues with `okfw search --kind issue --tag open`.
+* Run `make -f Ops.mk check-wiki` after you change a concept. `validate` runs it too.
+
+<!-- BEGIN okfw -->
+## Project knowledge base (okfw)
+
+trusted-service-containers keeps a local-first OKF wiki in `.okfw/`: markdown concepts with
+YAML frontmatter, linked to each other. The files are the whole database —
+search and the link graph are computed from them on demand, so there is no
+index to build and nothing to sync. Each directory's `index.md` is generated
+and gives a cheap overview before you open anything (OKF section 8).
+
+- **Search before you derive.** `okfw search "<query>"` / `okfw_search`. The
+  wiki holds what the code does not say — why things are built the way they
+  are, what was considered and rejected, dependency and security findings,
+  operational context, open work. Check it before explaining a design,
+  assessing risk, or running an analysis someone may already have recorded and
+  adjudicated.
+- **Browse top-down.** Each directory's `index.md` lists its concepts with
+  their descriptions (`okfw_read {"ref":"<dir>/"}` over MCP). Open only what fits.
+- **Search before you write**, too, so a new concept links to what already
+  exists instead of duplicating it.
+- **Link actively** — `[Title](/dir/file.md)` from the wiki root, or
+  `./<file>.md`. Links are what makes the wiki more than a folder.
+- **One idea per concept**, with a one-sentence `description`.
+- **Use `okfw move` / `okfw delete`, never `mv` / `rm`.** `move` repairs every
+  link to the concept and its own relative links, and both keep the `index.md`
+  listings current; the shell commands break the links and leave the listings
+  stale.
+- **`status` is the OKF lifecycle field** (`draft`/`stable`/`deprecated`), not
+  task state. Mark superseded knowledge rather than deleting it.
+- **Custom metadata goes under `x:`** — the schema is closed and rejects any
+  other unrecognized key.
+- Don't edit `index.md` or `log.md`; okfw generates them.
+
+Results are capped and say so: `truncated`, or `… N more`, means you did not
+see everything — raise the limit or page with `--offset`/`"offset"`.
+
+`okfw mcp` serves all of this as MCP stdio tools named `okfw_*`.
+<!-- END okfw -->

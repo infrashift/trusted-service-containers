@@ -1,19 +1,10 @@
 # Dual provenance
 
-The build track records the sha256 of the binary we built **and** of the same
-binary from the vendor's official image.
+This content moved to the project wiki in `.okfw/`. The wiki is now the source of truth. Do not add text to this file.
 
-**It is not a gate.** The policy requires only that the comparison was
-performed (`DUAL_PROVENANCE_NOT_RECORDED`), is well-formed
-(`DUAL_PROVENANCE_MALFORMED`), and used the pinned reference
-(`DUAL_PROVENANCE_REFERENCE_UNPINNED`). The outcome never affects the decision.
+Read:
 
-We measured. Go builds are not reproducible here — for NATS we matched every
-input visible to `go version -m` and the binary still differed. A mismatch is
-the expected result and proves nothing; a *change* in the relationship is the
-real signal.
+* [ADR-004: Dual provenance is an observation, not a gate](../../.okfw/decisions/adr-004-dual-provenance-is-an-observation-not-a-gate--01a18382f4a6.md)
+* [The nats binary cross-check measurement](../../.okfw/findings/a-nats-binary-built-from-source-did-not-match-the-vendor-binary-on-2026-08-18--01a1838a6cfc.md)
 
-Full measurements, the three defects the comparison caught, and the reasoning:
-[`../../docs/build-track/dual-provenance.md`](../../docs/build-track/dual-provenance.md).
-
-If anyone proposes promoting this to a gate, read that first.
+Start at the [wiki map](../../.okfw/wiki-map--01a1837da4d8.md), or search the wiki: `okfw search "<words>"`.

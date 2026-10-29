@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "okfw": {
+      "command": "${HOME}/.local/bin/okfw",
+      "args": ["mcp"],
+      "timeout": 30000
+    }
+  }
+}

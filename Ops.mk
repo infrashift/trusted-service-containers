@@ -59,6 +59,7 @@ help:
 	echo "  lint-workflows        cross-workflow drift checks (guard, context, paths, perms)"
 	echo "  lint-containerfiles   Containerfile shape + versions.json agreement"
 	echo "  lint-skills           every documented file path resolves"
+	echo "  check-wiki            okfw schema + OKF format + no dangling links in .okfw/"
 	echo "  test-scripts          drift-upstream.sh and propose-drift.sh against fixtures and stubs"
 	echo "  policy-test           opa check --strict, opa fmt, opa test --threshold 85"
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
@@ -72,7 +73,7 @@ help:
 	echo "  images:   $(words $(IMAGES)) ($(words $(MIRROR_IMAGES)) mirror, $(words $(BUILD_IMAGES)) build)"
 
 .PHONY: validate
-validate: check-versions check-schema check-keyring check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills lint-shell test-scripts policy-test
+validate: check-versions check-schema check-keyring check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills check-wiki lint-shell test-scripts policy-test
 	echo "OK: repository validation passed"
 
 .PHONY: check-versions
@@ -135,6 +136,21 @@ lint-containerfiles:
 .PHONY: lint-skills
 lint-skills:
 	./scripts/lint-skills.sh
+
+.PHONY: check-wiki
+check-wiki:
+	# The OKF wiki in .okfw/ holds the issues, plans and findings. okfw is not
+	# in tools.lock yet, so CI does not run this; `validate` does. A missing
+	# okfw is an error, not a skip: a check that skips reads as a pass.
+	command -v okfw >/dev/null || { echo "error: okfw not found on PATH; it is required to validate .okfw/" >&2; exit 1; }
+	okfw validate --all
+	okfw validate --okf >/dev/null
+	# `graph-query dangling` exits 0 even when links are broken, and prints
+	# `null` only when there are none. Anything else -- a list, or empty output
+	# from a failed query -- fails the check.
+	dangling=$$(okfw graph-query dangling --json)
+	if [ "$$dangling" != "null" ]; then echo "error: dangling links in .okfw/:" >&2; echo "$$dangling" >&2; exit 1; fi
+	echo "OK: .okfw/ wiki valid, no dangling links"
 
 .PHONY: lint-shell
 lint-shell:

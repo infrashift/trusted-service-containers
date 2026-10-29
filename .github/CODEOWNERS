@@ -50,8 +50,18 @@
 /.gitignore                         @infrashift/security-admins
 /SETUP-ENVIRONMENTS.md              @infrashift/security-admins
 
+# MCP servers and agent settings decide which tools an agent can run, and
+# AGENTS.md / GEMINI.md are instructions those agents follow.
+/.mcp.json                          @infrashift/security-admins
+/.claude/                           @infrashift/security-admins
+/.gemini/                           @infrashift/security-admins
+/AGENTS.md                          @infrashift/security-admins
+/GEMINI.md                          @infrashift/security-admins
+
 # --- Documentation ---------------------------------------------------------
 /docs/                              @infrashift/platform-engineers
 /.ai/                               @infrashift/platform-engineers
 /CLAUDE.md                          @infrashift/platform-engineers
+# Project knowledge: issues, plans, findings, decisions (the OKF wiki).
+/.okfw/                             @infrashift/platform-engineers
 /README.md                          @infrashift/platform-engineers

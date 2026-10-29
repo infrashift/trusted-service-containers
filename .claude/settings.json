@@ -1,0 +1,21 @@
+{
+  "enabledMcpjsonServers": ["okfw"],
+  "permissions": {
+    "allow": [
+      "mcp__okfw__okfw_search",
+      "mcp__okfw__okfw_read",
+      "mcp__okfw__okfw_graph",
+      "mcp__okfw__okfw_create",
+      "mcp__okfw__okfw_update",
+      "Bash(okfw search:*)",
+      "Bash(okfw backlinks:*)",
+      "Bash(okfw graph:*)",
+      "Bash(okfw graph-query:*)",
+      "Bash(okfw validate:*)",
+      "Bash(okfw connect)",
+      "Bash(okfw root)",
+      "Bash(okfw templates)",
+      "Bash(okfw index-md --no-adopt)"
+    ]
+  }
+}

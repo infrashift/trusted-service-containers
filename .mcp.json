@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "okfw": {
+      "type": "stdio",
+      "command": "${HOME}/.local/bin/okfw",
+      "args": ["mcp"]
+    }
+  }
+}

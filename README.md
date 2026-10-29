@@ -157,9 +157,25 @@ widening is a one-character-class edit, indistinguishable at a glance from a
 routine digest bump, that converts every future release from a reviewed decision
 into an automated one.
 
+## Project knowledge
+
+The architecture, the decisions, the runbooks, the open issues and the plans
+are in an [OKF wiki](https://github.com/infrashift/okf-wiki) in `.okfw/`,
+written in Simplified Technical English. Humans and AI agents read and write
+the same wiki.
+
+1. Start at the [wiki map](./.okfw/wiki-map--01a1837da4d8.md).
+2. Open the overview of one bundle, then only the concepts you need.
+3. List the open issues with `okfw search --kind issue --tag open`.
+
+The wiki is the tracker of record: issues are recorded there, not in GitHub
+Issues ([ADR-007](./.okfw/decisions/adr-007-the-wiki-is-the-tracker-of-record--01a18382f505.md)).
+Run `make -f Ops.mk check-wiki` after you change a concept.
+
 ## Further reading
 
 - [`SETUP-ENVIRONMENTS.md`](SETUP-ENVIRONMENTS.md) — one-time setup runbook
-- [`docs/build-track/dual-provenance.md`](docs/build-track/dual-provenance.md) —
+- [Architecture overview](./.okfw/architecture/architecture-overview--01a1837da50c.md) —
+  the system and the reasoning behind it
+- [ADR-004: Dual provenance](./.okfw/decisions/adr-004-dual-provenance-is-an-observation-not-a-gate--01a18382f4a6.md) —
   what the binary cross-check does and does not prove, with measurements
-- [`.ai/PRD.md`](.ai/PRD.md) — architecture and the reasoning behind it

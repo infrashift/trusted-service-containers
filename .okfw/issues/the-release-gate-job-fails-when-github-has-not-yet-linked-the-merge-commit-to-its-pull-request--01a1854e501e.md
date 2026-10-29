@@ -9,16 +9,18 @@ tags:
   - "release"
   - "workflow"
 created: "2026-10-28T20:37:44-05:00"
-timestamp: "2026-10-28T20:38:13-05:00"
+timestamp: "2026-10-28T20:42:46-05:00"
 description: "The Gate job of release.yml looks up the merged pull request once, so a short GitHub API delay after a merge stops the release."
 status: "draft"
 generated:
   by: "claude-code/opus-5-5"
-  at: "2026-10-28T20:38:13-05:00"
+  at: "2026-10-28T20:42:46-05:00"
 resource: "https://github.com/infrashift/trusted-service-containers/blob/main/.github/workflows/release.yml"
 sources:
   - resource: "https://github.com/infrashift/trusted-service-containers/actions/runs/40801309587"
     title: "Release run 40801309587 for PR #40: attempt 1 failed, attempt 2 passed"
+  - resource: "https://github.com/infrashift/trusted-service-containers/actions/runs/40801760051"
+    title: "Release run 40801760051 for PR #41: attempt 1 failed, the re-run of the failed job passed"
 ---
 
 # The release Gate job fails when GitHub has not yet linked the merge commit to its pull request
@@ -33,9 +35,11 @@ The `Derive identifiers` step finds the pull request with `gh api repos/<repo>/c
 
 On 2026-10-29, PR #40 merged at 01:35:11 UTC. Release run [40801309587](https://github.com/infrashift/trusted-service-containers/actions/runs/40801309587) started at 01:35:14 UTC. The step called the API at 01:35:17 UTC and got no merged pull request. A query after the run gave PR #40 with `merged_at` 01:35:11. A re-run of the same run passed and gave `resolved PR #40`.
 
-PR #40 changed no image-affecting paths, so this failure stopped no release. On an image pull request, the same failure stops the promotion of all legs to `trusted/` or `quarantine/` until an operator re-runs the workflow.
+On 2026-10-29, PR #41 merged at 01:39:47 UTC. Release run [40801760051](https://github.com/infrashift/trusted-service-containers/actions/runs/40801760051) started at 01:39:50 UTC. The step called the API at 01:39:53 UTC and stopped with the same error. After the API showed PR #41 with `merged_at` 01:39:47, `gh run rerun 40801760051 --failed` passed and gave `resolved PR #41`.
 
-This is the first time that the `Gate` job failed for this cause. The earlier failed release runs since the push trigger (PRs #9, #11 and #20) failed in other jobs.
+PR #40 and PR #41 changed no image-affecting paths, so these failures stopped no release. On an image pull request, the same failure stops the promotion of all legs to `trusted/` or `quarantine/` until an operator re-runs the workflow.
+
+The `Gate` job failed for this cause on two merges in sequence: PR #40 and PR #41. In both runs, the API call occurred 6 seconds or less after the merge. The four merges before them on 2026-10-28 (PRs #35, #36, #38 and #39) did not fail. The earlier failed release runs since the push trigger (PRs #9, #11 and #20) failed in other jobs.
 
 ## Acceptance criteria
 
@@ -46,6 +50,7 @@ This is the first time that the `Gate` job failed for this cause. The earlier fa
 
 ## Analysis
 
+* Two failures in two merges show that the delay is frequent. Until the fix is in place, an operator must examine the release run after each merge. The maintainer must decide: do the fix soon with one full build, or wait for the next workflow change.
 * Do not read the pull request number from the merge commit message. A person can write any text in a commit message, so it is not a fact from GitHub.
 * Do not remove the check. It is the guard against a release that no review verdict covers.
 * `.github/workflows/release.yml` is in the `paths:` filter of `build.yml`. A change to it builds all images again. Put the fix in the next pull request that changes a build path, or accept one full build.

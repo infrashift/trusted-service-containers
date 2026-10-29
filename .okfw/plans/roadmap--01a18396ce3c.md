@@ -69,6 +69,12 @@ Each fix below rebuilds all images. Do them together, and with the waiver decisi
 2. [Five waivers match no finding after the October rebuilds](/issues/five-waivers-match-no-finding-after-the-october-rebuilds--01a1838a17b7.md)
 3. The example block at the end of `.github/pdp/exceptions.yaml`: [SETUP-ENVIRONMENTS.md and exceptions.yaml have stale setup text](/issues/setup-environments-md-and-exceptions-yaml-have-stale-setup-text--01a18395b5a2.md).
 
+## Next workflow change
+
+A change to `release.yml`, `review.yml` or `build.yml` rebuilds all images. Do this fix with the next change to one of these files.
+
+1. [The release Gate job fails when GitHub has not yet linked the merge commit to its pull request](/issues/the-release-gate-job-fails-when-github-has-not-yet-linked-the-merge-commit-to-its-pull-request--01a1854e501e.md)
+
 ## Docs debt
 
 These issues change text only. Some of them touch a build path. The note says which.

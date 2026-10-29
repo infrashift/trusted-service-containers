@@ -64,7 +64,7 @@ The checkout uses `fetch-depth: 0`, because `gitleaks` scans the full history. T
 6. Run `scripts/lint-containerfiles.sh`. See [Containerfile policy](/supply-chain/containerfile-policy--01a18383d8bc.md).
 7. Run `scripts/lint-skills.sh`. Each documented repository path must exist.
 8. Run `shellcheck -S warning` on `scripts/*.sh`.
-9. Run `scripts/test-propose-drift.sh` and `scripts/test-drift-upstream.sh` against fixtures and stubs.
+9. Run `scripts/test-propose-drift.sh`, `scripts/test-drift-upstream.sh` and `scripts/test-release-gate.sh` against fixtures and stubs.
 10. Run `opa check --strict`, `opa fmt --list` and `opa test`. The coverage floor is 85%.
 11. Run `scripts/repo-gate.sh`. It evaluates `data.tsc.pdp.repo_decision` and writes `repo-decision.json`. See [Repo gate and secret scanning](/supply-chain/repo-gate-and-secret-scanning--01a18383d973.md).
 12. Write a summary of the decision and upload `repo-decision.json`.

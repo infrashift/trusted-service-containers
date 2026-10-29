@@ -39,7 +39,7 @@ The trigger is a push, not `pull_request: closed`. A `pull_request` run has the 
 
 | Job | What it does |
 |---|---|
-| `Gate` | Finds the merged pull request and its head commit from the merge commit. It stops if no merged pull request exists. It does the lookup one time only; see [the open issue](/issues/the-release-gate-job-fails-when-github-has-not-yet-linked-the-merge-commit-to-its-pull-request--01a1854e501e.md). |
+| `Gate` | Finds the merged pull request and its head commit from the merge commit. GitHub links the two some seconds after the push, so the job does the lookup again if the result is empty: up to 6 times, 15 seconds apart. It stops if no merged pull request appears, or at the first API error. See [the resolved issue](/issues/the-release-gate-job-fails-when-github-has-not-yet-linked-the-merge-commit-to-its-pull-request--01a1854e501e.md). |
 | `Resolve Build & Review Runs` | Finds the successful build run and the review run that reviewed it. |
 | `Load Matrix` | Downloads `build-matrix.json` from the build run and checks it with the [matrix injection guard](/supply-chain/matrix-injection-guard--01a18383d7e8.md). |
 | `Release <leg>` | Runs `scripts/release-leg.sh` for one leg. |

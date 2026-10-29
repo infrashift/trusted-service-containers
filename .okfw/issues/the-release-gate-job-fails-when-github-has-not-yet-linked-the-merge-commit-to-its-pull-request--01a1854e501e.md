@@ -5,16 +5,16 @@ type: "issue"
 kind: "issue"
 tags:
   - "issue"
-  - "open"
   - "release"
   - "workflow"
+  - "resolved"
 created: "2026-10-28T20:37:44-05:00"
-timestamp: "2026-10-28T20:42:46-05:00"
+timestamp: "2026-10-28T20:56:14-05:00"
 description: "The Gate job of release.yml looks up the merged pull request once, so a short GitHub API delay after a merge stops the release."
-status: "draft"
+status: "deprecated"
 generated:
   by: "claude-code/opus-5-5"
-  at: "2026-10-28T20:42:46-05:00"
+  at: "2026-10-28T20:56:14-05:00"
 resource: "https://github.com/infrashift/trusted-service-containers/blob/main/.github/workflows/release.yml"
 sources:
   - resource: "https://github.com/infrashift/trusted-service-containers/actions/runs/40801309587"
@@ -43,10 +43,10 @@ The `Gate` job failed for this cause on two merges in sequence: PR #40 and PR #4
 
 ## Acceptance criteria
 
-- [ ] The `Derive identifiers` step tries the API call again for a limited time (for example 5 tries, 10 seconds apart) before it stops.
-- [ ] The step still stops with an error when no merged pull request appears in that time. A deliberate break (a push to a test branch with no pull request, or a stub that gives `[]`) shows that it fails.
-- [ ] The step retries only for an empty result. It does not retry for an API error, so that a wrong token or a wrong repository stops the job immediately.
-- [ ] The [Release Images workflow](/supply-chain/release-images-workflow--01a18383d737.md) concept describes the wait.
+- [x] The `Derive identifiers` step tries the API call again for a limited time (for example 5 tries, 10 seconds apart) before it stops.
+- [x] The step still stops with an error when no merged pull request appears in that time. A deliberate break (a push to a test branch with no pull request, or a stub that gives `[]`) shows that it fails.
+- [x] The step retries only for an empty result. It does not retry for an API error, so that a wrong token or a wrong repository stops the job immediately.
+- [x] The [Release Images workflow](/supply-chain/release-images-workflow--01a18383d737.md) concept describes the wait.
 
 ## Analysis
 
@@ -55,6 +55,18 @@ The `Gate` job failed for this cause on two merges in sequence: PR #40 and PR #4
 * Do not remove the check. It is the guard against a release that no review verdict covers.
 * `.github/workflows/release.yml` is in the `paths:` filter of `build.yml`. A change to it builds all images again. Put the fix in the next pull request that changes a build path, or accept one full build.
 * Until the fix is in place, do this when the `Gate` job fails with this error: make sure that the pull request shows as merged, then run `gh run rerun <run id> --failed`. The re-run does the API call again.
+
+## Resolution
+
+PR #44 fixed this issue on 2026-10-29. The maintainer decided to accept one full image build for the fix.
+
+* The `Derive identifiers` step in `.github/workflows/release.yml` now does the lookup up to `LOOKUP_ATTEMPTS` times (6), with `LOOKUP_DELAY_SECONDS` (15) between the attempts. The longest wait is 75 seconds.
+* The step retries only when the result has no merged pull request. An API error stops the step at the first call.
+* After the last attempt, the step stops with `no merged pull request found for <sha> after 6 attempts; refusing to release`.
+* `scripts/test-release-gate.sh` takes the step from `release.yml` and runs it with a stub `gh`. It has six cases: a link on the first call, a link on the third call, no pull request, a pull request that is not merged, an API error, and a bad head commit. `make -f Ops.mk test-scripts` and `.github/workflows/pr-gate.yml` run it.
+* Four deliberate breaks made the test fail: the old step with one lookup, a retry after an API error, a match on a pull request that is not merged, and `LOOKUP_ATTEMPTS` set to 1.
+
+The release run of the PR #44 merge is the first check on GitHub. If the link is late, its log shows `retrying in 15s` before `resolved PR #44`.
 
 ## Related
 

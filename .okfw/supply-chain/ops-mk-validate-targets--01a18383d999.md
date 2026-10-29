@@ -37,7 +37,7 @@ sources:
 | `lint-skills` | Every backticked repository path and relative link in the docs exists. |
 | `check-wiki` | This wiki: `okfw validate --all`, `okfw validate --okf`, and no dangling links. |
 | `lint-shell` | `shellcheck -S warning` on `scripts/*.sh`. |
-| `test-scripts` | `scripts/test-propose-drift.sh` and `scripts/test-drift-upstream.sh` against fixtures and stubs. |
+| `test-scripts` | `scripts/test-propose-drift.sh`, `scripts/test-drift-upstream.sh` and `scripts/test-release-gate.sh` against fixtures and stubs. |
 | `policy-test` | `opa check --strict`, `opa fmt --list`, `opa test`, and a coverage floor of 85%. |
 
 When all targets pass, the output ends with `OK: repository validation passed`.

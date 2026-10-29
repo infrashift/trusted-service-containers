@@ -4,15 +4,15 @@ title: "Adopt OKF Wiki for project knowledge"
 type: "plan"
 tags:
   - "plan"
-  - "active"
   - "okfw"
+  - "done"
 created: "2026-10-28T12:16:59-05:00"
-timestamp: "2026-10-28T12:24:42-05:00"
+timestamp: "2026-10-28T20:51:02-05:00"
 description: "Move the project knowledge from the PRD, the .ai cards, the docs and GitHub issues into one OKF wiki in .okfw/, written in STE."
-status: "draft"
+status: "deprecated"
 generated:
   by: "claude-code/opus-5-5"
-  at: "2026-10-28T12:24:42-05:00"
+  at: "2026-10-28T20:51:02-05:00"
 sources:
   - resource: "https://github.com/infrashift/okf-wiki"
     title: "okf-wiki (okfw)"
@@ -103,6 +103,15 @@ A hard constraint: a change to `scripts/`, `.github/pdp/`, `tools.lock` or `root
 5. `okfw search --kind issue --tag open` returns the open GitHub issues, the PRD open items and the follow-ups. `okfw search --stale` returns nothing on the day of the merge.
 6. `okfw graph --ascii` reaches every bundle overview from the wiki map. Each line in each `index.md` has a description.
 7. In a new Claude Code session, the `okfw` skill and MCP server load. A search for "why is observe not a pass" finds the decision.
+
+## Result
+
+The verification passed. PR #40 merged the wiki into `main` on 2026-10-29.
+
+* Steps 1 to 6 of the verification passed on 2026-10-28, before the merge.
+* Step 7 passed on 2026-10-29. A new headless Claude Code session ran with a `PATH` that did not include `~/.local/bin`. `claude mcp list` showed `okfw: ${HOME}/.local/bin/okfw mcp - Connected`. The session called `mcp__okfw__okfw_search` for "why is observe not a pass". The first result was [ADR-001: Observe enforcement mode](/decisions/adr-001-observe-enforcement-mode--01a18382f44e.md). This check did not examine the `okfw` skill separately.
+* The GitHub issues that the wiki now tracks were closed on 2026-10-29. See [Close the GitHub issues that the wiki now tracks](/issues/close-the-github-issues-that-the-wiki-now-tracks--01a18395b6bd.md).
+* The merge showed a race in the release workflow. See [The release Gate job fails when GitHub has not yet linked the merge commit to its pull request](/issues/the-release-gate-job-fails-when-github-has-not-yet-linked-the-merge-commit-to-its-pull-request--01a1854e501e.md).
 
 ## Related
 

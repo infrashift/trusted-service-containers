@@ -95,10 +95,6 @@ These issues start no image build.
 3. [The drift workflow validates its proposal with asserted gitleaks values](/issues/the-drift-workflow-validates-its-proposal-with-asserted-gitleaks-values--01a18395b484.md)
 4. [Ops.mk skips the shell lint without shellcheck and has a wrong help line](/issues/ops-mk-skips-the-shell-lint-without-shellcheck-and-has-a-wrong-help-line--01a18395b64c.md)
 
-## After this branch merges
-
-1. [Close the GitHub issues that the wiki now tracks](/issues/close-the-github-issues-that-the-wiki-now-tracks--01a18395b6bd.md). This needs the approval of the maintainer.
-
 ## No fixed date
 
 1. [The mssql image has 60 blocking findings and no triage](/issues/the-mssql-image-has-60-blocking-findings-and-no-triage--01a1838a1626.md)

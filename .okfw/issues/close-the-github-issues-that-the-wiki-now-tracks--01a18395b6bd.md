@@ -5,11 +5,11 @@ type: "issue"
 kind: "issue"
 tags:
   - "issue"
-  - "open"
   - "okfw"
   - "github"
+  - "resolved"
 created: "2026-10-28T12:36:29-05:00"
-timestamp: "2026-10-28T12:36:43-05:00"
+timestamp: "2026-10-28T20:51:02-05:00"
 description: "After the merge, comment each open GitHub issue with its wiki issue URL and close it, and close the superseded PR #16."
 x:
   github:
@@ -21,10 +21,10 @@ x:
     - 24
     - 30
     - 37
-status: "draft"
+status: "deprecated"
 generated:
   by: "claude-code/opus-5-5"
-  at: "2026-10-28T12:36:43-05:00"
+  at: "2026-10-28T20:51:02-05:00"
 resource: "https://github.com/infrashift/trusted-service-containers/issues"
 sources:
   - resource: "https://github.com/infrashift/trusted-service-containers/pull/16"
@@ -60,14 +60,23 @@ On 2026-10-28, `gh issue list` showed these open issues: #5, #6, #7, #22, #24, #
 
 This work needs the approval of the maintainer. Do it after this wiki is on `main`, because the comments must give URLs on `main`.
 
-- [ ] Each of #5, #6, #7, #22, #24, #30 and #37 has a comment with the GitHub URL of its wiki issue on `main`.
-- [ ] Each of those GitHub issues is closed.
-- [ ] PR #16 has a comment that names PR #21 and `EXC-2026-0008`, and PR #16 is closed.
-- [ ] `gh issue list --state open` shows only issues that a bot opened after the merge.
+- [x] Each of #5, #6, #7, #22, #24, #30 and #37 has a comment with the GitHub URL of its wiki issue on `main`.
+- [x] Each of those GitHub issues is closed.
+- [x] PR #16 has a comment that names PR #21 and `EXC-2026-0008`, and PR #16 is closed.
+- [x] `gh issue list --state open` shows only issues that a bot opened after the merge.
 
 ## Analysis
 
 A closed GitHub issue still works as the `ticket` of a waiver, because the comment points at the wiki issue. The drift bot reuses #24 for the next upstream drift report. After #24 is closed, the bot opens a new issue, and that issue needs its own wiki issue. See [Issue workflow](/guides/issue-workflow--01a1837da656.md).
+
+## Resolution
+
+On 2026-10-29, after PR #40 put the wiki on `main`, the maintainer approved this work.
+
+* #30 is closed as completed. Its comment names PR #31 and gives the URL of its wiki issue.
+* #5, #6, #7, #22, #24 and #37 are closed as not planned. Each comment says that the work is still open, and gives the URL of its wiki issue on `main`. The comments on #5, #6, #7, #22 and #37 also say that the waivers that cite the issue as `ticket` stay valid.
+* PR #16 is closed. Its comment names PR #21 and `EXC-2026-0008`, and links the wiki issue of #22.
+* After this work, `gh issue list --state open` and `gh pr list --state open` each gave 0 results.
 
 ## Related
 

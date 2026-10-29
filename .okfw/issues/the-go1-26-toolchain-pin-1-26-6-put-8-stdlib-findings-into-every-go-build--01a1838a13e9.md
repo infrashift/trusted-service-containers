@@ -48,7 +48,7 @@ The `go1.26` toolchain pin had the Go patch release 1.26.6. That compiler put 8 
 
 ## Resolution
 
-Resolved in the repository on 2026-10-13. GH #30 is still open on GitHub.
+Resolved in the repository on 2026-10-13. GH #30 was closed on 2026-10-29, with a link to this issue.
 
 * PR #31 (merged 2026-10-13):
   * `76d0c0f`: the toolchain moved from 1.26.6 to 1.26.9. This cleared `GO-2026-6603` to `GO-2026-6613` in every Go build.

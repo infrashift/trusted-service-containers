@@ -59,7 +59,7 @@ Waiver `EXC-2026-0008` accepts two Critical `libcurl4t64` advisories in all post
 
 ## Analysis
 
-PR #16 (opened 2026-09-15, still open on 2026-10-28) proposed an earlier waiver for the same two advisories with the same id. PR #21 replaced it. On 2026-10-28, this waiver still matched both advisories on each of the four postgres legs. See [On 2026-10-28 every build leg was trusted and every mirror leg was quarantined](/findings/on-2026-10-28-every-build-leg-was-trusted-and-every-mirror-leg-was-quarantined--01a1838a6fc5.md).
+PR #16 (opened 2026-09-15, still open on 2026-10-28) proposed an earlier waiver for the same two advisories with the same id. PR #21 replaced it. PR #16 was closed on 2026-10-29. On 2026-10-28, this waiver still matched both advisories on each of the four postgres legs. See [On 2026-10-28 every build leg was trusted and every mirror leg was quarantined](/findings/on-2026-10-28-every-build-leg-was-trusted-and-every-mirror-leg-was-quarantined--01a1838a6fc5.md).
 
 ## Related
 

@@ -74,7 +74,6 @@ The [Roadmap](/plans/roadmap--01a18396ce3c.md) puts the open issues in time orde
 * [Two code comments point at moved skill cards](/issues/two-code-comments-point-at-moved-skill-cards--01a1838a173b.md) (new)
 * [No check enforces Simplified Technical English](/issues/no-check-enforces-simplified-technical-english--01a1838a1782.md) (new)
 * [Re-running okfw install restores a path example that lint-skills.sh rejects](/issues/re-running-okfw-install-restores-a-path-example-that-lint-skills-sh-rejects--01a18395b684.md) (new)
-* [Close the GitHub issues that the wiki now tracks](/issues/close-the-github-issues-that-the-wiki-now-tracks--01a18395b6bd.md) (new). Do it after the merge, with the approval of the maintainer.
 
 ### Open: documentation
 
@@ -87,7 +86,8 @@ The [Roadmap](/plans/roadmap--01a18396ce3c.md) puts the open issues in time orde
 
 ### Resolved
 
-* [The go1.26 toolchain pin 1.26.6 put 8 stdlib findings into every Go build](/issues/the-go1-26-toolchain-pin-1-26-6-put-8-stdlib-findings-into-every-go-build--01a1838a13e9.md) (GH #30). GitHub still shows it as open.
+* [Close the GitHub issues that the wiki now tracks](/issues/close-the-github-issues-that-the-wiki-now-tracks--01a18395b6bd.md) (new). Done on 2026-10-29.
+* [The go1.26 toolchain pin 1.26.6 put 8 stdlib findings into every Go build](/issues/the-go1-26-toolchain-pin-1-26-6-put-8-stdlib-findings-into-every-go-build--01a1838a13e9.md) (GH #30). The GitHub issue was closed on 2026-10-29.
 * [The ubi9-minimal base pins were behind the sibling repository on 2026-10-28](/issues/the-ubi9-minimal-base-pins-were-behind-the-sibling-repository-on-2026-10-28--01a1838a1487.md) (GH #34)
 * [The ubi9-micro base pins were behind the sibling repository on 2026-10-14](/issues/the-ubi9-micro-base-pins-were-behind-the-sibling-repository-on-2026-10-14--01a1838a1439.md) (GH #33)
 * [The 2026-09-30 drift proposal had wrong crosscheck pins and stale hashes](/issues/the-2026-09-30-drift-proposal-had-wrong-crosscheck-pins-and-stale-hashes--01a1838a12ff.md) (GH #19)

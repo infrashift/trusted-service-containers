@@ -1,40 +1,11 @@
 # CVE exceptions
 
-An exception is an accepted risk with an owner and a date. It is not a way to
-make a red check go green. Register: `.github/pdp/exceptions.yaml`.
+This content moved to the project wiki in `.okfw/`. The wiki is now the source of truth. Do not add text to this file.
 
-## Before adding one
+Read:
 
-Check whether a newer release **within the declared track** clears the finding:
+* [Waivers](../../.okfw/supply-chain/waivers--01a18383d898.md)
+* [Waive a CVE](../../.okfw/operations/waive-a-cve--01a18383da9f.md)
+* [Findings overview (waivers and their expiry dates)](../../.okfw/findings/findings-overview--01a1837da578.md)
 
-```bash
-make -f Ops.mk verify-pins
-```
-
-For a `dhi` image especially — those advertise a near-zero known-CVE baseline,
-so a finding there is far more likely a stale pin than an acceptable risk. The
-policy says so in the `remediation_hint` on every CVE violation.
-
-## Every field is required
-
-`id`, `image`, `variant`, `package`, non-empty `cves[]`, `issued`, `expires`,
-`owner`, `ticket`, and a `justification` of at least 40 characters of actual
-reasoning. An entry missing `expires` or carrying "n/a" waives **nothing** and
-raises `EXCEPTION_INVALID` so the author finds out why rather than wondering.
-
-Maximum window is 90 days from `issued`, for every image regardless of trust
-class. Enforced in policy, not left to reviewer discipline.
-
-## Waived is a visible state
-
-Waived findings appear in `decision.waived`, in the PR comment's "Waived CVEs"
-table with owner and expiry, and in the signed review verdict. A promoted image
-permanently carries the record of what was waived to get it there. Nothing is
-silently dropped.
-
-## Expiry is deterministic
-
-Evaluated against `input.evaluated_at`, supplied by the workflow.
-`time.now_ns()` is called nowhere in the policy. Re-running the gate on archived
-evidence a year later reproduces the identical decision — which is what makes a
-signed verdict worth signing.
+Start at the [wiki map](../../.okfw/wiki-map--01a1837da4d8.md), or search the wiki: `okfw search "<words>"`.

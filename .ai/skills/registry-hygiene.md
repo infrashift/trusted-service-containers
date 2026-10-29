@@ -1,27 +1,10 @@
 # Registry hygiene
 
-Three namespaces under `ghcr.io/infrashift/trusted-service-containers/`:
+This content moved to the project wiki in `.okfw/`. The wiki is now the source of truth. Do not add text to this file.
 
-| namespace | contents | lifetime |
-|---|---|---|
-| `development/` | per-PR scratch | deleted by `cleanup-dev.yml` after release |
-| `trusted/` | passed policy | permanent |
-| `quarantine/` | failed policy, fully evidenced | permanent |
+Read:
 
-One package **per service**; the variant rides in the tag, because the upstream
-tag already encodes it unambiguously.
+* [Registry namespaces and cleanup](../../.okfw/architecture/registry-namespaces-and-cleanup--01a18382f3dd.md)
+* [Clean the development namespace](../../.okfw/operations/clean-the-development-namespace--01a18383db39.md)
 
-## Cleanup is deliberately narrow
-
-`scripts/cleanup-dev.sh` deletes individual package **versions**, never whole
-packages, and only when *every* tag on a version belongs to that PR. A version
-shared with another PR or a promoted tag is reported and kept.
-
-`Ops.mk clean-ghcr-namespace` refuses any namespace but `development` —
-quarantine holds signed, referenced artifacts and is a documented state, not a
-wastebasket.
-
-## Quarantine is not a discard
-
-A quarantined image is mirrored, scanned, signed, and carries a signed verdict
-recording why it failed. What is withheld is the clean tag under `trusted/`.
+Start at the [wiki map](../../.okfw/wiki-map--01a1837da4d8.md), or search the wiki: `okfw search "<words>"`.

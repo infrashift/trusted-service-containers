@@ -1,46 +1,9 @@
 # Registry authentication
 
-Four logins, one credential path. `docker/login-action` writes
-`~/.docker/config.json`, which `regctl`, `cosign`, `syft` and `grype` all read.
+This content moved to the project wiki in `.okfw/`. The wiki is now the source of truth. Do not add text to this file.
 
-| registry | why |
-|---|---|
-| `dhi.io` | DHI image layers |
-| `registry.scout.docker.com` | DHI **attestations** live here, not on dhi.io — a separate registry needing its own login |
-| `docker.io` | sonatype/nexus3 and the build-track cross-check references |
-| `ghcr.io` | our own push target (`GITHUB_TOKEN`) |
+Read:
 
-`mcr.microsoft.com` (mssql) is anonymous-pull with no per-IP rate limit we have
-hit, so it has no login step. Add one only if MCR starts refusing anonymous pulls.
+* [Authenticate to DHI and the registries](../../.okfw/operations/authenticate-to-dhi-and-the-registries--01a18383d9e3.md)
 
-## OIDC, not a stored token
-
-```yaml
-- uses: docker/login-action@<sha>   # v4.6.0
-  with:
-    registry: dhi.io
-    username: ${{ vars.DOCKERHUB_ORGANIZATION }}
-  env:
-    DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
-```
-
-No password input. Needs `id-token: write` **per job**, never at workflow level.
-Requires v4.5.0 or later. Scope the Docker-side ruleset to pull only.
-
-## Authenticate for docker.io even though nexus3 is public
-
-Anonymous Docker Hub pulls are rate-limited per IP and GitHub runners share IPs.
-An anonymous mirror fails intermittently in a way that reads like a network
-flake.
-
-## The base image needs no credential
-
-`ghcr.io/infrashift/trusted-base-images/trusted/ubi9-micro` is anonymously
-readable (verified). No PAT, no package-to-repo grant. If that ever changes, the
-correct fix is the sibling's package settings → Manage Actions access, not a PAT.
-
-## Unresolved
-
-Whether the OIDC connection covers `registry.scout.docker.com`. Docker's own
-mirror docs use an Organization Access Token for all three hosts. See
-[`../../SETUP-ENVIRONMENTS.md`](../../SETUP-ENVIRONMENTS.md) §6.
+Start at the [wiki map](../../.okfw/wiki-map--01a1837da4d8.md), or search the wiki: `okfw search "<words>"`.

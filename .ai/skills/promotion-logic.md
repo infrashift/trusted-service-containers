@@ -1,48 +1,10 @@
 # Promotion
 
-`development/` → `trusted/` or `quarantine/`. Never rebuild; the promoted image
-is byte-identical to what was built and reviewed, asserted a third time in
-`scripts/release-leg.sh`.
+This content moved to the project wiki in `.okfw/`. The wiki is now the source of truth. Do not add text to this file.
 
-## The verdict comes from a signed attestation
+Read:
 
-Not from a workflow artifact — an artifact is mutable by anyone who can re-run a
-job. `release-leg.sh` reads the review verdict via `cosign verify-attestation`
-against `.github/pdp/public-keys/review.pub`, and takes the newest by
-`evaluatedAt` (`--replace` is banned, so reruns accumulate).
+* [Promotion](../../.okfw/architecture/promotion--01a18382f371.md)
+* [Release tags and manifest lists](../../.okfw/architecture/release-tags-and-manifest-lists--01a18382f392.md)
 
-It then checks the verdict's `commitSha` equals the merged head SHA. A verdict
-issued against a different commit is a verdict about different bits, however
-recent it looks.
-
-## Verdict and namespace are two axes
-
-`verdict` is PASS/FAIL: whether the pipeline red-lights. `namespace` is where
-the image goes. They differ under `enforcement: "observe"`, where a leg with
-violations is allowed (PASS) but still routed to `quarantine`. The review leg
-signs both; `release-leg.sh` promotes to `trusted/` only when the verdict is
-PASS **and** the namespace is `trusted`, and fails closed if the namespace is
-absent or unrecognised.
-
-## Tags
-
-| | trusted | quarantine |
-|---|---|---|
-| mirror | `<upstream_tag>`, `-<shortsha>`, `-<YYYYMMDD>` | `-<shortsha>` **only** |
-| build | `<version>-<shortsha>-<arch>`, then manifest lists | `-<shortsha>-<arch>` |
-
-Quarantine never gets the bare upstream-shaped tag, so a registry-mirror typo
-cannot silently resolve to a quarantined image. **No `:latest`, anywhere.**
-
-## Manifest lists are build-track only
-
-Filtered structurally via `manifest_matrix`, not by a condition inside the job.
-Reassembling a mirrored index would replace the vendor's signed index with one
-they never signed. `scripts/release-manifest.sh` also withholds the lists
-entirely unless **every** arch reached `trusted/`.
-
-## Dual signing
-
-Pass 1 keyed with `--tlog-upload=false` — the sovereign signature, leaking
-nothing about release cadence to a public log. Pass 2 keyless with tlog on, so a
-third party can independently confirm the release happened.
+Start at the [wiki map](../../.okfw/wiki-map--01a1837da4d8.md), or search the wiki: `okfw search "<words>"`.

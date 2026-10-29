@@ -43,11 +43,11 @@ A plan that changes an image must say how to check the review. Blocking must be 
 
 ### Active
 
-* [Adopt OKF Wiki for project knowledge](/plans/adopt-okf-wiki-for-project-knowledge--01a18383db61.md): move the PRD, the `.ai` cards, the docs and the issues into this wiki.
+None.
 
 ### Done and dropped
 
-None yet.
+* [Adopt OKF Wiki for project knowledge](/plans/adopt-okf-wiki-for-project-knowledge--01a18383db61.md): move the PRD, the `.ai` cards, the docs and the issues into this wiki. Done on 2026-10-29.
 
 ## Related
 

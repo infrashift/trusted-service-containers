@@ -65,6 +65,7 @@ The [Roadmap](/plans/roadmap--01a18396ce3c.md) puts the open issues in time orde
 * [The drift workflow validates its proposal with asserted gitleaks values](/issues/the-drift-workflow-validates-its-proposal-with-asserted-gitleaks-values--01a18395b484.md) (new)
 * [Check 3 of lint-workflows.sh has a dead empty-hash test](/issues/check-3-of-lint-workflows-sh-has-a-dead-empty-hash-test--01a18395b612.md) (new)
 * [Ops.mk skips the shell lint without shellcheck and has a wrong help line](/issues/ops-mk-skips-the-shell-lint-without-shellcheck-and-has-a-wrong-help-line--01a18395b64c.md) (new)
+* [The release Gate job fails when GitHub has not yet linked the merge commit to its pull request](/issues/the-release-gate-job-fails-when-github-has-not-yet-linked-the-merge-commit-to-its-pull-request--01a1854e501e.md) (new). A short GitHub API delay after a merge can stop a release.
 
 ### Open: wiki
 

@@ -42,24 +42,45 @@ jobs:
         # resolved from the merge commit instead. Everything downstream --
         # resolve-review matching build and review runs by head_sha, and the
         # release tags -- is unchanged.
+        #
+        # GitHub links a merge commit to its pull request a few seconds AFTER
+        # the push event fires. The lookup ran once, 6s after the merges of
+        # #40 and #41, found nothing, and refused to release both; a re-run a
+        # minute later resolved each PR. So an EMPTY answer is retried, for a
+        # bounded time, and only an empty answer: an API error (bad token,
+        # wrong repo) still fails on the first call under set -e. Exhausting
+        # the attempts is still a hard failure, never a pass.
+        # scripts/test-release-gate.sh runs this step against a stub gh.
         id: ids
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           MERGE_SHA: ${{ github.sha }}
+          LOOKUP_ATTEMPTS: '6'
+          LOOKUP_DELAY_SECONDS: '15'
         run: |
           set -euo pipefail
-          PRS=$(gh api "repos/${REPO}/commits/${MERGE_SHA}/pulls" \
-                  -H "Accept: application/vnd.github+json")
-          PR_NUM=$(jq -r '[.[] | select(.merged_at != null)] | sort_by(.merged_at) | last | .number // empty' <<<"$PRS")
-          HEAD_SHA=$(jq -r '[.[] | select(.merged_at != null)] | sort_by(.merged_at) | last | .head.sha // empty' <<<"$PRS")
+          PR_NUM="" HEAD_SHA=""
+          for (( attempt = 1; attempt <= LOOKUP_ATTEMPTS; attempt++ )); do
+            PRS=$(gh api "repos/${REPO}/commits/${MERGE_SHA}/pulls" \
+                    -H "Accept: application/vnd.github+json")
+            PR_NUM=$(jq -r '[.[] | select(.merged_at != null)] | sort_by(.merged_at) | last | .number // empty' <<<"$PRS")
+            HEAD_SHA=$(jq -r '[.[] | select(.merged_at != null)] | sort_by(.merged_at) | last | .head.sha // empty' <<<"$PRS")
+            if [[ -n "$PR_NUM" && -n "$HEAD_SHA" ]]; then
+              break
+            fi
+            if (( attempt < LOOKUP_ATTEMPTS )); then
+              echo "no merged pull request listed for ${MERGE_SHA} yet (attempt ${attempt}/${LOOKUP_ATTEMPTS}); retrying in ${LOOKUP_DELAY_SECONDS}s"
+              sleep "$LOOKUP_DELAY_SECONDS"
+            fi
+          done
 
           # A push to main with no merged pull request behind it should not
           # release. The ruleset requires a PR, so this is a real anomaly rather
           # than a case to paper over: releasing would promote artifacts no
           # review verdict covers.
           if [[ -z "$PR_NUM" || -z "$HEAD_SHA" ]]; then
-            echo "::error::no merged pull request found for ${MERGE_SHA}; refusing to release"
+            echo "::error::no merged pull request found for ${MERGE_SHA} after ${LOOKUP_ATTEMPTS} attempts; refusing to release"
             exit 1
           fi
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::malformed head sha"; exit 1; }

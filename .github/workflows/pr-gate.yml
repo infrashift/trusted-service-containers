@@ -149,6 +149,12 @@ jobs:
         # Fixture versions.json, stubbed regctl and git.
         run: ./scripts/test-drift-upstream.sh
 
+      - name: Test the release Gate lookup
+        # release.yml's Gate looked up the merge commit's PR once, before GitHub
+        # had linked them, and refused to release the merges of #40 and #41.
+        # Runs the step extracted from release.yml against a stubbed gh.
+        run: ./scripts/test-release-gate.sh
+
       - name: Policy self-test
         run: |
           set -euo pipefail

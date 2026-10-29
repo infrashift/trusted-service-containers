@@ -60,7 +60,7 @@ help:
 	echo "  lint-containerfiles   Containerfile shape + versions.json agreement"
 	echo "  lint-skills           every documented file path resolves"
 	echo "  check-wiki            okfw schema + OKF format + no dangling links in .okfw/"
-	echo "  test-scripts          drift-upstream.sh and propose-drift.sh against fixtures and stubs"
+	echo "  test-scripts          drift-upstream.sh, propose-drift.sh and the release Gate step against fixtures and stubs"
 	echo "  policy-test           opa check --strict, opa fmt, opa test --threshold 85"
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
 	echo "  verify-pins           re-resolve every upstream, base and crosscheck digest"
@@ -165,6 +165,7 @@ lint-shell:
 test-scripts:
 	./scripts/test-propose-drift.sh
 	./scripts/test-drift-upstream.sh
+	./scripts/test-release-gate.sh
 
 .PHONY: policy-test
 policy-test:

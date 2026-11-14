@@ -66,3 +66,6 @@ The image starts in `observe`, so the pipeline does not fail. But `observe` is n
 * [Add an upstream image](/operations/add-an-upstream-image--01a18383d9be.md)
 * [Read the review comment before you merge an image PR](/operations/read-the-review-comment-before-you-merge-an-image-pr--01a18383daeb.md)
 * [Issues overview](/issues/issues-overview--01a1837da5b0.md)
+
+## Update 2026-11-14
+keto-cue PR #3 updated the vulnerable Go modules. The pin moved to the merge commit `b1faf67fb5bf` (`v0.0.0-20261114205939-b1faf67fb5bf`). The CI build and review of the pull request scan the new image. Close this issue when that review shows zero blocking findings.

@@ -36,9 +36,9 @@
     },
     "keto-cue": {
       "track": "^v0\\.0\\.0-[0-9]{14}-[0-9a-f]{12}$",
-      "ref": "v0.0.0-20261114205939-b1faf67fb5bf",
+      "ref": "v0.0.0-20261114211924-809351b32b9c",
       "url": "https://github.com/infrashift/keto-cue",
-      "commit": "b1faf67fb5bfabc04b17a49ff3cbc40dc94ed8f2",
+      "commit": "809351b32b9cac3ff027b36f8189197d63ec468f",
       "note": "First-party (ADR-008). keto-cue publishes no release tags yet, so `ref` is the Go pseudo-version of the pinned commit (committer time in UTC, then the 12-char commit prefix) -- the module version `go version -m` stamps from the shallow checkout. The track admits only that shape, so drift-upstream.sh finds no tag to propose and every bump is a reviewed manual edit of commit and ref together. When keto-cue starts tagging releases, replace the track with one for its release line in its own reviewed PR."
     },
     "nats": {

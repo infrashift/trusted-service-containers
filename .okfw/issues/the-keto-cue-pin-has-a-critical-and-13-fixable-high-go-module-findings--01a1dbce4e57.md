@@ -68,4 +68,4 @@ The image starts in `observe`, so the pipeline does not fail. But `observe` is n
 * [Issues overview](/issues/issues-overview--01a1837da5b0.md)
 
 ## Update 2026-11-14
-keto-cue PR #3 updated the vulnerable Go modules. The pin moved to the merge commit `b1faf67fb5bf` (`v0.0.0-20261114205939-b1faf67fb5bf`). The CI build and review of the pull request scan the new image. Close this issue when that review shows zero blocking findings.
+keto-cue PR #3 updated the vulnerable Go modules. The pin then moved to `809351b32b9c` (`v0.0.0-20261114211924-809351b32b9c`), the merge of keto-cue PR #4, which changes only CI. Its source is the same as at `b1faf67f`. The CI build and review of the pull request scan the new image. Close this issue when that review shows zero blocking findings.

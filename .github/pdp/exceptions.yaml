@@ -23,7 +23,7 @@
 # on the declared track clears the finding instead.
 
 exceptions:
-  - id: EXC-2026-0001
+  - id: EXC-2026-0033
     image: nexus3
     variant: "*"
     package: "*"
@@ -60,73 +60,42 @@ exceptions:
       - GHSA-w9fj-cfpg-grvv
       - GHSA-x4gw-5cx5-pgmh
       - GHSA-x96m-rh44-vgv8
-    issued:  "2026-08-24T00:00:00Z"
-    expires: "2026-11-22T00:00:00Z"
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2027-02-12T00:00:00Z"
     owner:   "@ryancraig"
-    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/5"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/the-nexus3-mirror-has-blocking-findings-that-only-a-sonatype-release-can-clear--01a18389b7fe.md"
     justification: >-
-      nexus3 is a mirror: we copy Sonatype's published image by digest and
-      never rebuild it, so nothing on our side can change what is inside these
-      jars -- only a Sonatype release can. The pin is already current;
-      3.90.5-ubi resolves to exactly the digest we pin. Re-triage on the next
-      3.90.x or 3.91 release.
+      Renewal of EXC-2026-0001 (expired 2026-11-22): all 32 advisories still
+      match the scan of 2026-11-14 (netty, jackson, spring-security, jetty,
+      bouncycastle; 31 High, 2 Critical). nexus3 is a mirror copied by digest and
+      never rebuilt, and verify-pins reports 3.90.5-ubi current, so only a
+      Sonatype release can clear them. Re-triage on the next 3.90.x or 3.91.
 
-  - id: EXC-2026-0002
+  - id: EXC-2026-0034
     image: postgres
     variant: "*"
     package: "*"
     cves:
       - CVE-2026-10536
       - CVE-2026-11856
-      - CVE-2026-12087
-      - CVE-2026-13221
-      - CVE-2026-40468
-      - CVE-2026-40469
-      - CVE-2026-42496
-      - CVE-2026-5450
-      - CVE-2026-57433
       - CVE-2026-6653
-      - CVE-2026-8376
       - CVE-2026-8924
       - CVE-2026-8926
       - CVE-2026-8927
       - CVE-2026-9079
-    issued:  "2026-08-24T00:00:00Z"
-    expires: "2026-11-22T00:00:00Z"
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2026-12-14T00:00:00Z"
     owner:   "@ryancraig"
-    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/6"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/the-dhi-postgres-and-traefik-images-have-debian-base-findings-that-only-docker-can-clear--01a1838a11fc.md"
     justification: >-
-      Debian base-layer CVEs inside a Docker Hardened Image we mirror by
-      digest and never rebuild. Clearing them requires Docker to publish a
-      rebuilt image on the same tag; dhi.io/postgres:16-debian and
-      :16-debian-dev both still resolve to the digests we pin, verified
-      2026-08-24. DHI publishes OpenVEX, so consuming it may retire part of
-      this set on evidence rather than by waiver.
+      Renewal of EXC-2026-0002 for the 7 of its 15 CVEs that still match the
+      scan of 2026-11-14: Critical libcurl4t64 and libxml2 findings in the DHI
+      Debian base, five of them wont-fix. verify-pins reports all four postgres
+      DHI pins stale, and CVE-2026-8924 and -8927 are fixed in libcurl
+      8.14.1-2+deb13u7, so a re-pin may clear part of this set. The 30-day window
+      bridges until that re-pin is scanned; do not renew without it.
 
-  - id: EXC-2026-0003
-    image: traefik
-    variant: "dev"
-    package: "*"
-    cves:
-      - CVE-2026-12087
-      - CVE-2026-13221
-      - CVE-2026-42496
-      - CVE-2026-5450
-      - CVE-2026-57433
-      - CVE-2026-8376
-    issued:  "2026-08-24T00:00:00Z"
-    expires: "2026-11-22T00:00:00Z"
-    owner:   "@ryancraig"
-    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/6"
-    justification: >-
-      Debian base-layer CVEs inside a Docker Hardened Image we mirror by
-      digest and never rebuild, scoped to the dev variant because the runtime
-      variant reports none. dhi.io/traefik:3-debian13-dev still resolves to
-      the digest we pin, verified 2026-08-24. DHI publishes OpenVEX, so
-      consuming it may retire part of this set on evidence rather than by
-      waiver.
-
-  - id: EXC-2026-0004
+  - id: EXC-2026-0035
     image: hydra
     variant: "*"
     package: "*"
@@ -135,23 +104,23 @@ exceptions:
       - GHSA-hrxh-6v49-42gf
       - GHSA-mh2q-q3fh-2475
       - GHSA-r9w3-57w2-gch2
-      - GHSA-x744-4wpc-v9h2
       - GHSA-xgrm-4fwx-7qm8
       - GO-2026-5026
       - GO-2026-5970
-    issued:  "2026-08-24T00:00:00Z"
-    expires: "2026-11-22T00:00:00Z"
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
     owner:   "@ryancraig"
-    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/no-ory-release-clears-the-go-dependency-findings-in-the-four-ory-images--01a1838a1296.md"
     justification: >-
-      Vendored Go dependency CVEs in hydra at v26.2.0, which is the latest
-      release and five months old; the four Ory services release in lockstep
-      off a shared tag, so no partial bump exists either. We build upstream
-      source unmodified, so clearing these would mean forking and patching
-      go.mod. Waived to a date, not accepted: decide before expiry whether to
-      keep the Ory stack.
+      Vendored Go findings in Ory hydra v26.2.0: go-jose v3, grpc, otel, hydra/v2,
+      pgx/v5 (Critical), x/net and x/text, all still matched on 2026-11-14.
+      Ory v26.2.0 is still the newest release of the lockstep services
+      (2026-11-14), and the owner decided on 2026-11-14 to keep all four Ory
+      images. Renewal of EXC-2026-0004, minus GHSA-x744-4wpc-v9h2, which no longer
+      matches a finding. Expires with the Ory grpc waivers (EXC-2026-0009 to
+      0012) so the Ory register has fewer review dates.
 
-  - id: EXC-2026-0005
+  - id: EXC-2026-0036
     image: kratos
     variant: "*"
     package: "*"
@@ -159,46 +128,46 @@ exceptions:
       - GHSA-78h2-9frx-2jm8
       - GHSA-hrxh-6v49-42gf
       - GHSA-mh2q-q3fh-2475
-      - GHSA-x744-4wpc-v9h2
       - GHSA-xgrm-4fwx-7qm8
       - GO-2026-5026
       - GO-2026-5970
-    issued:  "2026-08-24T00:00:00Z"
-    expires: "2026-11-22T00:00:00Z"
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
     owner:   "@ryancraig"
-    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/no-ory-release-clears-the-go-dependency-findings-in-the-four-ory-images--01a1838a1296.md"
     justification: >-
-      Vendored Go dependency CVEs in kratos at v26.2.0, which is the latest
-      release and five months old; the four Ory services release in lockstep
-      off a shared tag, so no partial bump exists either. We build upstream
-      source unmodified, so clearing these would mean forking and patching
-      go.mod. Waived to a date, not accepted: decide before expiry whether to
-      keep the Ory stack.
+      Vendored Go findings in Ory kratos v26.2.0: go-jose v3 and v4, grpc, otel,
+      pgx/v5 (Critical), x/net and x/text, all still matched on 2026-11-14.
+      Ory v26.2.0 is still the newest release of the lockstep services
+      (2026-11-14), and the owner decided on 2026-11-14 to keep all four Ory
+      images. Renewal of EXC-2026-0005, minus GHSA-x744-4wpc-v9h2, which no longer
+      matches a finding. Expires with the Ory grpc waivers (EXC-2026-0009 to
+      0012) so the Ory register has fewer review dates.
 
-  - id: EXC-2026-0006
+  - id: EXC-2026-0037
     image: keto
     variant: "*"
     package: "*"
     cves:
       - GHSA-hrxh-6v49-42gf
       - GHSA-mh2q-q3fh-2475
-      - GHSA-x744-4wpc-v9h2
       - GHSA-xgrm-4fwx-7qm8
       - GO-2026-5026
       - GO-2026-5970
-    issued:  "2026-08-24T00:00:00Z"
-    expires: "2026-11-22T00:00:00Z"
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
     owner:   "@ryancraig"
-    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/no-ory-release-clears-the-go-dependency-findings-in-the-four-ory-images--01a1838a1296.md"
     justification: >-
-      Vendored Go dependency CVEs in keto at v26.2.0, which is the latest
-      release and five months old; the four Ory services release in lockstep
-      off a shared tag, so no partial bump exists either. We build upstream
-      source unmodified, so clearing these would mean forking and patching
-      go.mod. Waived to a date, not accepted: decide before expiry whether to
-      keep the Ory stack.
+      Vendored Go findings in Ory keto v26.2.0: grpc, otel, pgx/v5 (Critical),
+      x/net and x/text, all still matched on 2026-11-14.
+      Ory v26.2.0 is still the newest release of the lockstep services
+      (2026-11-14), and the owner decided on 2026-11-14 to keep all four Ory
+      images. Renewal of EXC-2026-0006, minus GHSA-x744-4wpc-v9h2, which no longer
+      matches a finding. Expires with the Ory grpc waivers (EXC-2026-0009 to
+      0012) so the Ory register has fewer review dates.
 
-  - id: EXC-2026-0007
+  - id: EXC-2026-0038
     image: oathkeeper
     variant: "*"
     package: "*"
@@ -209,17 +178,17 @@ exceptions:
       - GO-2026-4918
       - GO-2026-5026
       - GO-2026-5970
-    issued:  "2026-08-24T00:00:00Z"
-    expires: "2026-11-22T00:00:00Z"
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2026-12-29T00:00:00Z"
     owner:   "@ryancraig"
-    ticket:  "https://github.com/infrashift/trusted-service-containers/issues/7"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/no-ory-release-clears-the-go-dependency-findings-in-the-four-ory-images--01a1838a1296.md"
     justification: >-
-      Vendored Go dependency CVEs in oathkeeper at v26.2.0, which is the
-      latest release and five months old; the four Ory services release in
-      lockstep off a shared tag, so no partial bump exists either. We build
-      upstream source unmodified, so clearing these would mean forking and
-      patching go.mod. Waived to a date, not accepted: decide before expiry
-      whether to keep the Ory stack.
+      Vendored Go findings in Ory oathkeeper v26.2.0: go-jose v3 and v4, grpc,
+      otel, x/net and x/text, all still matched on 2026-11-14.
+      Ory v26.2.0 is still the newest release of the lockstep services
+      (2026-11-14), and the owner decided on 2026-11-14 to keep all four Ory
+      images. Renewal of EXC-2026-0007 in full. Expires with the Ory grpc waivers (EXC-2026-0009 to
+      0012) so the Ory register has fewer review dates.
 
   - id: EXC-2026-0008
     image: postgres

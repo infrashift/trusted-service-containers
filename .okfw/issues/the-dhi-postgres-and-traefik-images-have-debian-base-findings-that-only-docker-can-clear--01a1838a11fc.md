@@ -18,6 +18,7 @@ x:
   waivers:
     - "EXC-2026-0002"
     - "EXC-2026-0003"
+    - "EXC-2026-0034"
 status: "draft"
 generated:
   by: "claude-code/opus-5-5"
@@ -58,7 +59,8 @@ The DHI images of postgres and traefik have Critical findings in their Debian ba
 - [ ] A PR moves the DHI pins to the newest digests on their tags, and a review gives the new blocking counts.
 - [ ] A decision records whether the scan reads the DHI OpenVEX attestation.
 - [ ] A new pin clears each blocking finding, or a waiver with a current justification covers it.
-- [ ] Before 2026-11-22, a new review renews `EXC-2026-0002` and `EXC-2026-0003`, or a change removes them.
+- [x] Before 2026-11-22, a new review renews `EXC-2026-0002` and `EXC-2026-0003`, or a change removes them. (2026-11-14: `EXC-2026-0034` renews 7 of the 15 postgres CVEs until 2026-12-14. `EXC-2026-0003` is not renewed: none of its 6 CVEs match. See [Six waivers renew the 2026-11-22 expiries; traefik needs none](/findings/six-waivers-renew-the-2026-11-22-expiries-traefik-needs-none--01a1dc27b857.md).)
+- [ ] Before 2026-12-14, re-pin the four stale postgres DHI digests, and read the scan. Then renew or remove `EXC-2026-0034`.
 
 ## Related
 

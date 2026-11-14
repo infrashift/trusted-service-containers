@@ -19,6 +19,10 @@ x:
     - "EXC-2026-0005"
     - "EXC-2026-0006"
     - "EXC-2026-0007"
+    - "EXC-2026-0035"
+    - "EXC-2026-0036"
+    - "EXC-2026-0037"
+    - "EXC-2026-0038"
     - "EXC-2026-0020"
     - "EXC-2026-0021"
     - "EXC-2026-0022"
@@ -58,6 +62,8 @@ The four Ory images (`hydra`, `kratos`, `keto` and `oathkeeper`) have blocking f
 | `EXC-2026-0020` to `EXC-2026-0025`, `EXC-2026-0027` | 2026-11-27 | [Seven waivers accept the October x/net and x/text findings in Ory until 2026-11-27](/findings/seven-waivers-accept-the-october-x-net-and-x-text-findings-in-ory-until-2026-11-27--01a1838a6c7a.md) |
 
 * The Ory `grpc` waivers (`EXC-2026-0009` to `EXC-2026-0012`) cite GH #22, not this issue. They expire on 2026-12-29. See [Waivers EXC-2026-0009 to 0015 accept grpc findings in Ory and dapr until 2026-12-29](/findings/waivers-exc-2026-0009-to-0015-accept-grpc-findings-in-ory-and-dapr-until-2026-12-29--01a1838a6af1.md).
+
+* On 2026-11-14, `EXC-2026-0035` to `EXC-2026-0038` renewed `EXC-2026-0004` to `EXC-2026-0007` until 2026-12-29, without `GHSA-x744-4wpc-v9h2`, which no longer matches. See [Six waivers renew the 2026-11-22 expiries; traefik needs none](/findings/six-waivers-renew-the-2026-11-22-expiries-traefik-needs-none--01a1dc27b857.md).
 
 ## Acceptance criteria
 

@@ -70,6 +70,7 @@ WARNING: Always anchor a track. `3\.90\.` without anchors also matches `13.90.7`
    Do not use `docker inspect`. It gives the digest for your local architecture.
 2. For a build entry, pin a 40-hex commit. A tag is not a pin, because a tag can move.
 3. If the vendor stamps a short commit into the binary, also pin `shortCommit`. It is the dynamic abbreviation of git, so you cannot cut it from the full SHA. See [ADR-004: Dual provenance is an observation, not a gate](/decisions/adr-004-dual-provenance-is-an-observation-not-a-gate--01a18382f4a6.md).
+4. If the source is our own repository under `https://github.com/infrashift/`, no vendor image exists. Declare `firstParty` with a reason in place of `crosscheck`. Do not only remove `crosscheck`. See [ADR-008: A first-party build declares that no vendor binary exists](/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md).
 
 ### Build entries: use a current toolchain
 

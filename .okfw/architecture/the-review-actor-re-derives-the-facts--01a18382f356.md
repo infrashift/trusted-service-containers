@@ -27,6 +27,7 @@ The review actor does not trust the build actor. It resolves each digest again, 
 
 * **Digests:** `scripts/review-leg.sh` resolves each digest live from GHCR. It compares the result with `versions.json`, not with the evidence bundle.
 * **Trust class:** the review actor reads the trust class from the `versions.json` of the checked-out commit. It never reads the trust class from the evidence bundle.
+* **First-party mode:** the review actor reads the `firstParty` declaration, its reason and the source URL from the checked-out `versions.json`. From the evidence it reads only the mode that the build actor reports. The PDP denies the leg when the two modes differ. See [ADR-008: A first-party build declares that no vendor binary exists](/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md).
 
 ## Why
 

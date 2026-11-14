@@ -734,10 +734,15 @@ violations contains v if {
 # well-formed. A build that quietly skips the comparison must not pass as though
 # it performed one.
 
+# The ONLY way past this rule without a comparison is the first-party mode
+# below, and only when EVERY one of its conditions holds. `not` is applied to
+# the POSITIVE predicate first_party_mode_valid, so an undefined or partly
+# satisfied predicate keeps this rule firing (contract point 4).
 violations contains v if {
 	track == "build"
 	object.get(input, ["build", "dual_provenance", "performed"], false) != true
-	v := {"code": "DUAL_PROVENANCE_NOT_RECORDED", "message": "build.dual_provenance.performed is not true. The from-source / official-image binary hash comparison is a mandatory recorded observation. Denying."}
+	not first_party_mode_valid
+	v := {"code": "DUAL_PROVENANCE_NOT_RECORDED", "message": "build.dual_provenance.performed is not true and no valid first-party declaration applies. The from-source / official-image binary hash comparison is a mandatory recorded observation. Denying."}
 }
 
 violations contains v if {
@@ -764,6 +769,106 @@ violations contains v if {
 	used := object.get(input, ["build", "dual_provenance", "official_image_digest"], "<used-absent>")
 	pinned != used
 	v := {"code": "DUAL_PROVENANCE_REFERENCE_UNPINNED", "pinned": pinned, "used": used, "message": sprintf("Cross-check compared against %v but versions.json pins %v. Denying.", [used, pinned])}
+}
+
+# --- First-party build mode: no vendor binary exists -----------------------
+# Our own services (infrashift/*) have no vendor image to compare against: we
+# ARE the vendor. versions.json declares that explicitly with
+# `firstParty: {noVendorBinary: true, reason}` IN PLACE OF `crosscheck`. Three
+# properties keep the mode from becoming a way to skip the comparison:
+#
+#   1. Absence never means first-party. A build entry without `crosscheck`
+#      and without a valid declaration still hits DUAL_PROVENANCE_NOT_RECORDED.
+#   2. Only a source under https://github.com/infrashift/ may declare it.
+#      Otherwise anyone could mark a vendor image first-party.
+#   3. The review actor re-derives declared, crosscheck_pinned, reason and
+#      source_url from the CHECKED-OUT versions.json, never from the evidence
+#      bundle. Only evidence_mode and built_source_url come from the build
+#      actor: they are what it REPORTS it did, and they must agree with what
+#      versions.json declares.
+#
+# The binary hash we built is still recorded (from_source_sha256), so the
+# change-over-time signal of ADR-004 survives without a vendor reference.
+
+first_party_source_pattern := `^https://github\.com/infrashift/[A-Za-z0-9][A-Za-z0-9._-]*$`
+
+min_first_party_reason_chars := 40
+
+first_party_reason_valid(r) if {
+	is_string(r)
+	count(trim_space(r)) >= min_first_party_reason_chars
+}
+
+first_party_declared if object.get(input, ["build", "first_party", "declared"], false) == true
+
+# What versions.json declares. Absent or false gives the STRICT mode, as an
+# absent `enforcement` gives `enforce`.
+declared_provenance_mode := "first-party" if {
+	first_party_declared
+} else := "vendor-crosscheck"
+
+# Positive predicate: every condition of the mode holds. Each condition also
+# has its own rule below, so the verdict says WHICH one failed; this predicate
+# is what DUAL_PROVENANCE_NOT_RECORDED negates.
+first_party_mode_valid if {
+	track == "build"
+	first_party_declared
+	object.get(input, ["build", "first_party", "crosscheck_pinned"], true) == false
+	regex.match(first_party_source_pattern, object.get(input, ["build", "first_party", "source_url"], missing))
+	first_party_reason_valid(object.get(input, ["build", "first_party", "reason"], missing))
+	object.get(input, ["build", "first_party", "source_url"], "<pin-absent>") == object.get(input, ["build", "first_party", "built_source_url"], "<built-absent>")
+	object.get(input, ["build", "first_party", "evidence_mode"], "<evidence-mode-absent>") == "first-party"
+	object.get(input, ["build", "dual_provenance", "performed"], "<performed-absent>") == false
+	regex.match(`^[0-9a-f]{64}$`, object.get(input, ["build", "dual_provenance", "from_source_sha256"], ""))
+}
+
+# The build actor reports the mode it ran in; versions.json (re-read by the
+# review actor) declares the mode it must run in. Different sentinels, so an
+# absent report never matches.
+violations contains v if {
+	track == "build"
+	reported := object.get(input, ["build", "first_party", "evidence_mode"], "<evidence-mode-absent>")
+	declared_provenance_mode != reported
+	v := {"code": "PROVENANCE_MODE_MISMATCH", "declared": declared_provenance_mode, "reported": reported, "message": sprintf("versions.json declares provenance mode %q but the build evidence reports %q. The build actor cannot choose the mode. Denying.", [declared_provenance_mode, reported])}
+}
+
+violations contains v if {
+	track == "build"
+	first_party_declared
+	url := object.get(input, ["build", "first_party", "source_url"], missing)
+	not regex.match(first_party_source_pattern, url)
+	v := {"code": "FIRST_PARTY_SOURCE_NOT_INFRASHIFT", "source_url": url, "message": sprintf("versions.json declares this image first-party, but its source %q is not under https://github.com/infrashift/. Only our own sources have no vendor binary. Denying.", [url])}
+}
+
+violations contains v if {
+	track == "build"
+	first_party_declared
+	not first_party_reason_valid(object.get(input, ["build", "first_party", "reason"], missing))
+	v := {"code": "FIRST_PARTY_REASON_MISSING", "message": sprintf("versions.json declares this image first-party without a reason of at least %v characters. Denying.", [min_first_party_reason_chars])}
+}
+
+violations contains v if {
+	track == "build"
+	first_party_declared
+	object.get(input, ["build", "first_party", "crosscheck_pinned"], true) != false
+	v := {"code": "FIRST_PARTY_WITH_CROSSCHECK", "message": "versions.json declares this image first-party and also pins a crosscheck reference, or the review did not state that it pins none. The two modes exclude each other. Denying."}
+}
+
+violations contains v if {
+	track == "build"
+	first_party_declared
+	pinned := object.get(input, ["build", "first_party", "source_url"], "<pin-absent>")
+	built := object.get(input, ["build", "first_party", "built_source_url"], "<built-absent>")
+	pinned != built
+	v := {"code": "FIRST_PARTY_SOURCE_URL_DISAGREES", "pinned": pinned, "built": built, "message": sprintf("versions.json pins source %v but the provenance says the build used %v. The first-party claim covers the pinned source only. Denying.", [pinned, built])}
+}
+
+violations contains v if {
+	track == "build"
+	first_party_declared
+	object.get(input, ["build", "dual_provenance", "performed"], false) != true
+	not regex.match(`^[0-9a-f]{64}$`, object.get(input, ["build", "dual_provenance", "from_source_sha256"], ""))
+	v := {"code": "DUAL_PROVENANCE_MALFORMED", "field": "from_source_sha256", "message": "A first-party build records no vendor hash, but it must still record a 64-hex sha256 of the binary it built. Denying."}
 }
 
 # ===========================================================================
@@ -918,6 +1023,21 @@ observations contains o if {
 		"match": dp.from_source_sha256 == dp.official_image_sha256,
 		"gating": false,
 		"message": "Recorded comparison of our from-source binary against the binary in the vendor's official image. This is an OBSERVATION, NOT A GATE: Go builds are rarely bit-reproducible, so a mismatch is expected and proves nothing on its own. A match is weak corroboration that the same source produced both. Neither outcome affects the decision.",
+	}
+}
+
+# A first-party build has no vendor binary, so there is no comparison. Record
+# that fact, the declared reason and our own binary hash, so the verdict says
+# what was NOT done and why, rather than going silent.
+observations contains o if {
+	first_party_mode_valid
+	o := {
+		"code": "FIRST_PARTY_BUILD",
+		"from_source_sha256": input.build.dual_provenance.from_source_sha256,
+		"source_url": input.build.first_party.source_url,
+		"reason": input.build.first_party.reason,
+		"gating": false,
+		"message": "First-party build: no vendor binary exists, so no comparison was made. versions.json declares this for a source under https://github.com/infrashift/, and the review actor re-derived the declaration from the checked-out versions.json. The hash of our binary is recorded as a change detector over time.",
 	}
 }
 
@@ -1220,10 +1340,72 @@ repo_violations contains v if {
 repo_violations contains v if {
 	some key, img in versions_images
 	img.kind == "build"
+	not versions_first_party_valid(img)
 	some arch in ["amd64", "arm64"]
 	arch in object.get(img, "arches", [])
 	not is_digest(object.get(img, ["crosscheck", arch, "digest"], null))
-	v := {"code": "VERSIONS_CROSSCHECK_DIGEST_INVALID", "image": key, "arch": arch, "message": sprintf("images.%v.crosscheck.%v.digest is not a sha256: digest. The cross-check reference must be pinned per platform, never by index digest. Denying.", [key, arch])}
+	v := {"code": "VERSIONS_CROSSCHECK_DIGEST_INVALID", "image": key, "arch": arch, "message": sprintf("images.%v.crosscheck.%v.digest is not a sha256: digest, and the entry carries no valid firstParty declaration. The cross-check reference must be pinned per platform, never by index digest. Denying.", [key, arch])}
+}
+
+# --- first-party build entries ---------------------------------------------
+# `firstParty` replaces `crosscheck` for our own sources. See the leg-scope
+# block "First-party build mode" above for why each condition exists.
+
+# The source URL a build entry builds from: sources.<s>.repos.<r>.url when the
+# entry names a repo (Ory), else sources.<s>.url. Absent gives `missing`,
+# which matches no URL pattern.
+versions_source_url(img) := u if {
+	r := object.get(img, "repo", null)
+	is_string(r)
+	u := object.get(versions_sources, [object.get(img, "source", missing), "repos", r, "url"], missing)
+} else := object.get(versions_sources, [object.get(img, "source", missing), "url"], missing)
+
+first_party_declaration_wellformed(fp) if {
+	is_object(fp)
+	object.get(fp, "noVendorBinary", false) == true
+	first_party_reason_valid(object.get(fp, "reason", null))
+}
+
+# Positive predicate, negated by VERSIONS_CROSSCHECK_DIGEST_INVALID.
+versions_first_party_valid(img) if {
+	first_party_declaration_wellformed(object.get(img, "firstParty", null))
+	regex.match(first_party_source_pattern, versions_source_url(img))
+	not "crosscheck" in object.keys(img)
+}
+
+# Absence of `crosscheck` is never a first-party claim. Say so explicitly
+# rather than only through the missing digest.
+repo_violations contains v if {
+	some key, img in versions_images
+	img.kind == "build"
+	not "crosscheck" in object.keys(img)
+	not "firstParty" in object.keys(img)
+	v := {"code": "VERSIONS_PROVENANCE_MODE_MISSING", "image": key, "message": sprintf("build entry images.%v declares neither `crosscheck` nor `firstParty`. A missing crosscheck is not a first-party claim; declare one or the other. Denying.", [key])}
+}
+
+repo_violations contains v if {
+	some key, img in versions_images
+	img.kind == "build"
+	"crosscheck" in object.keys(img)
+	"firstParty" in object.keys(img)
+	v := {"code": "VERSIONS_FIRST_PARTY_CONFLICT", "image": key, "message": sprintf("build entry images.%v declares both `crosscheck` and `firstParty`. A vendor binary either exists or it does not. Denying.", [key])}
+}
+
+repo_violations contains v if {
+	some key, img in versions_images
+	img.kind == "build"
+	"firstParty" in object.keys(img)
+	not first_party_declaration_wellformed(img.firstParty)
+	v := {"code": "VERSIONS_FIRST_PARTY_MALFORMED", "image": key, "message": sprintf("images.%v.firstParty must be {noVendorBinary: true, reason: <at least %v characters>}. Denying.", [key, min_first_party_reason_chars])}
+}
+
+repo_violations contains v if {
+	some key, img in versions_images
+	img.kind == "build"
+	"firstParty" in object.keys(img)
+	url := versions_source_url(img)
+	not regex.match(first_party_source_pattern, url)
+	v := {"code": "VERSIONS_FIRST_PARTY_SOURCE_NOT_INFRASHIFT", "image": key, "source_url": url, "message": sprintf("images.%v declares firstParty but builds from %q, which is not a repository under https://github.com/infrashift/. Only our own sources have no vendor binary to compare against. Denying.", [key, url])}
 }
 
 # --- sources ---------------------------------------------------------------

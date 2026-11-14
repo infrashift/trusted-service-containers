@@ -11,6 +11,7 @@
 * [ADR-005: Pin cosign to v2.6.1](adr-005-pin-cosign-to-v2-6-1--01a18382f4c6.md) - ADR-005 pins cosign to v2.6.1 so that our attestation layout matches the sibling repository; both repositories must move to v3 together.
 * [ADR-006: Never pass --replace to cosign attest](adr-006-never-pass-replace-to-cosign-attest--01a18382f4e6.md) - ADR-006 bans the --replace flag on cosign attest, because it deletes vendor attestations and overwrites the SBOM of the other architecture.
 * [ADR-007: The wiki is the tracker of record](adr-007-the-wiki-is-the-tracker-of-record--01a18382f505.md) - ADR-007 makes the .okfw/ wiki the place for issues, plans and findings; GitHub issues and the old .ai/ files point to it.
+* [ADR-008: A first-party build declares that no vendor binary exists](adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md) - A build entry for our own infrashift service declares firstParty with a reason in place of crosscheck; absence never means first-party.
 * [Decisions overview](decisions-overview--01a1837da541.md) - The decisions that shape this project, one ADR concept each, and the defects of the reference repo that we guard against.
 * [Defects of the reference repo and their guards](defects-of-the-reference-repo-and-their-guards--01a18382f526.md) - The nine defects of trusted-base-oci-images that this repository did not repeat, and the mechanical guard for each one.
 

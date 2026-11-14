@@ -100,6 +100,8 @@ cat > "$TMP/work/versions.json" <<EOF
       "amd64": { "digest": "$OLD" }, "arm64": { "digest": "$OLD" } }
   },
   "images": {
+    "nats-firstparty": { "kind": "build", "source": "nats",
+      "firstParty": { "noVendorBinary": true, "reason": "fixture: a first-party image on a source that moves, ahead of nats" } },
     "nats": { "kind": "build", "source": "nats", "crosscheck": {
       "image": "docker.io/library/nats",
       "amd64": { "tag": "2.14.5-alpine3.22", "digest": "$OLD" },
@@ -124,6 +126,15 @@ xc() { jq -r --arg s "$1" --arg a "$2" --arg f "$3" '.images[$s].crosscheck[$a][
 [[ "$(xc nats amd64 tag)" == "2.14.7-alpine3.22" ]] || fail "nats amd64 crosscheck tag not moved: $(xc nats amd64 tag)"
 [[ "$(xc nats amd64 digest)" == "$AMD64" ]] || fail "nats amd64 crosscheck pinned $(xc nats amd64 digest), want the linux/amd64 child"
 [[ "$(xc nats arm64 digest)" == "$ARM64" ]] || fail "nats arm64 crosscheck pinned $(xc nats arm64 digest), want the linux/arm64 child"
+
+# --- A first-party image on the same source: no crosscheck to move ---------
+# It sorts ahead of nats. Without the has("crosscheck") guard, `null | keys`
+# aborted the jq inside the process substitution, the loop saw no rows, and
+# the nats crosscheck stayed on 2.14.5 -- caught by the assertions above.
+[[ "$(jq -c '.images["nats-firstparty"] | has("crosscheck")' "$V")" == "false" ]] \
+  || fail "drift-upstream.sh gave the first-party image a crosscheck block"
+grep -q 'nats-firstparty' "$TMP/report.md" \
+  && fail "drift-upstream.sh reported a crosscheck row for the first-party image"
 
 # --- shortCommit: the full-clone abbreviation, never the blobless one ------
 got=$(jq -r '.sources.nats.shortCommit' "$V")

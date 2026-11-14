@@ -23,6 +23,9 @@ x:
     - "EXC-2026-0021"
     - "EXC-2026-0022"
     - "EXC-2026-0023"
+    - "EXC-2026-0030"
+    - "EXC-2026-0031"
+    - "EXC-2026-0032"
     - "EXC-2026-0024"
     - "EXC-2026-0025"
     - "EXC-2026-0027"
@@ -56,8 +59,11 @@ The four Ory images (`hydra`, `kratos`, `keto` and `oathkeeper`) have blocking f
 |---|---|---|
 | `EXC-2026-0004` to `EXC-2026-0007` | 2026-11-22 | [Waivers EXC-2026-0004 to 0007 accept Ory vendored Go findings until 2026-11-22](/findings/waivers-exc-2026-0004-to-0007-accept-ory-vendored-go-findings-until-2026-11-22--01a1838a6a0e.md) |
 | `EXC-2026-0020` to `EXC-2026-0025`, `EXC-2026-0027` | 2026-11-27 | [Seven waivers accept the October x/net and x/text findings in Ory until 2026-11-27](/findings/seven-waivers-accept-the-october-x-net-and-x-text-findings-in-ory-until-2026-11-27--01a1838a6c7a.md) |
+| `EXC-2026-0030` to `EXC-2026-0032` | 2026-11-27 | [Three waivers accept GO-2026-6860 in hydra, keto and kratos until 2026-11-27](/findings/three-waivers-accept-go-2026-6860-in-hydra-keto-and-kratos-until-2026-11-27--01a1dc1ccc29.md) |
 
 * The Ory `grpc` waivers (`EXC-2026-0009` to `EXC-2026-0012`) cite GH #22, not this issue. They expire on 2026-12-29. See [Waivers EXC-2026-0009 to 0015 accept grpc findings in Ory and dapr until 2026-12-29](/findings/waivers-exc-2026-0009-to-0015-accept-grpc-findings-in-ory-and-dapr-until-2026-12-29--01a1838a6af1.md).
+
+* On 2026-11-14, HALO and Chit depend on kratos, hydra and oathkeeper. They moved from keto to keto-cue (PR #47), so no known consumer needs the keto image.
 
 ## Acceptance criteria
 

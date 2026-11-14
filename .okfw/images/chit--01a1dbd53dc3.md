@@ -18,7 +18,7 @@ resource: "https://github.com/infrashift/trusted-service-containers/blob/main/ve
 sources:
   - resource: "https://github.com/infrashift/trusted-service-containers/blob/main/Containerfiles/chit.Containerfile"
     title: "chit.Containerfile"
-  - resource: "https://github.com/infrashift/chit/blob/50fdba3709fa11a7a711bd0f06fc33bedd41a2f9/deploy/Containerfile"
+  - resource: "https://github.com/infrashift/chit/blob/033e4e928f4b542d3c72890a503be97b0b1f25b0/deploy/Containerfile"
     title: "chit deploy/Containerfile"
 ---
 

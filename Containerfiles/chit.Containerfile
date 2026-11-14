@@ -60,8 +60,10 @@ WORKDIR /src
 COPY src/chit/ /src/
 
 # GOTOOLCHAIN=local: build with the pinned toolchain image's compiler, never a
-# downloaded one. Chit's go.mod asks for go 1.25.14; the pinned 1.26 compiler
-# satisfies it.
+# downloaded one. Chit's go.mod asks for go 1.26.10 and names toolchain
+# go1.26.11 (GO-2026-6859). GOTOOLCHAIN=local ignores the toolchain line, so
+# the pinned go1.26 compiler builds it; re-pin that toolchain to clear the
+# net/http finding.
 ENV CGO_ENABLED=0 \
     GOOS=linux \
     GOWORK=off \

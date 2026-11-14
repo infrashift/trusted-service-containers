@@ -58,3 +58,6 @@ No finding is in `stdlib`. Thus the `go1.26` toolchain pin is not the cause. A d
 * [Add an upstream image](/operations/add-an-upstream-image--01a18383d9be.md)
 * [Read the review comment before you merge an image PR](/operations/read-the-review-comment-before-you-merge-an-image-pr--01a18383daeb.md)
 * [Issues overview](/issues/issues-overview--01a1837da5b0.md)
+
+## Update 2026-11-14
+Chit PR #1 updated the vulnerable modules and set `toolchain go1.26.11`. The pin moved to its merge commit `033e4e928f4b` (`v0.0.0-20261114214224-033e4e928f4b`). A local image of that source, on ubi9-micro, passed both grype gates. The CI review of this pull request scans the image again. Close this issue when the review shows zero blocking findings.

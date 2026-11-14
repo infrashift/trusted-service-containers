@@ -11,7 +11,7 @@ tags:
   - "waiver"
 created: "2026-10-28T12:23:46-05:00"
 timestamp: "2026-10-28T12:24:33-05:00"
-description: "On 2026-10-28, Ory v26.2.0 was the newest release and carried blocking Go module findings; a keep-or-remove decision is due before 2026-11-22."
+description: "On 2026-10-28, Ory v26.2.0 was the newest release and carried blocking Go module findings; on 2026-11-14 the owner decided to keep all four."
 x:
   github: 7
   waivers:
@@ -65,10 +65,11 @@ The four Ory images (`hydra`, `kratos`, `keto` and `oathkeeper`) have blocking f
 
 * On 2026-11-14, HALO and Chit depend on kratos, hydra and oathkeeper. They moved from keto to keto-cue (PR #47).
 * On 2026-11-14, the owner decided to keep the keto image for now.
+* **Decision, 2026-11-14:** the owner keeps all four Ory images (hydra, keto, kratos and oathkeeper). HALO and Chit depend on hydra, kratos and oathkeeper. The owner keeps keto for now.
 
 ## Acceptance criteria
 
-- [ ] Before 2026-11-22, a decision records whether this project keeps the Ory images.
+- [x] Before 2026-11-22, a decision records whether this project keeps the Ory images. (2026-11-14: keep all four.)
 - [ ] If the project keeps them: a new review renews each Ory waiver before its expiry. Alternatively, an Ory release on the track clears the findings.
 - [ ] If the project removes them: a change removes the Ory entries from `versions.json` and the Ory waivers.
 

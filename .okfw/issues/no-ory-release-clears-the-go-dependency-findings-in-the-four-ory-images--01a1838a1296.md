@@ -63,7 +63,8 @@ The four Ory images (`hydra`, `kratos`, `keto` and `oathkeeper`) have blocking f
 
 * The Ory `grpc` waivers (`EXC-2026-0009` to `EXC-2026-0012`) cite GH #22, not this issue. They expire on 2026-12-29. See [Waivers EXC-2026-0009 to 0015 accept grpc findings in Ory and dapr until 2026-12-29](/findings/waivers-exc-2026-0009-to-0015-accept-grpc-findings-in-ory-and-dapr-until-2026-12-29--01a1838a6af1.md).
 
-* On 2026-11-14, HALO and Chit depend on kratos, hydra and oathkeeper. They moved from keto to keto-cue (PR #47), so no known consumer needs the keto image.
+* On 2026-11-14, HALO and Chit depend on kratos, hydra and oathkeeper. They moved from keto to keto-cue (PR #47).
+* On 2026-11-14, the owner decided to keep the keto image for now.
 
 ## Acceptance criteria
 

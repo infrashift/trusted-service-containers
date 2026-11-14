@@ -45,11 +45,11 @@ Three waivers accept `GO-2026-6860` in `golang.org/x/net` in three Ory images at
 
 * On 2026-11-14, `v26.2.0` was still the newest release of the Ory services.
 * On 2026-11-14, the Ory `master` branches of hydra, keto and kratos required `x/net` v0.56.0. Thus a pin of an untagged commit does not clear the finding.
-* HALO and Chit use kratos and hydra. They moved from keto to keto-cue (PR #47). No known consumer needs the keto image. Remove it rather than renew its waiver.
+* HALO and Chit use kratos and hydra. They moved from keto to keto-cue (PR #47). On 2026-11-14, the owner decided to keep the keto image for now.
 * The waivers expire with the October `x/net` waivers, so the owner decides on the whole Ory register at one time.
 
 ## What removes the need
 
 1. An Ory release on the track with `x/net` v0.62.0 or later.
-2. Or the removal of an Ory image. The keto image is the first candidate.
+2. Or the removal of an Ory image.
 3. At 2026-11-27, decide again. Do not renew without a decision.

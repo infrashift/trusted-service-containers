@@ -672,7 +672,7 @@ exceptions:
       of the lockstep Ory services on 2026-11-14; ory master is only at
       v0.56.0, and the fix is v0.62.0. GO-2026-6860 (published 2026-10-27) is
       a quadratic-complexity DoS in x/net/html text-node coalescing on crafted
-      HTML. HALO and Chit moved to keto-cue (#47), so no known consumer needs this image; prefer removing it to renewing. Expires with the October x/net waivers so the whole Ory
+      HTML. HALO and Chit moved to keto-cue (#47), but the owner decided on 2026-11-14 to keep the keto image for now. Expires with the October x/net waivers so the whole Ory
       register is decided together; re-decide at expiry rather than renew.
 
   - id: EXC-2026-0032

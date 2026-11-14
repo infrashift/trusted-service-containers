@@ -85,11 +85,13 @@ The official NATS image does not compile the binary. Its Dockerfile downloads th
 ## Consequences
 
 * The cross-check never blocks a release.
+* Our own infrashift services have no vendor binary. Their entries declare `firstParty` in place of `crosscheck`, and the pipeline records only the hash of our binary. A missing `crosscheck` block is not that declaration. See [ADR-008: A first-party build declares that no vendor binary exists](/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md).
 * The PR comment shows the result, with a note that a mismatch is expected.
 * A toolchain bump can increase the difference from the vendor binary. We accept that, because the comparison is an observation. For example, NATS uses `GOTOOLCHAIN=local` to clear advisories that the vendor's Go version has.
 
 ## Related
 
+* [ADR-008: A first-party build declares that no vendor binary exists](/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md)
 * [Build track](/architecture/build-track--01a18382f2d2.md)
 * [Toolchain pins](/architecture/toolchain-pins--01a18382f31f.md)
 * [nats](/images/nats--01a183832e00.md)

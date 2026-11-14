@@ -149,6 +149,13 @@ jobs:
         # Fixture versions.json, stubbed regctl and git.
         run: ./scripts/test-drift-upstream.sh
 
+      - name: Test the first-party provenance mode
+        # build-leg.sh skips the vendor comparison only for an explicit
+        # firstParty declaration on a source under github.com/infrashift/
+        # (ADR-008). Absent, double, malformed and look-alike declarations
+        # must all be refused.
+        run: ./scripts/test-provenance-mode.sh
+
       - name: Test the release Gate lookup
         # release.yml's Gate looked up the merge commit's PR once, before GitHub
         # had linked them, and refused to release the merges of #40 and #41.

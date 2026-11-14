@@ -49,6 +49,11 @@ pinned source **commit** onto our own `ubi9-micro`.
 | `nats` | `github.com/nats-io/nats-server` | `v2.14.z` |
 | `daprd` `dapr-placement` `dapr-scheduler` | `github.com/dapr/dapr` | `v1.18.z`, lockstep |
 
+Our own `github.com/infrashift/*` services build on the same track, but no
+vendor binary exists to cross-check them against. Their entries declare
+`firstParty` with a reason instead
+([ADR-008](./.okfw/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md)).
+
 ---
 
 ## Consuming the images

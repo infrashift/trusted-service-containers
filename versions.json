@@ -34,6 +34,13 @@
         }
       }
     },
+    "keto-cue": {
+      "track": "^v0\\.0\\.0-[0-9]{14}-[0-9a-f]{12}$",
+      "ref": "v0.0.0-20261113131129-2a6c583e05f5",
+      "url": "https://github.com/infrashift/keto-cue",
+      "commit": "2a6c583e05f5cdced62ea49664febd5b07f7794f",
+      "note": "First-party (ADR-008). keto-cue publishes no release tags yet, so `ref` is the Go pseudo-version of the pinned commit (committer time in UTC, then the 12-char commit prefix) -- the module version `go version -m` stamps from the shallow checkout. The track admits only that shape, so drift-upstream.sh finds no tag to propose and every bump is a reviewed manual edit of commit and ref together. When keto-cue starts tagging releases, replace the track with one for its release line in its own reviewed PR."
+    },
     "nats": {
       "track": "^v2\\.14\\.[0-9]+$",
       "ref": "v2.14.9",
@@ -467,6 +474,59 @@
       },
       "updated": "2026-09-30",
       "reason": "Initial pin."
+    },
+    "keto-cue": {
+      "kind": "build",
+      "source": "keto-cue",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/keto-cue.Containerfile",
+      "build": {
+        "cgo": false,
+        "tags": [
+          "json1"
+        ],
+        "trimpath": true,
+        "goToolchain": "local",
+        "mainPackage": ".",
+        "binary": "keto",
+        "installPath": "/usr/bin/keto",
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {
+          "version": "github.com/ory/keto/internal/driver/config.Version",
+          "commit": "github.com/ory/keto/internal/driver/config.Commit",
+          "date": "github.com/ory/keto/internal/driver/config.Date"
+        },
+        "note": "keto-cue is a fork of Ory Keto v26.2.0 and keeps the module path github.com/ory/keto, so the ldflags symbols are Keto's. -tags=json1 and CGO_ENABLED=0 are the flags of Ory's static release build (ory/xgoreleaser build.tmpl.yml); keto-cue's .goreleaser.yml includes that template, and its code declares no sqlite or hsm tag. The SQLite driver is modernc.org/sqlite (pure Go). -trimpath is added: there is no vendor binary to match flags with, and it removes the build path from the binary. The CUE base schema is go:embed-ed, so the image needs no runtime CUE file; operators mount their own namespaces.cue."
+      },
+      "firstParty": {
+        "noVendorBinary": true,
+        "reason": "keto-cue is infrashift's own fork of Ory Keto with a CUE schema language. infrashift is its only publisher and releases no container image of it, so no vendor binary exists to cross-check against."
+      },
+      "runtime": {
+        "ports": [
+          4466,
+          4467
+        ],
+        "volumes": [],
+        "entrypoint": [
+          "keto"
+        ],
+        "cmd": [
+          "serve"
+        ],
+        "user": 1001,
+        "tzdata": true
+      },
+      "updated": "2026-11-14",
+      "reason": "Initial pin for HALO (P-TSC-2): keto-cue replaces Ory Keto as the relation store. Onboarded in observe."
     },
     "oathkeeper": {
       "kind": "build",

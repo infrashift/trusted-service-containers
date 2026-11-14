@@ -35,6 +35,7 @@ The Ory services, NATS and Dapr publish only distroless, Alpine and Windows vari
 | Dapr, lockstep | [daprd](/images/daprd--01a183832e23.md), [dapr-placement](/images/dapr-placement--01a183832e48.md), [dapr-scheduler](/images/dapr-scheduler--01a183832e6e.md) | `sources.dapr` |
 | Observability | [prometheus](/images/prometheus--01a183832e94.md), [loki](/images/loki--01a183832eba.md) | `sources.prometheus`, `sources.loki` |
 | Storage | [seaweedfs](/images/seaweedfs--01a183832ee2.md) | `sources.seaweedfs` |
+| infrashift, first-party | [keto-cue](/images/keto-cue--01a1dbce4e47.md) | `sources.keto-cue` |
 
 "Lockstep" means that one source tag produces all the images of the group. A partial bump is a defect. The drift workflow must propose all images of the group together.
 

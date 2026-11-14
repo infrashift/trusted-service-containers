@@ -182,7 +182,9 @@ while read -r key; do
 
   # Re-point every crosscheck reference that embeds the old version string.
   # Vendors template their per-platform tags off the release version, with or
-  # without a leading v, so both forms are substituted.
+  # without a leading v, so both forms are substituted. A first-party entry
+  # (ADR-008) has no crosscheck block -- there is no vendor image to move --
+  # and is skipped; without the has() guard, `null | keys` aborts the run.
   OLD_BARE="${ref#v}"; NEW_BARE="${CAND#v}"
   while IFS=$'\t' read -r svc arch; do
     xrepo=$(jq -r --arg s "$svc" '.images[$s].crosscheck.image' "$VERSIONS")
@@ -210,7 +212,7 @@ while read -r key; do
       "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
     BUILD_ROWS+="| \`${svc}\` crosscheck ${arch} | \`${xtag}\` → \`${NEWTAG}\` | \`${XD:0:12}\` |"$'\n'
   done < <(jq -r --arg k "$key" '.images | to_entries[]
-            | select(.value.kind=="build" and .value.source==$k)
+            | select(.value.kind=="build" and .value.source==$k and (.value | has("crosscheck")))
             | .key as $s | (.value.crosscheck | keys[] | select(. == "amd64" or . == "arm64")) as $a
             | [$s, $a] | @tsv' "$VERSIONS")
 

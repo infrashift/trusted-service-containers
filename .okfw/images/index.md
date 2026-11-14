@@ -10,6 +10,7 @@
 * [daprd](daprd--01a183832e23.md) - The Dapr sidecar, built with all components from the pinned Dapr source onto ubi9-micro in lockstep with the two Dapr control-plane images.
 * [hydra](hydra--01a183832d9f.md) - Ory Hydra, the OAuth 2.0 and OpenID Connect server, built from the pinned Ory source onto ubi9-micro in lockstep with the Ory images.
 * [keto](keto--01a183832dc0.md) - Ory Keto, the permission server, built CGO-free from the pinned Ory source onto ubi9-micro in lockstep with the Ory images.
+* [keto-cue](keto-cue--01a1dbce4e47.md) - The infrashift fork of Ory Keto with CUE permission schemas, built first-party from a pinned infrashift commit onto ubi9-micro.
 * [kratos](kratos--01a183832d7f.md) - Ory Kratos, the identity server, built from the pinned Ory source onto ubi9-micro in lockstep with the other three Ory images.
 * [loki](loki--01a183832eba.md) - The Grafana Loki log store with the logcli client, built from source onto ubi9-micro; it joined in observe mode.
 * [mssql](mssql--01a183832d44.md) - Microsoft SQL Server 2025 on RHEL 10, mirrored from MCR for amd64 only and verified with its Notary Project signature; trust class notation.

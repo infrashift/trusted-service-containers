@@ -169,6 +169,12 @@ for svc, img in sorted(build_imgs.items()):
     for sym in b['ldflagsVars'].values():
         if sym not in code:
             err(p, f"ldflags do not stamp `{sym}`; the binary would report `dev`")
+    # `noVersionSymbol` says the program has no version variable. The Go
+    # linker silently ignores -X for a symbol that does not exist, so any -X
+    # here would be a stamp that never lands.
+    if b.get('noVersionSymbol') and re.search(r'(^|\s)-X[\s=]', code):
+        err(p, "versions.json declares noVersionSymbol, but the build passes -X; "
+               "the linker ignores -X for a symbol that does not exist")
     if b.get('trimpath') and '-trimpath' not in code:
         err(p, "versions.json declares trimpath but the build does not pass -trimpath")
     if b.get('goToolchain') and f"GOTOOLCHAIN={b['goToolchain']}" not in code:

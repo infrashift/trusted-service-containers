@@ -5,6 +5,7 @@
 ## Concepts
 
 * [Images overview](images-overview--01a1837da526.md) - One concept for each image in versions.json: what it is, its track, its trust class, and its open issues and waivers.
+* [chit](chit--01a1dbd53dc3.md) - The infrashift chat service: chitd and chit-reconcile with their CUE and SQL migrations, built first-party from a pinned infrashift commit onto ubi9-micro.
 * [dapr-placement](dapr-placement--01a183832e48.md) - The Dapr placement service for actors, built from the pinned Dapr source onto ubi9-micro in lockstep with daprd and dapr-scheduler.
 * [dapr-scheduler](dapr-scheduler--01a183832e6e.md) - The Dapr scheduler, which keeps actor reminders and workflow state in embedded etcd, built from the pinned Dapr source onto ubi9-micro.
 * [daprd](daprd--01a183832e23.md) - The Dapr sidecar, built with all components from the pinned Dapr source onto ubi9-micro in lockstep with the two Dapr control-plane images.

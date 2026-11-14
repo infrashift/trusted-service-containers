@@ -196,6 +196,10 @@
                 "build": {
                   "type": "object",
                   "required": ["cgo", "mainPackage", "binary", "installPath", "ldflagsVars"],
+                  "oneOf": [
+                    { "properties": { "ldflagsVars": { "minProperties": 1 } }, "not": { "required": ["noVersionSymbol"] } },
+                    { "required": ["noVersionSymbol"], "properties": { "ldflagsVars": { "maxProperties": 0 } } }
+                  ],
                   "properties": {
                     "cgo": { "const": false, "description": "Every service in this repo is a static CGO_ENABLED=0 Go binary. CGO=1 on a Debian builder produces glibc-2.41 binaries that cannot run on ubi9's glibc 2.34." },
                     "trimpath": { "type": "boolean" },
@@ -222,7 +226,10 @@
                     "compatSymlink": { "type": "string", "pattern": "^/" },
                     "extraLdflags": { "type": "string" },
                     "commitForm": { "enum": ["full", "short"] },
-                    "ldflagsVars": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } },
+                    "ldflagsVars": { "type": "object", "additionalProperties": { "type": "string" },
+                      "description": "Symbols the build stamps with -X. At least one, unless `noVersionSymbol` explains why the program has none; then it must be empty." },
+                    "noVersionSymbol": { "type": "string", "minLength": 40,
+                      "description": "Why the program has no version variable to stamp (Chit). An explicit, reasoned exception to a non-empty ldflagsVars: the Go linker silently ignores -X for a symbol that does not exist, so inventing one would claim a stamp that never happens. scripts/lint-containerfiles.sh then rejects any -X in the build." },
                     "note": { "type": "string" }
                   }
                 },

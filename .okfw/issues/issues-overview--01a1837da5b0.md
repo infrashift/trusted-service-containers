@@ -53,6 +53,7 @@ The [Roadmap](/plans/roadmap--01a18396ce3c.md) puts the open issues in time orde
 * [The mssql image has 60 blocking findings and no triage](/issues/the-mssql-image-has-60-blocking-findings-and-no-triage--01a1838a1626.md) (PRD)
 * [The whoami mirror has 54 blocking findings and no triage](/issues/the-whoami-mirror-has-54-blocking-findings-and-no-triage--01a1839ccc1d.md) (new)
 * [The keto-cue pin has a Critical and 13 fixable High Go module findings](/issues/the-keto-cue-pin-has-a-critical-and-13-fixable-high-go-module-findings--01a1dbce4e57.md) (new). keto-cue pull request 3 has the fix.
+* [The Chit pin has 9 Critical and 24 fixable High Go module findings](/issues/the-chit-pin-has-9-critical-and-24-fixable-high-go-module-findings--01a1dbd53dd3.md) (new). A Chit dependency bump clears them.
 
 ### Open: drift and pins
 

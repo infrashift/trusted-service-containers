@@ -35,7 +35,7 @@ The Ory services, NATS and Dapr publish only distroless, Alpine and Windows vari
 | Dapr, lockstep | [daprd](/images/daprd--01a183832e23.md), [dapr-placement](/images/dapr-placement--01a183832e48.md), [dapr-scheduler](/images/dapr-scheduler--01a183832e6e.md) | `sources.dapr` |
 | Observability | [prometheus](/images/prometheus--01a183832e94.md), [loki](/images/loki--01a183832eba.md) | `sources.prometheus`, `sources.loki` |
 | Storage | [seaweedfs](/images/seaweedfs--01a183832ee2.md) | `sources.seaweedfs` |
-| infrashift, first-party | [keto-cue](/images/keto-cue--01a1dbce4e47.md) | `sources.keto-cue` |
+| infrashift, first-party | [keto-cue](/images/keto-cue--01a1dbce4e47.md), [chit](/images/chit--01a1dbd53dc3.md) | `sources.keto-cue`, `sources.chit` |
 
 "Lockstep" means that one source tag produces all the images of the group. A partial bump is a defect. The drift workflow must propose all images of the group together.
 
@@ -71,7 +71,9 @@ Some images are our own infrashift services. No vendor publishes them, so no ven
 2. Do not delete `crosscheck` to get this mode. An entry without both blocks fails the schema and the repo gate.
 3. Do not put crosscheck ARGs or the `io.infrashift.build.crosscheck.image` label in the Containerfile. `scripts/lint-containerfiles.sh` rejects them.
 
-The pipeline records the hash of our binary as the observation `FIRST_PARTY_BUILD`. See [ADR-008: A first-party build declares that no vendor binary exists](/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md).
+The pipeline records the hash of our binary as the observation `FIRST_PARTY_BUILD`.
+
+A program without a version variable cannot get an `-X` stamp. The Go linker ignores `-X` for a symbol that does not exist. For such a program, set `build.noVersionSymbol` to the reason and set `ldflagsVars` to `{}`. The schema accepts an empty `ldflagsVars` only with that reason, and `scripts/lint-containerfiles.sh` then rejects any `-X`. Chit uses this. See [ADR-008: A first-party build declares that no vendor binary exists](/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md).
 
 ## Smoke tests
 

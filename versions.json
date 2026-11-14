@@ -41,6 +41,13 @@
       "commit": "809351b32b9cac3ff027b36f8189197d63ec468f",
       "note": "First-party (ADR-008). keto-cue publishes no release tags yet, so `ref` is the Go pseudo-version of the pinned commit (committer time in UTC, then the 12-char commit prefix) -- the module version `go version -m` stamps from the shallow checkout. The track admits only that shape, so drift-upstream.sh finds no tag to propose and every bump is a reviewed manual edit of commit and ref together. When keto-cue starts tagging releases, replace the track with one for its release line in its own reviewed PR."
     },
+    "chit": {
+      "track": "^v0\\.0\\.0-[0-9]{14}-[0-9a-f]{12}$",
+      "ref": "v0.0.0-20261008132543-50fdba3709fa",
+      "url": "https://github.com/infrashift/chit",
+      "commit": "50fdba3709fa11a7a711bd0f06fc33bedd41a2f9",
+      "note": "First-party (ADR-008). Chit publishes no release tags yet, so `ref` is the Go pseudo-version of the pinned commit (committer time in UTC, then the 12-char commit prefix). The track admits only that shape, so drift-upstream.sh finds no tag to propose and every bump is a reviewed manual edit of commit and ref together. When Chit starts tagging releases, replace the track with one for its release line in its own reviewed PR."
+    },
     "nats": {
       "track": "^v2\\.14\\.[0-9]+$",
       "ref": "v2.14.9",
@@ -527,6 +534,56 @@
       },
       "updated": "2026-11-14",
       "reason": "Initial pin for HALO (P-TSC-2): keto-cue replaces Ory Keto as the relation store. Onboarded in observe."
+    },
+    "chit": {
+      "kind": "build",
+      "source": "chit",
+      "upstreamTrust": "internal",
+      "toolchain": "go1.26",
+      "base": "ubi9-micro",
+      "caSource": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/chit.Containerfile",
+      "build": {
+        "cgo": false,
+        "trimpath": true,
+        "goToolchain": "local",
+        "mainPackage": "./cmd/chitd",
+        "binary": "chitd",
+        "installPath": "/usr/bin/chitd",
+        "extraBinaries": [
+          {
+            "binary": "chit-reconcile",
+            "mainPackage": "./cmd/chit-reconcile",
+            "installPath": "/usr/bin/chit-reconcile"
+          }
+        ],
+        "extraLdflags": "-s -w",
+        "ldflagsVars": {},
+        "noVersionSymbol": "Chit declares no version variable in any package (cmd/chitd and cmd/chit-reconcile have none; internal/api/system.go returns a literal), so there is no symbol to stamp. The module version and vcs.revision are in the Go build info, and the image labels carry the pinned commit.",
+        "note": "One image, as chit's own deploy/Containerfile ships it: chitd (server) plus chit-reconcile, the one-shot job that pushes auth/*.cue grants into Keto, so the job and the server read the same CUE from the same commit. auth/ ships at /etc/chit/auth (CHIT_COMMANDS_CUE_DIR) and migrations/*.sql at /usr/share/chit/migrations for a golang-migrate job; Chit has no migrate binary. chit-mcp and chit-claude are client tools and are not built. CGO_ENABLED=0 as upstream; GOWORK=off as chit's Makefile, because go.work also names clients/chit-tui. go.mod asks for go 1.25.14, which the go1.26 toolchain satisfies under GOTOOLCHAIN=local."
+      },
+      "firstParty": {
+        "noVendorBinary": true,
+        "reason": "Chit is infrashift's own chat service. infrashift is its only publisher and releases no container image of it, so no vendor binary exists to cross-check against."
+      },
+      "runtime": {
+        "ports": [
+          8065
+        ],
+        "volumes": [],
+        "entrypoint": [
+          "chitd"
+        ],
+        "user": 1001,
+        "tzdata": true
+      },
+      "updated": "2026-11-14",
+      "reason": "Initial pin for HALO (P-TSC-3): Chit holds HALO's Channels and Messages. Onboarded in observe."
     },
     "oathkeeper": {
       "kind": "build",

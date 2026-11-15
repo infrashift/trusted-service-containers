@@ -1326,6 +1326,61 @@
       },
       "updated": "2026-11-15",
       "reason": "Initial pin for HALO (P-TSC-6): Valkey is HALO's shared cache and state store, and LiteLLM's router and rate-limit store. Built in this repository (ADR-010): no free signed EL9 package exists, the vendor image is unsigned, and DHI Valkey had two Debian Criticals with no fix. Onboarded in observe."
+    },
+    "litellm": {
+      "kind": "native",
+      "upstreamTrust": "internal",
+      "builder": "ubi9-minimal",
+      "base": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/litellm.Containerfile",
+      "native": {
+        "language": "python",
+        "buildPackages": [
+          "python3.12",
+          "python3.12-pip"
+        ],
+        "runtimePackages": [
+          "python3.12"
+        ],
+        "distribution": "litellm",
+        "version": "1.109.1",
+        "projectUrl": "https://pypi.org/project/litellm/",
+        "lock": {
+          "path": "locks/litellm/requirements.txt",
+          "sha256": "2972e946f5bc76c72ea639f430b2882e9ee36f28257b8ec427dc1291a367ab50"
+        },
+        "venv": "/opt/litellm",
+        "binary": "litellm",
+        "installPath": "/opt/litellm/bin/litellm",
+        "note": "Python 3.12 from UBI9 AppStream (python3.12-3.12.15-1.el9_8 on 2026-11-15); pip (python3.12-pip) only in the builder. The lock is generated from locks/litellm/requirements.in (litellm[proxy]==1.109.1 and redis) with uv --only-binary :all: --generate-hashes --exclude-newer 2026-11-15T00:00:00Z for Python 3.12 on manylinux_2_34; the same 117-wheel lock serves amd64 and arm64. pip installs it with --require-hashes --no-deps --only-binary=:all: into a venv created --without-pip, so the venv holds exactly the lock. No Prisma and no Node.js: the database features are out of scope (ADR-010)."
+      },
+      "runtime": {
+        "ports": [
+          4000
+        ],
+        "volumes": [],
+        "entrypoint": [
+          "litellm"
+        ],
+        "cmd": [
+          "--config",
+          "/etc/litellm/config.yaml",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "4000"
+        ],
+        "user": 1001,
+        "configFile": "rootfs/litellm/etc/litellm/config.yaml",
+        "note": "Ours. The default config has no model and takes the master key from LITELLM_MASTER_KEY; mount a config to add models and the Redis (Valkey) router settings. LITELLM_LOCAL_MODEL_COST_MAP=True: the model cost map comes from the wheel, not from GitHub at start. The health endpoints /health/liveliness and /health/liveness need no key."
+      },
+      "updated": "2026-11-15",
+      "reason": "Initial pin for HALO: LiteLLM is the OpenAI-compatible gateway to the model providers. Built in this repository by the owner's decision of 2026-11-15 (ADR-010), not mirrored from DHI: the DHI image's four blocking findings were all in its bundled Node.js, which this image does not carry. 1.109.1 is the newest LiteLLM release that is not a pre-release (2026-11-12). Onboarded in observe."
     }
   }
 }

@@ -1,0 +1,22 @@
+# Trusted LiteLLM proxy defaults.
+#
+# OURS, written for this image. It starts a proxy with no model and with the
+# master key from the environment. Mount your own file over
+# /etc/litellm/config.yaml to add models, or pass `--config <path>`.
+#
+# WARNING: Set LITELLM_MASTER_KEY. Without a master key, the proxy accepts
+# every request without authentication.
+#
+# This image has no Prisma and no Node.js, so it runs without a database:
+# do not set DATABASE_URL. For the router and the rate limits shared between
+# replicas, point LiteLLM at Valkey (the Redis protocol), for example:
+#
+#   router_settings:
+#     redis_host: os.environ/REDIS_HOST
+#     redis_port: os.environ/REDIS_PORT
+#     redis_password: os.environ/REDIS_PASSWORD
+
+model_list: []
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

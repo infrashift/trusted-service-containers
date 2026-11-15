@@ -178,7 +178,7 @@
         "https://cyclonedx.org/bom/v1.6",
         "https://slsa.dev/provenance/v1"
       ],
-      "enforcement": "enforce",
+      "enforcement": "observe",
       "platforms": [
         "linux/amd64",
         "linux/arm64"

@@ -24,5 +24,6 @@
 * [prometheus-nats-exporter](prometheus-nats-exporter--01a183832f0f.md) - The Prometheus exporter for NATS monitoring endpoints, built from source onto ubi9-micro; PR #29 is the reason for the observe-is-not-a-pass rule.
 * [seaweedfs](seaweedfs--01a183832ee2.md) - The SeaweedFS object store with an S3 gateway, the replacement for MinIO, built from source onto ubi9-micro; it joined in observe mode.
 * [traefik](traefik--01a183832cbc.md) - The traefik reverse proxy, mirrored from Docker Hardened Images with its DHI signature and attestations; trust class dhi.
+* [valkey](valkey--01a1df5f8878.md) - Valkey 9.1 compiled with TLS from a pinned commit on UBI; native kind (ADR-010), UID 1001, protected mode on, persistence configurable off.
 * [whoami](whoami--01a183832d61.md) - The traefik whoami echo server, a test backend, mirrored from Docker Hub on three platforms with no signature to verify; trust class none.
 

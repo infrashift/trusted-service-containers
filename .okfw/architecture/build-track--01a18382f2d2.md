@@ -87,6 +87,19 @@ Some software is not Go, and its vendor ships signed RPMs for RHEL. PostgreSQL i
 |---|---|---|
 | [postgresql17](/images/postgresql17--01a1dd2247ba.md) | `packageRepos.pgdg17-el9` | `ubi9-minimal` |
 
+## The native kind
+
+Some software is C, and no free signed repository ships it. Valkey is an example. For this software, a built entry has the kind `native`. It compiles the pinned source commit on a pinned UBI builder (`builder`, a key of `bases`), with the compiler from the Red Hat signed UBI repositories, onto our `ubi9-minimal`. See [ADR-010: Valkey and LiteLLM build on UBI as the kind native](/decisions/adr-010-valkey-and-litellm-build-on-ubi-as-the-kind-native--01a1dee688b9.md).
+
+* The source pins a release archive by the sha256 that the vendor publishes in a second place (`sources.<s>.archive`). `scripts/fetch-archive.sh` fails the build unless the archive has that sha256 and its file tree equals the tree of the commit.
+* The Containerfile has two stages: the builder and the runtime. The lint rejects a signature bypass, an extra repository, and a compiler in the runtime stage.
+* There is no vendor binary comparison. The build records the sha256 of our binary as a change detector, and the review holds the builder, the base, the commit and the archive against `versions.json`.
+* The matrix emits a native image as a `build` leg. A native leg rebuilds when its source, its builder or its base changes.
+
+| Image | Language | Source | Builder and base |
+|---|---|---|---|
+| [valkey](/images/valkey--01a1df5f8878.md) | `c` | `sources.valkey` | `ubi9-minimal` |
+
 ## Source fetch
 
 `scripts/fetch-source.sh` fetches the pinned commit, not the tag, and asserts that the tag resolves to that commit. Some upstreams stamp a short commit whose length git chooses dynamically. A shallow clone gives a shorter value, so `versions.json` pins `shortCommit` as data.
@@ -102,3 +115,4 @@ Some software is not Go, and its vendor ships signed RPMs for RHEL. PostgreSQL i
 * [Architecture overview](/architecture/architecture-overview--01a1837da50c.md)
 * [Eight build Containerfiles say that fetch-source.sh removes .git](/issues/eight-build-containerfiles-say-that-fetch-source-sh-removes-git--01a18395b4ba.md)
 * [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md)
+* [ADR-010: Valkey and LiteLLM build on UBI as the kind native](/decisions/adr-010-valkey-and-litellm-build-on-ubi-as-the-kind-native--01a1dee688b9.md)

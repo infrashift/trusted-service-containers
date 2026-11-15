@@ -56,6 +56,8 @@ The enforcement column shows a state that can change. See `versions.json` for th
 | [prometheus](/images/prometheus--01a183832e94.md) | build | `internal` | `enforce` | Observability |
 | [loki](/images/loki--01a183832eba.md) | build | `internal` | `observe` | Observability |
 | [seaweedfs](/images/seaweedfs--01a183832ee2.md) | build | `internal` | `observe` | Storage |
+| [keto-cue](/images/keto-cue--01a1dbce4e47.md) | build, first-party | `internal` | `observe` (2026-11-14) | infrashift |
+| [chit](/images/chit--01a1dbd53dc3.md) | build, first-party | `internal` | `observe` (2026-11-14) | infrashift |
 
 The trust class of a built image is `internal`, because the upstream signature that we verify is the signature of our `ubi9-micro` base. The vendor image of the binary cross-check has its own trust class, given in each concept.
 

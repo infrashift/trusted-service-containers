@@ -138,7 +138,9 @@ PROMOTED=$(regctl manifest head --format '{{.GetDescriptor.Digest}}' "${DEST_REP
 # party can independently confirm this release happened.
 #
 # The predicate permanently records what was waived to get here, so a promoted
-# image carries its own exception history.
+# image carries its own exception history. For a build leg it also carries the
+# provenance mode the review actor read from versions.json: a first-party image
+# (ADR-008) says in its release attestation that no vendor binary was compared.
 # ===========================================================================
 jq -n \
   --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg kind "$KIND" \
@@ -148,7 +150,7 @@ jq -n \
   --arg head "$HEAD_SHA" --arg pr "$PR_NUM" --arg short "$SHORT_SHA" \
   --arg now "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --argjson tags "$(printf '%s\n' "${TAGS[@]}" | jq -R -s -c 'split("\n")|map(select(length>0))')" \
-  --argjson upstream "$(jq -c '.subject | {trustClass}' <<<"$PRED")" \
+  --argjson upstream "$(jq -c '.subject | {trustClass} + (if .provenanceMode then {provenanceMode} else {} end)' <<<"$PRED")" \
   --argjson uv "$(jq -c '.checks.upstream_verification // {}' <<<"$PRED")" \
   --argjson waived "$(jq -c '.cve_policy.exceptions_applied // []' <<<"$PRED")" \
   '{ metadata: { timestamp:$now, releaser:"release-actor",

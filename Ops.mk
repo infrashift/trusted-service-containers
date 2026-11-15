@@ -60,7 +60,7 @@ help:
 	echo "  lint-containerfiles   Containerfile shape + versions.json agreement"
 	echo "  lint-skills           every documented file path resolves"
 	echo "  check-wiki            okfw schema + OKF format + no dangling links in .okfw/"
-	echo "  test-scripts          drift-upstream.sh, propose-drift.sh and the release Gate step against fixtures and stubs"
+	echo "  test-scripts          drift-upstream.sh, propose-drift.sh, provenance-mode.sh and the release Gate step against fixtures and stubs"
 	echo "  policy-test           opa check --strict, opa fmt, opa test --threshold 85"
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
 	echo "  verify-pins           re-resolve every upstream, base and crosscheck digest"
@@ -165,6 +165,7 @@ lint-shell:
 test-scripts:
 	./scripts/test-propose-drift.sh
 	./scripts/test-drift-upstream.sh
+	./scripts/test-provenance-mode.sh
 	./scripts/test-release-gate.sh
 
 .PHONY: policy-test
@@ -240,7 +241,9 @@ verify-build-pins:
 	echo "Source pins:"
 	jq -r '.sources | to_entries[] | .key as $$s | (if (.value.repos // empty) then (.value.repos | to_entries[] | "  \($$s)/\(.key)  \(.value.commit[0:12])") else "  \($$s)  \(.value.commit[0:12])" end)' $(VERSIONS)
 	echo "Crosscheck pins:"
-	jq -r '.images | to_entries[] | select(.value.kind=="build") | .key as $$k | .value.crosscheck as $$c | $$c.arches // ["amd64","arm64"] | .[] as $$a | "  \($$k) \($$a)  \($$c[$$a].tag // "-")"' $(VERSIONS) 2>/dev/null || true
+	jq -r '.images | to_entries[] | select(.value.kind=="build" and (.value | has("crosscheck"))) | .key as $$k | .value.crosscheck as $$c | $$c.arches // ["amd64","arm64"] | .[] as $$a | "  \($$k) \($$a)  \($$c[$$a].tag // "-")"' $(VERSIONS) 2>/dev/null || true
+	# First-party entries (ADR-008) have no vendor reference to re-resolve.
+	jq -r '.images | to_entries[] | select(.value.kind=="build" and (.value | has("firstParty"))) | "  \(.key)  first-party (no vendor binary)"' $(VERSIONS)
 	if [ "$$stale" -ne 0 ]; then echo "$$stale base or toolchain pin(s) stale." >&2; exit 1; fi
 
 .PHONY: list-images

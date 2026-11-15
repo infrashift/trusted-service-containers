@@ -42,6 +42,7 @@ The pipeline:
 * [ADR-003: Quarantine is a documented state](/decisions/adr-003-quarantine-is-a-documented-state--01a18382f486.md): a permanent, evidenced state with only an immutable tag.
 * [ADR-002: No latest tag](/decisions/adr-002-no-latest-tag--01a18382f469.md)
 * [ADR-004: Dual provenance is an observation, not a gate](/decisions/adr-004-dual-provenance-is-an-observation-not-a-gate--01a18382f4a6.md): the binary cross-check never gates.
+* [ADR-008: A first-party build declares that no vendor binary exists](/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md): our own infrashift services declare `firstParty` with a reason in place of `crosscheck`.
 
 Tools and signing:
 

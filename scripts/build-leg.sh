@@ -2,6 +2,11 @@
 # Build one {service, arch} leg from pinned source onto our trusted ubi9-micro,
 # cross-check the binary against the vendor's official image, scan, sign, attest.
 #
+# A first-party entry (versions.json `firstParty`, ADR-008) has no vendor
+# image. It records the hash of our binary only, and says so in the evidence.
+# scripts/provenance-mode.sh decides the mode from versions.json and refuses
+# an absent, double or non-infrashift declaration before anything is built.
+#
 # Required env: SERVICE VARIANT LEG ARCH TRUST_CLASS PR_NUM GITHUB_REPOSITORY
 #               GITHUB_SHA COSIGN_PRIVATE_KEY COSIGN_PASSWORD
 set -euo pipefail
@@ -12,6 +17,8 @@ TRUST_CLASS="${TRUST_CLASS:-internal}"
 
 EVIDENCE=evidence
 mkdir -p "$EVIDENCE"
+
+fail() { echo "::error::$*"; exit 1; }
 
 # ---------------------------------------------------------------------------
 # 1. Resolve every input from versions.json. jq --arg, never string concat.
@@ -55,18 +62,37 @@ CA_DIGEST=$(lookup "$CA_KEY" '.bases[$k][$a].digest')
 TC_IMG=$(lookup "$TC_KEY" '.toolchains[$k].image')
 TC_DIGEST=$(lookup "$TC_KEY" '.toolchains[$k][$a].digest')
 
-XC_IMG=$(jq -r '.crosscheck.image' <<<"$IMG")
-XC_BINPATH=$(jq -r '.crosscheck.binaryPath' <<<"$IMG")
-XC_TIER=$(jq -r '.crosscheck.reproducibilityTier' <<<"$IMG")
-XC_DIGEST=$(jq -r --arg a "$ARCH" '.crosscheck[$a].digest' <<<"$IMG")
+# Provenance mode: a vendor comparison, or an explicit first-party
+# declaration. Never inferred from a missing crosscheck block.
+MODE_JSON=$(./scripts/provenance-mode.sh "$SERVICE") || fail "no valid provenance mode for ${LEG}"
+XC_MODE=$(jq -r '.mode' <<<"$MODE_JSON")
+case "$XC_MODE" in
+  vendor-crosscheck)
+    XC_IMG=$(jq -r '.crosscheck.image' <<<"$IMG")
+    XC_BINPATH=$(jq -r '.crosscheck.binaryPath' <<<"$IMG")
+    XC_TIER=$(jq -r '.crosscheck.reproducibilityTier' <<<"$IMG")
+    XC_DIGEST=$(jq -r --arg a "$ARCH" '.crosscheck[$a].digest' <<<"$IMG")
+    MUST_RESOLVE=(XC_IMG XC_BINPATH XC_DIGEST)
+    ;;
+  first-party)
+    FP_REASON=$(jq -r '.reason' <<<"$MODE_JSON")
+    # The same derivation as SRC_URL above; a disagreement is a bug in one.
+    [[ "$(jq -r '.sourceUrl' <<<"$MODE_JSON")" == "$SRC_URL" ]] \
+      || fail "provenance-mode.sh resolved $(jq -r '.sourceUrl' <<<"$MODE_JSON") but the build would fetch ${SRC_URL}"
+    MUST_RESOLVE=()
+    ;;
+  *) fail "unknown provenance mode '${XC_MODE}' for ${LEG}" ;;
+esac
 
 INSTALL_PATH=$(jq -r '.build.installPath' <<<"$IMG")
 
-for v in SRC_URL SRC_REF BASE_IMG BASE_DIGEST CA_DIGEST TC_DIGEST XC_DIGEST INSTALL_PATH; do
+for v in SRC_URL SRC_REF BASE_IMG BASE_DIGEST CA_DIGEST TC_DIGEST INSTALL_PATH "${MUST_RESOLVE[@]}"; do
   val="${!v}"
   [[ -n "$val" && "$val" != "null" ]] || { echo "::error::${v} unresolved for ${LEG}"; exit 1; }
 done
-for d in "$BASE_DIGEST" "$CA_DIGEST" "$TC_DIGEST" "$XC_DIGEST"; do
+DIGESTS=("$BASE_DIGEST" "$CA_DIGEST" "$TC_DIGEST")
+[[ "$XC_MODE" == "vendor-crosscheck" ]] && DIGESTS+=("$XC_DIGEST")
+for d in "${DIGESTS[@]}"; do
   [[ "$d" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::malformed digest: ${d}"; exit 1; }
 done
 
@@ -122,6 +148,14 @@ jq -n --arg tc "$TRUST_CLASS" --arg res "$UPSTREAM_RESULT" --arg reason "$UPSTRE
 # ---------------------------------------------------------------------------
 # 4. Build.
 # ---------------------------------------------------------------------------
+# A first-party Containerfile has no crosscheck label to fill, and
+# scripts/lint-containerfiles.sh forbids one, so the args are passed only for
+# a vendor comparison.
+XC_ARGS=()
+if [[ "$XC_MODE" == "vendor-crosscheck" ]]; then
+  XC_ARGS=(--build-arg CROSSCHECK_IMAGE="$XC_IMG" --build-arg CROSSCHECK_DIGEST="$XC_DIGEST")
+fi
+
 buildah bud \
   --platform "linux/${ARCH}" \
   --build-arg UPSTREAM_BASE="$BASE_IMG"     --build-arg UPSTREAM_DIGEST="$BASE_DIGEST" \
@@ -130,7 +164,7 @@ buildah bud \
   --build-arg SOURCE_URL="$SRC_URL"         --build-arg SOURCE_VERSION="$SRC_VERSION" \
   --build-arg SOURCE_REF="$SRC_REF"         --build-arg SOURCE_SHORT_REF="$SRC_SHORT" \
   --build-arg SOURCE_DATE="$SOURCE_DATE"    --build-arg SOURCE_GIT_VERSION="$SOURCE_GIT_VERSION" \
-  --build-arg CROSSCHECK_IMAGE="$XC_IMG"    --build-arg CROSSCHECK_DIGEST="$XC_DIGEST" \
+  "${XC_ARGS[@]}" \
   --build-arg IMAGE_VERSION="$SRC_VERSION"  --build-arg GIT_COMMIT="${GITHUB_SHA:-unknown}" \
   --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --build-arg TARGETARCH="$ARCH" \
@@ -165,7 +199,33 @@ CONFIG_USER=$(skopeo inspect --config "docker://${DEST_REPO}@${PUSHED}" | jq -r 
 #
 # THE OUTCOME IS NOT A GATE. Go builds are rarely bit-reproducible; a mismatch
 # is the expected result. See docs/build-track/dual-provenance.md.
+#
+# `mode` is written on BOTH paths. The review actor compares it with the mode
+# versions.json declares (PROVENANCE_MODE_MISMATCH); an absent one denies.
 # ---------------------------------------------------------------------------
+if [[ "$XC_MODE" == "first-party" ]]; then
+  # No vendor binary exists. Hash ours only, and record that no comparison
+  # was made and why. The hash is still the ADR-004 change detector.
+  OURS=$(./scripts/binary-crosscheck.sh --ours-only "${DEST_REPO}:${DEST_TAG}" "$INSTALL_PATH")
+  [[ "$OURS" =~ ^[0-9a-f]{64}$ ]] || fail "first-party hash is malformed: '${OURS}'"
+  echo "first-party: ours=${OURS} (no vendor binary exists)"
+
+  jq -n --arg leg "$LEG" --arg arch "$ARCH" --arg ours "$OURS" \
+        --arg reason "$FP_REASON" --arg src "$SRC_URL" \
+    '{ schema: "https://infrashift.io/attestation/binary-crosscheck/v1",
+       mode: "first-party",
+       subject: { leg: $leg, arch: $arch },
+       builtFromSource: { sha256: $ours },
+       firstParty: { noVendorBinary: true, reason: $reason, sourceUrl: $src },
+       comparison: { performed: false, gating: false,
+                     note: "FIRST-PARTY BUILD. No vendor binary exists, so nothing was compared. versions.json declares this for a source under https://github.com/infrashift/, and the review actor re-derives the declaration from the checked-out versions.json. The hash of our binary is a change detector over time." } }' \
+    > "$EVIDENCE/crosscheck.json"
+
+  XC_DEPS='[]'
+  XC_BYPRODUCTS=$(jq -cn --arg ours "$OURS" \
+    '[ { name: "binary/built-from-source", digest: { sha256: $ours },
+         annotations: { provenanceMode: "first-party", vendorReference: "none" } } ]')
+else
 read -r OURS THEIRS < <(./scripts/binary-crosscheck.sh \
   "${DEST_REPO}:${DEST_TAG}" "$INSTALL_PATH" "${XC_IMG}@${XC_DIGEST}" "$XC_BINPATH")
 
@@ -181,6 +241,7 @@ jq -n --arg leg "$LEG" --arg arch "$ARCH" --arg ours "$OURS" --arg theirs "$THEI
       --arg xcimg "$XC_IMG" --arg xcdig "$XC_DIGEST" --arg tier "$XC_TIER" \
       --argjson match "$MATCH" \
   '{ schema: "https://infrashift.io/attestation/binary-crosscheck/v1",
+     mode: "vendor-crosscheck",
      subject: { leg: $leg, arch: $arch },
      builtFromSource: { sha256: $ours },
      upstreamReference: { uri: $xcimg, digest: $xcdig, sha256: $theirs, trustClass: "none",
@@ -188,6 +249,16 @@ jq -n --arg leg "$LEG" --arg arch "$ARCH" --arg ours "$OURS" --arg theirs "$THEI
      comparison: { match: $match, gating: false, reproducibilityTier: $tier,
                    note: "OBSERVATION, NOT A GATE. A mismatch is expected: Go embeds build paths, toolchain patch version and module resolution state, and only the flag-matched tier replicates upstream flags closely enough for a match to be realistic." } }' \
   > "$EVIDENCE/crosscheck.json"
+
+XC_DEPS=$(jq -cn --arg xcimg "$XC_IMG" --arg xcdig "${XC_DIGEST#sha256:}" \
+  '[ { uri: $xcimg, digest: { sha256: $xcdig },
+       annotations: { role: "crosscheck-reference", trustClass: "none", verified: false,
+                      note: "Pinned by digest; signature not verifiable. Contributes no bits to the output image." } } ]')
+XC_BYPRODUCTS=$(jq -cn --arg ours "$OURS" --arg theirs "$THEIRS" --arg tier "$XC_TIER" --argjson match "$MATCH" \
+  '[ { name: "binary/built-from-source",  digest: { sha256: $ours } },
+     { name: "binary/upstream-reference", digest: { sha256: $theirs },
+       annotations: { match: $match, gating: false, reproducibilityTier: $tier } } ]')
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Scan the local OCI copy (identical bits to what was pushed).
@@ -216,8 +287,9 @@ jq -n --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg tc "$TRUS
 # 9. SLSA provenance. Unlike the mirror track this has REAL materials: the
 #    upstream project at a specific commit is externalParameters.source, our own
 #    repo moves to internalParameters.recipe (which is what it is), and
-#    resolvedDependencies grows to four role-annotated entries. Index 0 is the
-#    base by contract; consume 1..3 by annotations.role, never by index.
+#    resolvedDependencies grows to four role-annotated entries (three for a
+#    first-party build, which has no crosscheck reference). Index 0 is the
+#    base by contract; consume the rest by annotations.role, never by index.
 #
 #    The OIDC token is deliberately NOT embedded: the reference publishes a live
 #    sigstore-audience token in internalParameters.oidcToken as a public
@@ -232,8 +304,7 @@ jq -n \
   --arg baseimg "$BASE_IMG" --arg basedig "${BASE_DIGEST#sha256:}" \
   --arg caimg "$CA_IMG" --arg cadig "${CA_DIGEST#sha256:}" \
   --arg tcimg "$TC_IMG" --arg tcdig "${TC_DIGEST#sha256:}" \
-  --arg xcimg "$XC_IMG" --arg xcdig "${XC_DIGEST#sha256:}" \
-  --arg ours "$OURS" --arg theirs "$THEIRS" --arg tier "$XC_TIER" --argjson match "$MATCH" \
+  --arg mode "$XC_MODE" --argjson xcdeps "$XC_DEPS" --argjson byproducts "$XC_BYPRODUCTS" \
   --arg run "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID:-0}" \
   --argjson build "$(jq -c '.build' <<<"$IMG")" \
   '{ buildDefinition: {
@@ -246,23 +317,18 @@ jq -n \
          recipe: { uri: $recipe, digest: { sha1: $recipesha } },
          containerfile: $cf, platform: ("linux/" + $arch),
          goBuild: $build,
+         provenanceMode: $mode,
          sourceDateBasis: "committer-date-of-pinned-commit",
          output: { uri: $out, digest: { sha256: $outdig } } },
-       resolvedDependencies: [
+       resolvedDependencies: ([
          { uri: $baseimg, digest: { sha256: $basedig }, annotations: { role: "runtime-base" } },
          { uri: $caimg,   digest: { sha256: $cadig },
            annotations: { role: "ca-trust-donor", paths: ["/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"] } },
          { uri: $tcimg,   digest: { sha256: $tcdig },
-           annotations: { role: "toolchain", paths: ["/usr/share/zoneinfo"] } },
-         { uri: $xcimg,   digest: { sha256: $xcdig },
-           annotations: { role: "crosscheck-reference", trustClass: "none", verified: false,
-                          note: "Pinned by digest; signature not verifiable. Contributes no bits to the output image." } } ] },
+           annotations: { role: "toolchain", paths: ["/usr/share/zoneinfo"] } } ] + $xcdeps) },
      runDetails: {
        builder: { id: $run },
-       byproducts: [
-         { name: "binary/built-from-source",  digest: { sha256: $ours } },
-         { name: "binary/upstream-reference", digest: { sha256: $theirs },
-           annotations: { match: $match, gating: false, reproducibilityTier: $tier } } ] } }' \
+       byproducts: $byproducts } }' \
   > "$EVIDENCE/provenance.json"
 
 # ---------------------------------------------------------------------------

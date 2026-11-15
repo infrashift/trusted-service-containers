@@ -143,6 +143,9 @@ record upstream_verification "$(tr '[:lower:]' '[:upper:]' <<<"${SIG_STATE:0:1}"
 # ===========================================================================
 PROV="$EV/provenance.json"
 MIRROR_BLOCK='{}'; BUILD_BLOCK='{}'
+# Mirror legs have no build provenance mode; build legs set it below from
+# versions.json, never from the evidence.
+DECLARED_MODE=""
 
 if [[ "$KIND" == "mirror" ]]; then
   VAR=$(jq -ce --arg v "$VARIANT" '.variants[$v]' <<<"$IMG")
@@ -179,9 +182,25 @@ else
   REPO_KEY=$(jq -r '.repo // empty' <<<"$IMG")
   if [[ -n "$REPO_KEY" ]]; then
     PINNED_REF=$(jq -r --arg s "$SRC_KEY" --arg r "$REPO_KEY" '.sources[$s].repos[$r].commit' versions.json)
+    PINNED_URL=$(jq -r --arg s "$SRC_KEY" --arg r "$REPO_KEY" '.sources[$s].repos[$r].url // ""' versions.json)
   else
     PINNED_REF=$(jq -r --arg s "$SRC_KEY" '.sources[$s].commit' versions.json)
+    PINNED_URL=$(jq -r --arg s "$SRC_KEY" '.sources[$s].url // ""' versions.json)
   fi
+  # First-party mode (ADR-008). declared, crosscheck_pinned, reason and
+  # source_url come from the CHECKED-OUT versions.json -- the build actor
+  # cannot grant itself the mode. evidence_mode and built_source_url are what
+  # the build actor REPORTS it did; the policy requires them to agree.
+  # Raw facts only: the PDP decides, this script does not.
+  FIRST_PARTY=$(jq -c \
+    --arg url "$PINNED_URL" \
+    --arg built "$(jq -r '.buildDefinition.externalParameters.source.uri // "" | ltrimstr("git+")' "$PROV")" \
+    --arg evmode "$(jq -r '.mode // "<absent>"' "$EV/crosscheck.json")" \
+    '{ declared: (.firstParty | if type == "object" then .noVendorBinary == true else false end),
+       crosscheck_pinned: has("crosscheck"),
+       reason: (.firstParty | if type == "object" then (.reason // "") else "" end),
+       source_url: $url, built_source_url: $built, evidence_mode: $evmode }' <<<"$IMG")
+  DECLARED_MODE=$(jq -r 'if .declared then "first-party" else "vendor-crosscheck" end' <<<"$FIRST_PARTY")
   BASE_KEY=$(jq -r '.base' <<<"$IMG")
   BUILD_BLOCK=$(jq -n \
     --arg pinbaserepo "$(jq -r --arg k "$BASE_KEY" '.bases[$k].image' versions.json)" \
@@ -190,19 +209,25 @@ else
     --arg basedig "sha256:$(jq -r '.buildDefinition.resolvedDependencies[0].digest.sha256' "$PROV")" \
     --arg pinref "$PINNED_REF" \
     --arg ref "$(jq -r '.buildDefinition.externalParameters.source.digest.gitCommit' "$PROV")" \
-    --arg pinxc "$(jq -r --arg a "$ARCH" '.crosscheck[$a].digest' <<<"$IMG")" \
-    --argjson dp "$(jq -c '{performed:true,
-                            from_source_sha256:.builtFromSource.sha256,
-                            official_image_sha256:.upstreamReference.sha256,
-                            official_image_digest:.upstreamReference.digest,
-                            reproducibility_tier:.comparison.reproducibilityTier}' "$EV/crosscheck.json")" \
+    --arg pinxc "$(jq -r --arg a "$ARCH" '.crosscheck[$a].digest // "<pin-absent>"' <<<"$IMG")" \
+    --argjson dp "$(jq -c 'if .mode == "first-party"
+                           then {performed:false,
+                                 from_source_sha256:.builtFromSource.sha256}
+                           else {performed:true,
+                                 from_source_sha256:.builtFromSource.sha256,
+                                 official_image_sha256:.upstreamReference.sha256,
+                                 official_image_digest:.upstreamReference.digest,
+                                 reproducibility_tier:.comparison.reproducibilityTier} end' "$EV/crosscheck.json")" \
+    --argjson fp "$FIRST_PARTY" \
     '{ pinned_base_repo:$pinbaserepo, base_image_repo:$baserepo,
        pinned_base_digest:$pinbasedig, base_image_digest:$basedig,
        pinned_source_ref:$pinref, source_revision:$ref,
-       pinned_crosscheck_digest:$pinxc, dual_provenance:$dp }')
+       pinned_crosscheck_digest:$pinxc, dual_provenance:$dp,
+       first_party:$fp }')
   SRC_OK=$([[ "$(jq -r '.source_revision' <<<"$BUILD_BLOCK")" == "$PINNED_REF" ]] && echo PASS || echo FAIL)
   check "source commit == versions.json pin" "$SRC_OK"
   record source_pin_match "$SRC_OK" "pinned ${PINNED_REF}"
+  check "provenance mode (versions.json)" "$DECLARED_MODE"
 fi
 
 # Credential-shaped keys in anything we publish.
@@ -304,15 +329,17 @@ jq -n \
   --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg kind "$KIND" \
   --arg repo "$DEST_REPO" --arg tag "$DEST_TAG" --arg dig "$LIVE_DIGEST" \
   --arg verdict "$LEG_VERDICT" --arg ns "$LEG_NAMESPACE" --arg tc "$REPO_TRUST" --arg enf "$ENFORCEMENT" \
+  --arg pmode "$DECLARED_MODE" \
   --arg now "$EVALUATED_AT" --arg head "$HEAD_SHA" --arg pr "${PR_NUM:-}" \
   --arg brun "${BUILD_RUN_ID:-}" --arg rrun "${REVIEW_RUN_ID:-}" \
   --argjson platforms "$PLATFORMS" --argjson checks "$CHECKS" \
   --argjson perplat "$PER_PLATFORM" --argjson waived "$ALL_WAIVED" \
   '{ metadata: { timestamp:$now, evaluatedAt:$now, reviewer:"review-actor",
                  reviewRunId:$rrun, buildRunId:$brun, pullRequest:$pr, commitSha:$head },
-     subject: { leg:$leg, service:$svc, variant:$var, kind:$kind, trustClass:$tc,
-                enforcement:$enf, repository:$repo, tag:$tag, digest:$dig,
-                platforms:$platforms },
+     subject: ({ leg:$leg, service:$svc, variant:$var, kind:$kind, trustClass:$tc,
+                 enforcement:$enf, repository:$repo, tag:$tag, digest:$dig,
+                 platforms:$platforms }
+               + (if $pmode != "" then {provenanceMode:$pmode} else {} end)),
      checks: $checks,
      cve_policy: { result:$verdict, policy:"data.tsc.pdp.decision",
                    per_platform:$perplat, exceptions_applied:$waived },

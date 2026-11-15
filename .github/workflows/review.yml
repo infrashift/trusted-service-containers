@@ -305,6 +305,26 @@ jobs:
             } >> /tmp/report.md
           fi
 
+          # First-party builds (ADR-008) have no vendor binary, so they have no
+          # row above. Say so, rather than let the table go silent about them.
+          FP_ROWS=$(for f in "${FILES[@]}"; do
+            jq -r '.subject.leg as $l | .cve_policy.per_platform | to_entries[] | .key as $p
+                   | .value.observations[]? | select(.code == "FIRST_PARTY_BUILD")
+                   | "| `\($l)` | \($p) | `\(.from_source_sha256[0:12])` | \(.source_url) |"' "$f"
+          done | sort -u)
+          if [[ -n "$FP_ROWS" ]]; then
+            {
+              echo
+              echo "### First-party builds (no vendor binary — nothing to compare)"
+              echo
+              echo "| Leg | Platform | Built by us | Source |"
+              echo "|---|---|---|---|"
+              echo "$FP_ROWS"
+              echo
+              echo "_versions.json declares \`firstParty\` for these sources under github.com/infrashift/, and the review actor re-derived it from the checkout. The hash is a change detector over time, as for the cross-check._"
+            } >> /tmp/report.md
+          fi
+
           cat /tmp/report.md >> "$GITHUB_STEP_SUMMARY"
           { echo "overall=$OVERALL"; echo "quarantined=$(cut -d= -f2 /tmp/quarantined)"; } >> "$GITHUB_OUTPUT"
 

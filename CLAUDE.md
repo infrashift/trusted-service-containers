@@ -97,6 +97,13 @@ The policy gates that the comparison was **performed** and is **well-formed**,
 never its outcome. If someone proposes promoting it to a gate, read
 [ADR-004](./.okfw/decisions/adr-004-dual-provenance-is-an-observation-not-a-gate--01a18382f4a6.md) first.
 
+Our own `github.com/infrashift/*` services have no vendor binary to compare.
+Their entries declare `firstParty: {noVendorBinary: true, reason}` **in place
+of** `crosscheck`. A missing `crosscheck` is never that declaration, and a
+source outside `infrashift/` may not make it; the schema, the repo gate, the
+leg policy and `scripts/provenance-mode.sh` all deny both. See
+[ADR-008](./.okfw/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md).
+
 ## Workflow conventions
 
 - Every `uses:` pinned to a 40-char SHA; every tool version pinned in `tools.lock`.

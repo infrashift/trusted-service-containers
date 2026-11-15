@@ -169,6 +169,12 @@ for svc, img in sorted(build_imgs.items()):
     for sym in b['ldflagsVars'].values():
         if sym not in code:
             err(p, f"ldflags do not stamp `{sym}`; the binary would report `dev`")
+    # `noVersionSymbol` says the program has no version variable. The Go
+    # linker silently ignores -X for a symbol that does not exist, so any -X
+    # here would be a stamp that never lands.
+    if b.get('noVersionSymbol') and re.search(r'(^|\s)-X[\s=]', code):
+        err(p, "versions.json declares noVersionSymbol, but the build passes -X; "
+               "the linker ignores -X for a symbol that does not exist")
     if b.get('trimpath') and '-trimpath' not in code:
         err(p, "versions.json declares trimpath but the build does not pass -trimpath")
     if b.get('goToolchain') and f"GOTOOLCHAIN={b['goToolchain']}" not in code:
@@ -200,6 +206,15 @@ for svc, img in sorted(build_imgs.items()):
             err(p, f"extra binary /out/{x['binary']} is not built from {x['mainPackage']}")
         if f"/out/{x['binary']} {x['installPath']}" not in code:
             err(p, f"extra binary {x['binary']} is not installed to {x['installPath']}")
+
+    # --- A first-party image claims no vendor comparison ----------------
+    # versions.json `firstParty` (ADR-008) means no vendor binary exists.
+    # build-leg.sh passes no CROSSCHECK_* build args for it, so a crosscheck
+    # LABEL would expand to "@" -- an image label naming a comparison that
+    # never ran. Checked against the comment-stripped code, never `text`.
+    if 'firstParty' in img and 'CROSSCHECK_' in code:
+        err(p, "versions.json declares firstParty (no vendor binary), but the Containerfile "
+               "references CROSSCHECK_*; drop the crosscheck ARGs and label")
 
     # --- Declared release assets actually reach the builder -------------
     # scripts/fetch-assets.sh verifies them into src/.assets/<service>/. A

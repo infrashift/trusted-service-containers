@@ -82,6 +82,14 @@ base_build := {
 			"official_image_digest": D,
 			"reproducibility_tier": "best-effort",
 		},
+		"first_party": {
+			"declared": false,
+			"crosscheck_pinned": true,
+			"reason": "",
+			"source_url": "https://github.com/ory/kratos",
+			"built_source_url": "https://github.com/ory/kratos",
+			"evidence_mode": "vendor-crosscheck",
+		},
 	},
 	"scan_results": {
 		"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0,
@@ -526,6 +534,203 @@ test_dual_provenance_match_is_recorded if {
 }
 
 # ===========================================================================
+# First-party build mode (ADR-008)
+#
+# Our own infrashift/* services have no vendor binary. The mode is an explicit,
+# reasoned declaration in versions.json that the review actor re-derives from
+# the checkout. Every test below that expects a specific code ALSO expects
+# DUAL_PROVENANCE_NOT_RECORDED: the specific rule says why, the backstop is
+# what denies if a specific rule is ever deleted.
+# ===========================================================================
+
+FP_REASON := "keto-cue is an infrashift fork of Ory Keto; infrashift is the only publisher, so no vendor binary exists."
+
+FP_HASH := "aaaa000000000000000000000000000000000000000000000000000000000000"
+
+base_first_party := patch(base_build, [
+	{"op": "replace", "path": "/image/key", "value": "keto-cue"},
+	{"op": "replace", "path": "/image/labels/org.opencontainers.image.source", "value": "https://github.com/infrashift/keto-cue"},
+	{"op": "remove", "path": "/build/pinned_crosscheck_digest"},
+	{"op": "replace", "path": "/build/dual_provenance", "value": {"performed": false, "from_source_sha256": FP_HASH}},
+	{"op": "replace", "path": "/build/first_party", "value": {
+		"declared": true,
+		"crosscheck_pinned": false,
+		"reason": FP_REASON,
+		"source_url": "https://github.com/infrashift/keto-cue",
+		"built_source_url": "https://github.com/infrashift/keto-cue",
+		"evidence_mode": "first-party",
+	}},
+])
+
+fp_denied_with(i, code) if {
+	d := pdp.decision with input as i
+	not d.allow
+	d.namespace == "quarantine"
+	code in codes(d)
+	"DUAL_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+# The baseline must pass, or every negative test below is vacuous.
+test_base_first_party_allows if {
+	d := pdp.decision with input as base_first_party
+	d.allow
+	d.namespace == "trusted"
+	some o in d.observations
+	o.code == "FIRST_PARTY_BUILD"
+	o.gating == false
+	o.from_source_sha256 == FP_HASH
+	not "DUAL_PROVENANCE" in {x.code | some x in d.observations}
+}
+
+# A vendor build gets no first-party observation.
+test_vendor_build_has_no_first_party_observation if {
+	d := pdp.decision with input as base_build
+	not "FIRST_PARTY_BUILD" in {x.code | some x in d.observations}
+}
+
+# Nor does a declaration that fails a condition: the signed verdict must not
+# record "first-party build" for an image the mode does not cover.
+test_invalid_first_party_has_no_first_party_observation if {
+	i := patch(base_first_party, [
+		{"op": "replace", "path": "/build/first_party/source_url", "value": "https://github.com/ory/keto"},
+		{"op": "replace", "path": "/build/first_party/built_source_url", "value": "https://github.com/ory/keto"},
+	])
+	d := pdp.decision with input as i
+	not "FIRST_PARTY_BUILD" in {x.code | some x in d.observations}
+}
+
+# Absence never means first-party: a build with no comparison and no
+# first-party block at all is denied.
+test_absent_first_party_block_is_not_first_party if {
+	i := patch(base_first_party, [{"op": "remove", "path": "/build/first_party"}])
+	fp_denied_with(i, "PROVENANCE_MODE_MISMATCH")
+}
+
+# The build actor cannot choose the mode: evidence that claims first-party for
+# an image versions.json does not declare first-party is denied.
+test_build_actor_cannot_claim_first_party if {
+	i := patch(base_first_party, [{"op": "replace", "path": "/build/first_party/declared", "value": false}])
+	fp_denied_with(i, "PROVENANCE_MODE_MISMATCH")
+}
+
+# A string is not a boolean declaration.
+test_first_party_declared_as_string_is_not_declared if {
+	i := patch(base_first_party, [{"op": "replace", "path": "/build/first_party/declared", "value": "true"}])
+	fp_denied_with(i, "PROVENANCE_MODE_MISMATCH")
+}
+
+test_first_party_evidence_mode_absent_denies if {
+	i := patch(base_first_party, [{"op": "remove", "path": "/build/first_party/evidence_mode"}])
+	fp_denied_with(i, "PROVENANCE_MODE_MISMATCH")
+}
+
+# The other direction: versions.json declares first-party, the build reports
+# that it ran a vendor comparison.
+test_vendor_evidence_for_first_party_entry_denies if {
+	i := patch(base_first_party, [{"op": "replace", "path": "/build/first_party/evidence_mode", "value": "vendor-crosscheck"}])
+	fp_denied_with(i, "PROVENANCE_MODE_MISMATCH")
+}
+
+# On a vendor build the reported mode must also be present and agree.
+test_vendor_build_with_absent_evidence_mode_denies if {
+	i := patch(base_build, [{"op": "remove", "path": "/build/first_party/evidence_mode"}])
+	d := pdp.decision with input as i
+	not d.allow
+	"PROVENANCE_MODE_MISMATCH" in codes(d)
+}
+
+# Only github.com/infrashift/* may be first-party. Look-alikes too.
+test_first_party_vendor_source_denies if {
+	every url in [
+		"https://github.com/ory/keto",
+		"https://github.com/infrashift.evil/keto-cue",
+		"https://github.com/infrashiftx/keto-cue",
+		"https://github.com/infrashift/../ory/keto",
+		"https://github.com/infrashift/keto-cue/../../ory/keto",
+		"https://github.com/infrashift/",
+		"https://github.com/infrashift/.hidden",
+		"http://github.com/infrashift/keto-cue",
+		"git+https://github.com/infrashift/keto-cue",
+		"https://gitlab.com/infrashift/keto-cue",
+	] {
+		i := patch(base_first_party, [
+			{"op": "replace", "path": "/build/first_party/source_url", "value": url},
+			{"op": "replace", "path": "/build/first_party/built_source_url", "value": url},
+		])
+		fp_denied_with(i, "FIRST_PARTY_SOURCE_NOT_INFRASHIFT")
+	}
+}
+
+test_first_party_source_absent_denies if {
+	i := patch(base_first_party, [
+		{"op": "remove", "path": "/build/first_party/source_url"},
+		{"op": "remove", "path": "/build/first_party/built_source_url"},
+	])
+	fp_denied_with(i, "FIRST_PARTY_SOURCE_NOT_INFRASHIFT")
+}
+
+test_first_party_reason_missing_denies if {
+	every r in [null, "", "own image", "                                                    ", 42] {
+		i := patch(base_first_party, [{"op": "replace", "path": "/build/first_party/reason", "value": r}])
+		fp_denied_with(i, "FIRST_PARTY_REASON_MISSING")
+	}
+}
+
+test_first_party_with_crosscheck_pin_denies if {
+	i := patch(base_first_party, [{"op": "replace", "path": "/build/first_party/crosscheck_pinned", "value": true}])
+	fp_denied_with(i, "FIRST_PARTY_WITH_CROSSCHECK")
+}
+
+# The review must STATE that no crosscheck is pinned; silence is not "none".
+test_first_party_crosscheck_pinned_absent_denies if {
+	i := patch(base_first_party, [{"op": "remove", "path": "/build/first_party/crosscheck_pinned"}])
+	fp_denied_with(i, "FIRST_PARTY_WITH_CROSSCHECK")
+}
+
+test_first_party_built_from_other_source_denies if {
+	i := patch(base_first_party, [{"op": "replace", "path": "/build/first_party/built_source_url", "value": "https://github.com/ory/keto"}])
+	fp_denied_with(i, "FIRST_PARTY_SOURCE_URL_DISAGREES")
+}
+
+test_first_party_built_source_absent_denies if {
+	i := patch(base_first_party, [{"op": "remove", "path": "/build/first_party/built_source_url"}])
+	fp_denied_with(i, "FIRST_PARTY_SOURCE_URL_DISAGREES")
+}
+
+# No vendor hash, but our own hash is still mandatory and well-formed.
+test_first_party_own_hash_malformed_denies if {
+	every h in ["", "nothex", "AAAA000000000000000000000000000000000000000000000000000000000000"] {
+		i := patch(base_first_party, [{"op": "replace", "path": "/build/dual_provenance/from_source_sha256", "value": h}])
+		fp_denied_with(i, "DUAL_PROVENANCE_MALFORMED")
+	}
+}
+
+test_first_party_own_hash_absent_denies if {
+	i := patch(base_first_party, [{"op": "remove", "path": "/build/dual_provenance/from_source_sha256"}])
+	fp_denied_with(i, "DUAL_PROVENANCE_MALFORMED")
+}
+
+# `performed` must be an explicit false. Absent is not "first-party, no
+# comparison"; it is "nobody said".
+test_first_party_performed_absent_denies if {
+	i := patch(base_first_party, [{"op": "remove", "path": "/build/dual_provenance/performed"}])
+	d := pdp.decision with input as i
+	not d.allow
+	"DUAL_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+# First-party is a provenance mode, not CVE relief. The gate is unchanged.
+test_first_party_gets_no_cve_relief if {
+	i := patch(base_first_party, [
+		{"op": "replace", "path": "/scan_results/critical_count", "value": 1},
+		{"op": "replace", "path": "/scan_results/findings", "value": [{"id": "CVE-2026-0001", "severity": "Critical", "fix_state": "not-fixed", "package": "stdlib", "version": "1.26.10"}]},
+	])
+	d := pdp.decision with input as i
+	not d.allow
+	"CVE_CRITICAL" in codes(d)
+}
+
+# ===========================================================================
 # The CVE gate
 # ===========================================================================
 
@@ -742,7 +947,10 @@ base_repo := {
 	"evaluated_at": NOW,
 	"gitleaks": {"status": "ran", "findings": [], "config_bytes": 2994, "uses_default_ruleset": true},
 	"versions": {
-		"sources": {"ory": {"track": "^v26\\.[0-9]+\\.[0-9]+$", "repos": {"kratos": {"commit": COMMIT}}}},
+		"sources": {
+			"ory": {"track": "^v26\\.[0-9]+\\.[0-9]+$", "repos": {"kratos": {"url": "https://github.com/ory/kratos", "commit": COMMIT}}},
+			"keto-cue": {"track": "^v0\\.0\\.0-[0-9]{14}-[0-9a-f]{12}$", "url": "https://github.com/infrashift/keto-cue", "commit": COMMIT},
+		},
 		"bases": {"ubi9-micro": {}},
 		"images": {
 			"nexus3": {
@@ -762,6 +970,13 @@ base_repo := {
 				"toolchain": "go1.26", "base": "ubi9-micro", "caSource": "ubi9-minimal",
 				"containerfile": "Containerfiles/kratos.Containerfile",
 				"arches": ["amd64"], "crosscheck": {"amd64": {"digest": D}},
+			},
+			"keto-cue": {
+				"kind": "build", "upstreamTrust": "internal", "source": "keto-cue",
+				"toolchain": "go1.26", "base": "ubi9-micro", "caSource": "ubi9-minimal",
+				"containerfile": "Containerfiles/keto-cue.Containerfile",
+				"arches": ["amd64", "arm64"],
+				"firstParty": {"noVendorBinary": true, "reason": FP_REASON},
 			},
 		},
 	},
@@ -876,6 +1091,104 @@ test_build_entry_wrong_trust_class_denies if {
 	i := patch(base_repo, [{"op": "replace", "path": "/versions/images/kratos/upstreamTrust", "value": "none"}])
 	d := pdp.repo_decision with input as i with data.exceptions as []
 	"VERSIONS_BUILD_TRUST_CLASS_INVALID" in repo_codes(d)
+}
+
+# --- First-party entries at the repo gate (ADR-008) -------------------------
+
+repo_denied_with(i, code) if {
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	not d.allow
+	code in repo_codes(d)
+}
+
+# The baseline carries a valid first-party entry and allows (test_base_repo_allows);
+# this makes the dependency explicit.
+test_first_party_entry_without_crosscheck_allows if {
+	d := pdp.repo_decision with input as base_repo with data.exceptions as []
+	d.allow
+	not "VERSIONS_CROSSCHECK_DIGEST_INVALID" in repo_codes(d)
+}
+
+# Absence of crosscheck is not a first-party claim.
+test_build_entry_with_neither_mode_denies if {
+	i := patch(base_repo, [{"op": "remove", "path": "/versions/images/keto-cue/firstParty"}])
+	repo_denied_with(i, "VERSIONS_PROVENANCE_MODE_MISSING")
+	repo_denied_with(i, "VERSIONS_CROSSCHECK_DIGEST_INVALID")
+}
+
+test_build_entry_with_both_modes_denies if {
+	i := patch(base_repo, [{"op": "add", "path": "/versions/images/keto-cue/crosscheck", "value": {"amd64": {"digest": D}, "arm64": {"digest": D}}}])
+	repo_denied_with(i, "VERSIONS_FIRST_PARTY_CONFLICT")
+}
+
+# Both modes, but with a broken crosscheck: the first-party declaration must
+# not excuse it.
+test_first_party_does_not_excuse_a_present_crosscheck if {
+	i := patch(base_repo, [{"op": "add", "path": "/versions/images/keto-cue/crosscheck", "value": {}}])
+	repo_denied_with(i, "VERSIONS_CROSSCHECK_DIGEST_INVALID")
+}
+
+test_first_party_declaration_malformed_denies if {
+	every fp in [
+		{"noVendorBinary": false, "reason": FP_REASON},
+		{"noVendorBinary": "true", "reason": FP_REASON},
+		{"reason": FP_REASON},
+		{"noVendorBinary": true},
+		{"noVendorBinary": true, "reason": "ours"},
+		true,
+	] {
+		i := patch(base_repo, [{"op": "replace", "path": "/versions/images/keto-cue/firstParty", "value": fp}])
+		repo_denied_with(i, "VERSIONS_FIRST_PARTY_MALFORMED")
+		repo_denied_with(i, "VERSIONS_CROSSCHECK_DIGEST_INVALID")
+	}
+}
+
+# The hole the mode would open without this rule: mark a vendor image
+# first-party to skip its cross-check.
+test_first_party_on_vendor_source_denies if {
+	every url in [
+		"https://github.com/ory/keto",
+		"https://github.com/infrashift.evil/keto-cue",
+		"https://github.com/infrashift/../ory/keto",
+		"http://github.com/infrashift/keto-cue",
+	] {
+		i := patch(base_repo, [{"op": "replace", "path": "/versions/sources/keto-cue/url", "value": url}])
+		repo_denied_with(i, "VERSIONS_FIRST_PARTY_SOURCE_NOT_INFRASHIFT")
+		repo_denied_with(i, "VERSIONS_CROSSCHECK_DIGEST_INVALID")
+	}
+}
+
+test_first_party_source_without_url_denies if {
+	i := patch(base_repo, [{"op": "remove", "path": "/versions/sources/keto-cue/url"}])
+	repo_denied_with(i, "VERSIONS_FIRST_PARTY_SOURCE_NOT_INFRASHIFT")
+}
+
+# A repo-keyed source (Ory) resolves through sources.<s>.repos.<r>.url: kratos
+# swapping its crosscheck for a firstParty block is denied.
+test_first_party_on_repo_keyed_vendor_source_denies if {
+	i := patch(base_repo, [
+		# A decoy top-level url under infrashift: the repo key must win.
+		{"op": "add", "path": "/versions/sources/ory/url", "value": "https://github.com/infrashift/keto-cue"},
+		{"op": "add", "path": "/versions/images/kratos/repo", "value": "kratos"},
+		{"op": "remove", "path": "/versions/images/kratos/crosscheck"},
+		{"op": "add", "path": "/versions/images/kratos/firstParty", "value": {"noVendorBinary": true, "reason": FP_REASON}},
+	])
+	repo_denied_with(i, "VERSIONS_FIRST_PARTY_SOURCE_NOT_INFRASHIFT")
+	repo_denied_with(i, "VERSIONS_CROSSCHECK_DIGEST_INVALID")
+}
+
+# ...and the same entry is accepted when the repo key resolves to infrashift,
+# which proves the lookup follows `repo` rather than `sources.<s>.url`.
+test_first_party_on_repo_keyed_infrashift_source_allows if {
+	i := patch(base_repo, [
+		{"op": "add", "path": "/versions/sources/ory/url", "value": "https://github.com/ory/kratos"},
+		{"op": "replace", "path": "/versions/sources/ory/repos/kratos/url", "value": "https://github.com/infrashift/kratos-fork"},
+		{"op": "add", "path": "/versions/images/kratos/repo", "value": "kratos"},
+		{"op": "remove", "path": "/versions/images/kratos/crosscheck"},
+		{"op": "add", "path": "/versions/images/kratos/firstParty", "value": {"noVendorBinary": true, "reason": FP_REASON}},
+	])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	d.allow
 }
 
 # What makes Dapr's three images structurally incapable of drifting apart.

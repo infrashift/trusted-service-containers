@@ -1389,7 +1389,7 @@
         ],
         "volumes": [],
         "entrypoint": [
-          "litellm"
+          "litellm-entrypoint.sh"
         ],
         "cmd": [
           "--config",
@@ -1401,7 +1401,7 @@
         ],
         "user": 1001,
         "configFile": "rootfs/litellm/etc/litellm/config.yaml",
-        "note": "Ours. The default config has no model and takes the master key from LITELLM_MASTER_KEY; mount a config to add models and the Redis (Valkey) router settings. LITELLM_LOCAL_MODEL_COST_MAP=True: the model cost map comes from the wheel, not from GitHub at start. The health endpoints /health/liveliness and /health/liveness need no key."
+        "note": "Ours. The default config has no model and takes the master key from LITELLM_MASTER_KEY; mount a config to add models and the Redis (Valkey) router settings. LITELLM_LOCAL_MODEL_COST_MAP=True: the model cost map comes from the wheel, not from GitHub at start. The health endpoints /health/liveliness and /health/liveness need no key. The entrypoint (rootfs/litellm/usr/local/bin/litellm-entrypoint.sh) refuses to start when LITELLM_MASTER_KEY is unset or empty (owner's decision, 2026-11-15), then runs `litellm` with the arguments unchanged."
       },
       "updated": "2026-11-15",
       "reason": "Initial pin for HALO: LiteLLM is the OpenAI-compatible gateway to the model providers. Built in this repository by the owner's decision of 2026-11-15 (ADR-010), not mirrored from DHI: the DHI image's four blocking findings were all in its bundled Node.js, which this image does not carry. 1.109.1 is the newest LiteLLM release that is not a pre-release (2026-11-12). Onboarded in observe."

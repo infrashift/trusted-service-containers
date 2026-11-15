@@ -244,5 +244,20 @@ if not bad:
 sys.exit(1 if bad else 0)
 PY3
 
+# --- 12. No per-artifact glob over a pattern download ---------------------
+# download-artifact unpacks ONE artifact that matches `pattern:` straight into
+# `path:`, and several into `path/<artifact-name>/`. A `dir/*/file` glob sees
+# only the second shape: PR #63 had one review leg, a signed PASS, and a red
+# review/cve-policy that said no verdict was produced. Find files with a
+# bounded `find -maxdepth 2` instead; scripts/test-artifact-summaries.sh runs
+# the summaries against zero, one and many artifacts.
+HITS=$(grep -rnE '[A-Za-z0-9_.-]+/\*/[A-Za-z0-9_.-]+\.json' "$WF" | grep -vE ':[[:space:]]*#' || true)
+if [[ -n "$HITS" ]]; then
+  err "per-artifact glob over a download; it misses the single-artifact case (use find -maxdepth 2):"
+  echo "$HITS" >&2
+else
+  ok "no per-artifact glob over a pattern download"
+fi
+
 [[ "$fail" -eq 0 ]] && echo "OK: workflow lint passed"
 exit "$fail"

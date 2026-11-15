@@ -201,8 +201,11 @@ jobs:
         id: report
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          FILES=(verdicts/*/review-verdict.json)
+          # download-artifact unpacks ONE matching artifact straight into
+          # verdicts/, and several into verdicts/<artifact-name>/, whatever
+          # merge-multiple says. A verdicts/*/ glob therefore found nothing on a
+          # single-leg PR (#63) and failed a signed PASS. Search both depths.
+          mapfile -t FILES < <(find verdicts -maxdepth 2 -type f -name review-verdict.json 2>/dev/null | LC_ALL=C sort)
 
           {
             echo "## Trusted Service Containers — review"

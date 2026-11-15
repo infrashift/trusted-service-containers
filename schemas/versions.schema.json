@@ -372,8 +372,21 @@
           {
             "if": { "properties": { "kind": { "const": "native" } }, "required": ["kind"] },
             "then": {
-              "description": "ADR-010. Built on a pinned UBI builder (`builder`, a key of bases) with the compiler from the Red Hat signed UBI repositories, onto a pinned runtime base. Language `c` compiles the pinned commit of `source`, whose `archive` pins the vendor's release archive. No vendor binary comparison: the hash of our binary is recorded as a change detector.",
-              "required": ["source", "builder", "base", "arches", "containerfile", "native", "runtime"],
+              "description": "ADR-010. Built on a pinned UBI builder (`builder`, a key of bases) with the compiler or interpreter from the Red Hat signed UBI repositories, onto a pinned runtime base. Language `c` compiles the pinned commit of `source`, whose `archive` pins the vendor's release archive. Language `python` installs the committed hash-locked wheel set `native.lock` into a venv, and names no `source`. No vendor binary comparison: the hash of our binary (c) or of the lock (python) is recorded as a change detector.",
+              "required": ["builder", "base", "arches", "containerfile", "native", "runtime"],
+              "allOf": [
+                {
+                  "if": { "properties": { "native": { "properties": { "language": { "const": "c" } }, "required": ["language"] } }, "required": ["native"] },
+                  "then": { "required": ["source"] }
+                },
+                {
+                  "if": { "properties": { "native": { "properties": { "language": { "const": "python" } }, "required": ["language"] } }, "required": ["native"] },
+                  "then": {
+                    "not": { "required": ["source"] },
+                    "properties": { "native": { "required": ["runtimePackages", "distribution", "version", "projectUrl", "lock", "venv"] } }
+                  }
+                }
+              ],
               "not": { "anyOf": [
                 { "required": ["toolchain"] }, { "required": ["caSource"] }, { "required": ["build"] },
                 { "required": ["crosscheck"] }, { "required": ["firstParty"] }, { "required": ["packages"] },
@@ -390,13 +403,32 @@
                   "required": ["language", "buildPackages", "binary", "installPath"],
                   "additionalProperties": false,
                   "properties": {
-                    "language": { "enum": ["c"] },
+                    "language": { "enum": ["c", "python"] },
                     "buildPackages": { "type": "array", "minItems": 1, "uniqueItems": true,
                       "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$" },
                       "description": "RPM names the builder installs from the signed UBI repositories. Names, not NEVRAs: UBI content is not pinned by NEVRA (ADR-009). The SBOM of the builder is not shipped; the provenance records this list." },
                     "binary": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
-                    "installPath": { "type": "string", "pattern": "^/usr/bin/[A-Za-z0-9][A-Za-z0-9._-]*$",
-                                     "description": "Where the primary binary lands. Its sha256 is recorded as the change detector of ADR-004." },
+                    "installPath": { "type": "string", "pattern": "^/(usr/bin|opt/[A-Za-z0-9][A-Za-z0-9._-]*/bin)/[A-Za-z0-9][A-Za-z0-9._-]*$",
+                                     "description": "Where the primary binary (c) or the console script (python, inside the venv) lands. For c, its sha256 is recorded as the change detector of ADR-004." },
+                    "runtimePackages": { "type": "array", "minItems": 1, "uniqueItems": true,
+                      "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$" },
+                      "description": "python: RPM names the runtime stage installs from the signed UBI repositories (the interpreter). Never pip and never a compiler." },
+                    "distribution": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                      "description": "python: the distribution whose version is the image version (litellm)." },
+                    "version": { "type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*$",
+                      "description": "python: the release of `distribution` in the lock. It is the release tag, so it must satisfy the registry tag grammar." },
+                    "projectUrl": { "type": "string", "pattern": "^https://",
+                      "description": "python: the project page; the image label org.opencontainers.image.source." },
+                    "lock": {
+                      "type": "object", "required": ["path", "sha256"], "additionalProperties": false,
+                      "description": "python: the committed lock, generated with --generate-hashes. Every requirement is name==version with at least one sha256. The review holds the lock in the checkout, the copy in the image and the installed distributions against each other.",
+                      "properties": {
+                        "path": { "type": "string", "pattern": "^locks/[a-z0-9][a-z0-9._-]*/requirements\\.txt$" },
+                        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+                      }
+                    },
+                    "venv": { "type": "string", "pattern": "^/opt/[A-Za-z0-9][A-Za-z0-9._-]*$",
+                      "description": "python: the venv the lock is installed into. The image also carries the lock at <venv>/requirements.txt." },
                     "extraBinaries": { "type": "array", "minItems": 1, "uniqueItems": true,
                       "items": { "type": "string", "pattern": "^/usr/bin/[A-Za-z0-9][A-Za-z0-9._-]*$" } },
                     "makeFlags": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*=[A-Za-z0-9._-]*$" },

@@ -13,6 +13,7 @@
 * [keto](keto--01a183832dc0.md) - Ory Keto, the permission server, built CGO-free from the pinned Ory source onto ubi9-micro in lockstep with the Ory images.
 * [keto-cue](keto-cue--01a1dbce4e47.md) - The infrashift fork of Ory Keto with CUE permission schemas, built first-party from a pinned infrashift commit onto ubi9-micro.
 * [kratos](kratos--01a183832d7f.md) - Ory Kratos, the identity server, built from the pinned Ory source onto ubi9-micro in lockstep with the other three Ory images.
+* [litellm](litellm--01a1df710394.md) - The LiteLLM proxy 1.109.1 from a hash-locked wheel set on the Python 3.12 of UBI; native python (ADR-010), no Node.js, no database.
 * [loki](loki--01a183832eba.md) - The Grafana Loki log store with the logcli client, built from source onto ubi9-micro; it joined in observe mode.
 * [mssql](mssql--01a183832d44.md) - Microsoft SQL Server 2025 on RHEL 10, mirrored from MCR for amd64 only and verified with its Notary Project signature; trust class notation.
 * [nats](nats--01a183832e00.md) - The NATS messaging server with JetStream, built from source onto ubi9-micro with our own config and the strongest binary cross-check anchor.

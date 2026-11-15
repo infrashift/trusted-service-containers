@@ -208,12 +208,13 @@ d = lambda c: {"digest": "sha256:" + c * 64}
 img = lambda **kw: {"kind": "build", "source": "s", "toolchain": "t", "base": "b", "caSource": "c", "arches": ["amd64"], **kw}
 pkg = {"kind": "package", "base": "b", "packages": {"repo": "r"}, "arches": ["amd64"]}
 nat = {"kind": "native", "source": "s3", "builder": "u", "base": "b", "arches": ["amd64"]}
+py = {"kind": "native", "builder": "u", "base": "b", "arches": ["amd64"], "native": {"language": "python", "lock": {"sha256": "a" * 64}}}
 base = {"sources": {"s": {"commit": "1" * 40}, "s2": {"commit": "2" * 40},
                     "s3": {"commit": "3" * 40, "archive": {"sha256": "a" * 64}}},
         "toolchains": {"t": {"amd64": d("a")}},
         "bases": {"b": {"amd64": d("a")}, "c": {"amd64": d("a")}, "u": {"amd64": d("a")}},
         "packageRepos": {"r": {"amd64": {"signerFileSha256": "a" * 64}}, "r2": {"amd64": {"signerFileSha256": "b" * 64}}},
-        "images": {"one": img(), "two": img(), "other": img(source="s2"), "pkg": pkg, "nat": nat,
+        "images": {"one": img(), "two": img(), "other": img(source="s2"), "pkg": pkg, "nat": nat, "py": py,
                    "mirror": {"kind": "mirror", "variants": {"v": d("a")}}}}
 def changed(mut):
     head = json.loads(json.dumps(base)); mut(head)
@@ -223,8 +224,9 @@ def changed(mut):
 cases = {
     "toolchain + one image entry": (lambda h: (h['toolchains']['t'].update(amd64=d("b")), h['images']['one'].update(note="x")),
                                     ["one", "other", "two"]),
-    "base only":                   (lambda h: h['bases']['b'].update(amd64=d("b")), ["nat", "one", "other", "pkg", "two"]),
-    "native builder only":         (lambda h: h['bases']['u'].update(amd64=d("b")), ["nat"]),
+    "base only":                   (lambda h: h['bases']['b'].update(amd64=d("b")), ["nat", "one", "other", "pkg", "py", "two"]),
+    "native builder only":         (lambda h: h['bases']['u'].update(amd64=d("b")), ["nat", "py"]),
+    "python lock pin only":        (lambda h: h['images']['py']['native']['lock'].update(sha256="b" * 64), ["py"]),
     "native archive only":         (lambda h: h['sources']['s3']['archive'].update(sha256="b" * 64), ["nat"]),
     "CA donor only":               (lambda h: h['bases']['c'].update(amd64=d("b")), ["one", "other", "two"]),
     "one source only":             (lambda h: h['sources']['s2'].update(commit="3" * 40), ["other"]),

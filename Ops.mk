@@ -61,6 +61,7 @@ help:
 	echo "  lint-workflows        cross-workflow drift checks (guard, context, paths, perms)"
 	echo "  lint-containerfiles   Containerfile shape + versions.json agreement"
 	echo "  lint-skills           every documented file path resolves"
+	echo "  check-locks           native python locks against their sha256 pins and hash-only format"
 	echo "  check-wiki            okfw schema + OKF format + no dangling links in .okfw/"
 	echo "  test-scripts          drift-upstream.sh, propose-drift.sh, provenance-mode.sh and the release Gate step against fixtures and stubs"
 	echo "  policy-test           opa check --strict, opa fmt, opa test --threshold 85"
@@ -76,7 +77,7 @@ help:
 	echo "  images:   $(words $(IMAGES)) ($(words $(MIRROR_IMAGES)) mirror, $(words $(BUILD_IMAGES)) build, $(words $(PACKAGE_IMAGES)) package, $(words $(NATIVE_IMAGES)) native)"
 
 .PHONY: validate
-validate: check-versions check-schema check-keyring check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills check-wiki lint-shell test-scripts policy-test
+validate: check-versions check-schema check-keyring check-locks check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills check-wiki lint-shell test-scripts policy-test
 	echo "OK: repository validation passed"
 
 .PHONY: check-versions
@@ -104,6 +105,10 @@ check-versions:
 .PHONY: check-schema
 check-schema:
 	python3 scripts/validate-schema.py
+
+.PHONY: check-locks
+check-locks:
+	./scripts/check-locks.sh
 
 .PHONY: check-keyring
 check-keyring:
@@ -267,7 +272,7 @@ verify-build-pins:
 		live=$$(curl -fsSL --proto '=https' --retry 3 "$$url" 2>/dev/null | sha256sum | cut -d' ' -f1)
 		if [ "$$live" = "$$sha" ]; then printf '  %-16s archive current  %s\n' "$$src" "$$url"
 		else printf '  %-16s archive CHANGED  pinned=%s live=%s\n' "$$src" "$$sha" "$$live"; stale=$$((stale + 1)); fi
-	done < <(jq -r '. as $$d | [$$d.images[] | select(.kind=="native") | .source] | unique[] as $$s | [$$s, ($$d.sources[$$s].archive.url // ""), ($$d.sources[$$s].archive.sha256 // "")] | @tsv' $(VERSIONS))
+	done < <(jq -r '. as $$d | [$$d.images[] | select(.kind=="native" and .native.language=="c") | .source] | unique[] as $$s | [$$s, ($$d.sources[$$s].archive.url // ""), ($$d.sources[$$s].archive.sha256 // "")] | @tsv' $(VERSIONS))
 	if [ "$$stale" -ne 0 ]; then echo "$$stale base or toolchain pin(s) stale." >&2; exit 1; fi
 
 .PHONY: verify-package-pins

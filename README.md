@@ -82,6 +82,16 @@ binary comparison; the binary hash is recorded as a change detector.
 |---|---|---|
 | `valkey` | `valkey-io/valkey`, archive sha256 from `valkey-io/valkey-hashes` | `9.1.x`, built with TLS |
 
+Python software is kind `native` with language `python`: a committed hash lock
+(`locks/<image>/requirements.txt`, sha256-pinned in `versions.json`) installed
+with `pip --require-hashes --no-deps --only-binary=:all:` into a venv on the
+Python 3.12 of UBI. The review requires the venv in the image to hold exactly
+the lock.
+
+| Image | Pinned input | Notes |
+|---|---|---|
+| `litellm` | `locks/litellm/requirements.txt` (`litellm[proxy]==1.109.1` + `redis`, 117 wheels) | No Node.js, no Prisma: the proxy without a database |
+
 ---
 
 ## Consuming the images

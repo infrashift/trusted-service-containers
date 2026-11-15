@@ -427,6 +427,40 @@ for svc, img in sorted(native_imgs.items()):
             if path and f"COPY --from=builder /out{path} {path}" not in runtime:
                 err(p, f"the runtime stage does not install {path} from the builder (COPY --from=builder /out{path} {path})")
 
+    if nat.get('language') == 'python':
+        lock = nat.get('lock', {}).get('path', '')
+        venv = nat.get('venv', '')
+        for need in ('LOCK_SHA256', 'VENV'):
+            if f'ARG {need}' not in builder:
+                err(p, f"the builder stage does not declare `ARG {need}`")
+        if f"COPY {lock} /tmp/requirements.txt" not in builder:
+            err(p, f"the builder does not copy the pinned lock {lock} to /tmp/requirements.txt")
+        if not re.search(r'\$\{LOCK_SHA256\}[^;]*/tmp/requirements\.txt[^;]*\|\s*sha256sum --check --strict', builder):
+            err(p, "the lock is not checked against ${LOCK_SHA256} with `sha256sum --check --strict` in the builder")
+        if not re.search(r'-m venv --without-pip "?\$\{VENV\}"?', builder):
+            err(p, "the venv is not created with `-m venv --without-pip ${VENV}`; pip in the venv would be an unlocked distribution")
+        pip = re.findall(r'-m pip\b[^;&|]*\binstall\b[^;&|]*', builder)
+        if len(pip) != 1:
+            err(p, f"the builder must run exactly one `pip install`, found {len(pip)}")
+        for cmd in pip:
+            for flag in ('--require-hashes', '--no-deps', '--only-binary=:all:', '-r /tmp/requirements.txt'):
+                if flag not in cmd:
+                    err(p, f"`pip install` does not pass {flag}; the lock would not bind what pip installs")
+        pipcmds = re.findall(r'\bpip\b[^;&|]*', code)
+        for bad in (r'--trusted-host', r'--extra-index-url', r'--index-url\s+http://', r'--no-binary', r'--find-links', r'(^|\s)-f\s'):
+            if any(re.search(bad, c) for c in pipcmds):
+                err(p, f"the pip invocation uses {bad}; only hash-checked wheels from the default index are allowed")
+        if not re.search(r'-m pip(\s+--python\s+\S+)?\s+check\s*(;|$)', builder, re.M):
+            err(p, "the builder does not run `pip check` on the venv")
+        if not re.search(r'/tmp/requirements\.txt "?\$\{VENV\}/requirements\.txt"?', builder):
+            err(p, "the lock is not installed at ${VENV}/requirements.txt; scripts/native-python-observe.sh reads it there")
+        if not re.search(r'\bmicrodnf\b[^;]*\binstall\b[^;]*\$\{RUNTIME_PACKAGES\}', runtime):
+            err(p, "the runtime stage does not install exactly ${RUNTIME_PACKAGES} (versions.json native.runtimePackages)")
+        if re.search(r'\bpip\b[^;]*\binstall\b', runtime):
+            err(p, "the runtime stage runs pip; the venv comes from the builder only")
+        if venv and f"COPY --from=builder {venv} {venv}" not in runtime:
+            err(p, f"the runtime stage does not copy the venv {venv} from the builder")
+
     # Non-root, group 0, and USER 1001 last.
     if 'x:1001:0:' not in runtime:
         err(p, "does not append a UID 1001 / GID 0 passwd entry")

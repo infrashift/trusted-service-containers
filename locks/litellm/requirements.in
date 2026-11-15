@@ -1,0 +1,15 @@
+# The top-level requirements of the litellm image (ADR-010, native, python).
+# requirements.txt is generated from this file; never edit it by hand:
+#
+#   uv pip compile --python-version 3.12 --python-platform x86_64-manylinux_2_34 \
+#     --only-binary :all: --generate-hashes --exclude-newer <date> requirements.in
+#
+# then update images.litellm.native.lock.sha256 in versions.json. The same
+# lock serves amd64 and arm64: uv writes the hash of every file of each pinned
+# version, and pip picks the wheel for the platform.
+#
+# The LiteLLM proxy, without the database extra (no Prisma, no Node.js).
+litellm[proxy]==1.109.1
+# The Redis client. HALO points the LiteLLM router and rate limits at Valkey.
+# rq already depends on it; it is named here so that the lock always has it.
+redis

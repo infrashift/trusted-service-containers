@@ -102,9 +102,17 @@ tracks := {"mirror", "build", "package", "native"}
 # them.
 built_tracks := {"build", "package", "native"}
 
-# The built tracks that compile a pinned source commit. They share the
-# source-ref rules below.
-source_tracks := {"build", "native"}
+# The legs that compile a pinned source commit share the source-ref rules
+# below: every build leg, and a native leg of language c. A native python leg
+# has no commit; its lock rules take that place. An unknown language matches
+# neither and denies through NATIVE_LANGUAGE_INVALID and
+# NATIVE_PROVENANCE_NOT_RECORDED.
+compiles_source if track == "build"
+
+compiles_source if {
+	track == "native"
+	object.get(input, ["native", "language"], missing) == "c"
+}
 
 # input.build.<field> on the build track, input.package.<field> on the package
 # track, input.native.<field> on the native track. Only called where
@@ -718,7 +726,7 @@ violations contains v if {
 # The check that gives the build track its meaning: the review actor
 # independently confirms the artifact was built from the reviewed source pin.
 violations contains v if {
-	track in source_tracks
+	compiles_source
 	pinned := built_field("pinned_source_ref", "<pin-absent>")
 	actual := built_field("source_revision", "<actual-absent>")
 	pinned != actual
@@ -728,14 +736,14 @@ violations contains v if {
 # A git tag or branch is not a pin -- it can be moved or force-pushed. Build
 # and native entries pin a 40-character commit SHA.
 violations contains v if {
-	track in source_tracks
+	compiles_source
 	ref := built_field("source_revision", missing)
 	not regex.match(`^[0-9a-f]{40}$`, ref)
 	v := {"code": "BUILD_SOURCE_REF_NOT_PINNED", "value": ref, "message": sprintf("%v.source_revision %q is not a 40-character commit SHA. Tags and branches move; commits do not. Denying.", [track, ref])}
 }
 
 violations contains v if {
-	track in source_tracks
+	compiles_source
 	labelled := object.get(input, ["image", "labels", "org.opencontainers.image.revision"], "<label-absent>")
 	actual := built_field("source_revision", "<actual-absent>")
 	labelled != actual
@@ -1151,10 +1159,11 @@ violations contains v if {
 # ===========================================================================
 # TRACK: native
 # ===========================================================================
-# A native image compiles a pinned source commit on a pinned UBI builder,
-# with the compiler from the Red Hat signed UBI repositories, onto our base
-# (ADR-010). It answers P-TSC-4 for C software that no free signed repository
-# ships (Valkey). The provenance is:
+# A native image is built on a pinned UBI builder, with the compiler or the
+# interpreter from the Red Hat signed UBI repositories, onto our base
+# (ADR-010). Language `c` compiles a pinned source commit (Valkey). Language
+# `python` installs a committed hash-locked wheel set into a venv (LiteLLM);
+# its rules are in the second half of this section. The provenance of `c` is:
 #
 #   the runtime base    shared rules above (BUILD_BASE_*, BUILD_LABEL_*)
 #   the source commit   shared rules above (BUILD_SOURCE_REF_*,
@@ -1183,32 +1192,64 @@ violations contains v if {
 # native_mode_valid, which repeats every condition. A deleted or weakened
 # specific rule therefore still denies (contract point 4).
 
-native_languages := {"c"}
+native_languages := {"c", "python"}
 
 native_field(f, fallback) := object.get(input, ["native", f], fallback)
 
-native_pins_wellformed if {
-	native_field("language", missing) in native_languages
-	regex.match(`^[0-9a-f]{40}$`, native_field("pinned_source_ref", ""))
+native_language := native_field("language", missing)
+
+# The pins and conditions every language shares: the builder and the version.
+native_common_pins_wellformed if {
+	native_language in native_languages
 	regex.match(`^https://`, native_field("pinned_source_url", ""))
-	regex.match(`^[0-9a-f]{64}$`, native_field("pinned_archive_sha256", ""))
-	regex.match(`^https://`, native_field("pinned_archive_url", ""))
 	is_digest(native_field("pinned_builder_digest", null))
 	is_string(native_field("pinned_builder_repo", null))
 	is_string(native_field("pinned_version", null))
 }
 
-native_mode_valid if {
+native_pins_wellformed if {
+	native_language == "c"
+	native_common_pins_wellformed
+	regex.match(`^[0-9a-f]{40}$`, native_field("pinned_source_ref", ""))
+	regex.match(`^[0-9a-f]{64}$`, native_field("pinned_archive_sha256", ""))
+	regex.match(`^https://`, native_field("pinned_archive_url", ""))
+}
+
+native_pins_wellformed if {
+	native_language == "python"
+	native_common_pins_wellformed
+	regex.match(`^[0-9a-f]{64}$`, native_field("pinned_lock_sha256", ""))
+	regex.match(`^[a-z0-9][a-z0-9.-]*$`, native_field("pinned_distribution", ""))
+	native_locked_wellformed
+}
+
+native_common_valid if {
 	track == "native"
 	native_pins_wellformed
 	object.get(input, ["native", "verification", "performed"], false) == true
 	native_field("pinned_builder_digest", "<pin-absent>") == native_field("builder_image_digest", "<observed-absent>")
 	native_field("pinned_builder_repo", "<pin-absent>") == native_field("builder_image_repo", "<observed-absent>")
+}
+
+native_mode_valid if {
+	native_language == "c"
+	native_common_valid
 	native_field("pinned_source_url", "<pin-absent>") == native_field("source_url", "<observed-absent>")
 	native_field("pinned_archive_sha256", "<pin-absent>") == native_field("archive_sha256", "<observed-absent>")
 	native_field("pinned_archive_url", "<pin-absent>") == native_field("archive_url", "<observed-absent>")
 	native_field("archive_tree_match", "<observed-absent>") == true
 	regex.match(`^[0-9a-f]{64}$`, native_field("from_source_sha256", ""))
+}
+
+native_mode_valid if {
+	native_language == "python"
+	native_common_valid
+	native_field("pinned_lock_sha256", "<pin-absent>") == native_field("lock_sha256", "<observed-absent>")
+	native_field("pinned_lock_sha256", "<pin-absent>") == native_field("checkout_lock_sha256", "<checkout-absent>")
+	native_field("pinned_lock_sha256", "<pin-absent>") == object.get(input, ["image", "labels", "org.opencontainers.image.revision"], "<label-absent>")
+	native_locked_set == native_installed_set
+	native_locked_set == native_verified_set
+	native_pinned_requirement in native_locked_set
 }
 
 violations contains v if {
@@ -1253,6 +1294,7 @@ violations contains v if {
 
 violations contains v if {
 	track == "native"
+	native_language == "c"
 	pinned := native_field("pinned_source_url", "<pin-absent>")
 	observed := native_field("source_url", "<observed-absent>")
 	pinned != observed
@@ -1277,6 +1319,7 @@ violations contains v if {
 
 violations contains v if {
 	track == "native"
+	native_language == "c"
 	pinned := native_field("pinned_archive_sha256", "<pin-absent>")
 	observed := native_field("archive_sha256", "<observed-absent>")
 	pinned != observed
@@ -1285,6 +1328,7 @@ violations contains v if {
 
 violations contains v if {
 	track == "native"
+	native_language == "c"
 	pinned := native_field("pinned_archive_url", "<pin-absent>")
 	observed := native_field("archive_url", "<observed-absent>")
 	pinned != observed
@@ -1295,14 +1339,145 @@ violations contains v if {
 # sentinel string, which is not true, so absence denies.
 violations contains v if {
 	track == "native"
+	native_language == "c"
 	native_field("archive_tree_match", "<observed-absent>") != true
 	v := {"code": "NATIVE_ARCHIVE_TREE_MISMATCH", "value": native_field("archive_tree_match", missing), "message": "The build did not record that the file tree of the pinned commit equals the file tree of the pinned release archive. The archive sha256 is the independent check on the commit; without the comparison it checks nothing. Denying."}
 }
 
 violations contains v if {
 	track == "native"
+	native_language == "c"
 	not regex.match(`^[0-9a-f]{64}$`, native_field("from_source_sha256", ""))
 	v := {"code": "NATIVE_BINARY_HASH_MALFORMED", "message": "native.from_source_sha256 is missing or not a 64-hex sha256. A native build records the hash of the binary it built as its change detector (ADR-004). Denying."}
+}
+
+# --- native, language python ---------------------------------------------
+# The pinned input is a committed lock (`pip-compile --generate-hashes`
+# format): every requirement is name==version with sha256 hashes. pip
+# installs it with --require-hashes --no-deps --only-binary=:all: into a venv
+# created --without-pip. The facts and where they come from:
+#
+#   pinned_lock_sha256, pinned_distribution, pinned_version
+#                       the CHECKED-OUT versions.json
+#   checkout_lock_sha256, locked_distributions
+#                       the lock file in the checkout, read by the review
+#   lock_sha256, installed_distributions
+#                       LIVE from the image on GHCR: the copy of the lock in
+#                       the venv, and the Python distributions under the venv
+#                       (syft) -- scripts/native-python-observe.sh
+#   verified_distributions
+#                       the build actor's signed evidence: what the venv's
+#                       own interpreter listed inside the pushed image
+#
+# Every distribution set is normalised (PEP 503 name, lower case) as
+# "name==version". The image holds exactly the lock: nothing missing, nothing
+# extra.
+
+native_dist_pattern := `^[a-z0-9]([a-z0-9.-]*[a-z0-9])?==[A-Za-z0-9.+!_-]+$`
+
+native_dists_wellformed(field) if {
+	ds := native_field(field, null)
+	is_array(ds)
+	count(ds) > 0
+	every d in ds {
+		is_string(d)
+		regex.match(native_dist_pattern, d)
+	}
+}
+
+native_locked_wellformed if native_dists_wellformed("locked_distributions")
+
+native_installed_wellformed if native_dists_wellformed("installed_distributions")
+
+native_verified_wellformed if native_dists_wellformed("verified_distributions")
+
+native_set(field) := {d | some d in native_field(field, [])}
+
+native_locked_set := native_set("locked_distributions")
+
+native_installed_set := native_set("installed_distributions")
+
+native_verified_set := native_set("verified_distributions")
+
+native_pinned_requirement := concat("==", [native_field("pinned_distribution", "<pin-absent>"), native_field("pinned_version", "<pin-absent>")])
+
+violations contains v if {
+	track == "native"
+	native_language == "python"
+	pinned := native_field("pinned_lock_sha256", "<pin-absent>")
+	observed := native_field("lock_sha256", "<observed-absent>")
+	pinned != observed
+	v := {"code": "NATIVE_LOCK_SHA256_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins lock sha256 %v but the lock in the image has %v. Denying.", [pinned, observed])}
+}
+
+violations contains v if {
+	track == "native"
+	native_language == "python"
+	pinned := native_field("pinned_lock_sha256", "<pin-absent>")
+	checkout := native_field("checkout_lock_sha256", "<checkout-absent>")
+	pinned != checkout
+	v := {"code": "NATIVE_LOCK_CHECKOUT_MISMATCH", "pinned": pinned, "checkout": checkout, "message": sprintf("versions.json pins lock sha256 %v but the lock file in the checkout has %v. Regenerate the pin with the lock. Denying.", [pinned, checkout])}
+}
+
+violations contains v if {
+	track == "native"
+	native_language == "python"
+	pinned := native_field("pinned_lock_sha256", "<pin-absent>")
+	labelled := object.get(input, ["image", "labels", "org.opencontainers.image.revision"], "<label-absent>")
+	pinned != labelled
+	v := {"code": "NATIVE_REVISION_LABEL_DISAGREES", "pinned": pinned, "labelled": labelled, "message": sprintf("Label org.opencontainers.image.revision says %v but versions.json pins lock sha256 %v. Denying.", [labelled, pinned])}
+}
+
+violations contains v if {
+	track == "native"
+	native_language == "python"
+	some field in ["locked_distributions", "installed_distributions", "verified_distributions"]
+	not native_dists_wellformed(field)
+	v := {"code": "NATIVE_DISTRIBUTIONS_MALFORMED", "field": field, "message": sprintf("native.%v must be a non-empty list of normalised name==version strings. Denying.", [field])}
+}
+
+violations contains v if {
+	track == "native"
+	native_language == "python"
+	some d in (native_locked_set - native_installed_set)
+	v := {"code": "NATIVE_DISTRIBUTION_NOT_INSTALLED", "distribution": d, "message": sprintf("The lock pins %v, but the image on GHCR does not hold it at that version. Denying.", [d])}
+}
+
+violations contains v if {
+	track == "native"
+	native_language == "python"
+	some d in (native_installed_set - native_locked_set)
+	v := {"code": "NATIVE_DISTRIBUTION_UNLOCKED", "distribution": d, "message": sprintf("The image on GHCR holds %v, which the lock does not pin. Every distribution in the venv must come from the lock. Denying.", [d])}
+}
+
+violations contains v if {
+	track == "native"
+	native_language == "python"
+	some d in (native_locked_set - native_verified_set)
+	v := {"code": "NATIVE_DISTRIBUTION_NOT_VERIFIED", "distribution": d, "message": sprintf("The build did not find %v at that version with the venv's own interpreter. Denying.", [d])}
+}
+
+violations contains v if {
+	track == "native"
+	native_language == "python"
+	not native_pinned_requirement in native_locked_set
+	v := {"code": "NATIVE_VERSION_NOT_LOCKED", "requirement": native_pinned_requirement, "message": sprintf("versions.json pins %v, but the lock does not hold it. The image version must be the locked release. Denying.", [native_pinned_requirement])}
+}
+
+observations contains o if {
+	native_mode_valid
+	native_language == "python"
+	o := {
+		"code": "NATIVE_BUILD",
+		"language": "python",
+		"source_url": input.native.pinned_source_url,
+		"requirement": native_pinned_requirement,
+		"lock_sha256": input.native.pinned_lock_sha256,
+		"distributions": count(native_locked_set),
+		"builder": sprintf("%v@%v", [input.native.pinned_builder_repo, input.native.pinned_builder_digest]),
+		"gating": false,
+		"message": "Native build, python: the venv holds exactly the distributions of the pinned lock, each installed by pip from a file whose sha256 is in the lock (--require-hashes --no-deps --only-binary=:all:). The review re-derived the lock in the checkout, its copy in the image and the installed distributions from the image on GHCR. The wheels are binaries that their PyPI publishers built; the lock pins their bytes.",
+	}
 }
 
 # ===========================================================================
@@ -1319,6 +1494,9 @@ remediation_hint := "DHI advertises a near-zero known-CVE baseline, so a finding
 	track == "build"
 } else := "A package image installs its base packages from the signed UBI repositories at build time, so a rebuild picks up every fix UBI has published; a pinned package clears only with a newer NEVRA in the pinned repository (scripts/drift-upstream.sh proposes it). Check both before considering an exception: a fix that RHEL has shipped can take days to reach the UBI repositories." if {
 	track == "package"
+} else := "A native python image installs a hash-locked wheel set onto the Python of UBI. A finding in a Python distribution clears with a new lock (bump the requirement, regenerate the lock with its hashes, re-pin lock.sha256) in a reviewed PR; a finding in a UBI package clears with a rebuild once UBI publishes the fix (check the UBI repodata first)." if {
+	track == "native"
+	native_language == "python"
 } else := "A native image compiles a pinned source commit on UBI and upgrades its UBI base at build time. A finding in a UBI package clears with a rebuild once UBI publishes the fix (check the UBI repodata first); a finding in the program clears with a source bump inside its track." if {
 	track == "native"
 } else := "Check whether a newer release on the declared track clears this before considering an exception."
@@ -1497,6 +1675,7 @@ observations contains o if {
 # A native image has no vendor binary to compare. Record what it DOES prove.
 observations contains o if {
 	native_mode_valid
+	native_language == "c"
 	o := {
 		"code": "NATIVE_BUILD",
 		"language": input.native.language,
@@ -2034,9 +2213,27 @@ native_images := {key: img |
 	object.get(img, "kind", missing) == "native"
 }
 
+native_required_fields := {
+	"c": [["source"]],
+	"python": [
+		["native", "lock", "path"], ["native", "lock", "sha256"], ["native", "distribution"],
+		["native", "version"], ["native", "projectUrl"], ["native", "venv"],
+	],
+}
+
+native_image_language(img) := object.get(img, ["native", "language"], missing)
+
+native_c_images := {key: img | some key, img in native_images; native_image_language(img) == "c"}
+
+native_python_images := {key: img | some key, img in native_images; native_image_language(img) == "python"}
+
 repo_violations contains v if {
 	some key, img in native_images
-	some field in [["source"], ["builder"], ["base"], ["containerfile"], ["native", "binary"], ["native", "installPath"]]
+	fields := array.concat(
+		[["builder"], ["base"], ["containerfile"], ["native", "binary"], ["native", "installPath"]],
+		object.get(native_required_fields, native_image_language(img), []),
+	)
+	some field in fields
 	not is_string(object.get(img, field, null))
 	v := {"code": "VERSIONS_NATIVE_FIELD_MISSING", "image": key, "field": concat(".", field), "message": sprintf("native entry images.%v.%v is missing. Denying.", [key, concat(".", field)])}
 }
@@ -2064,7 +2261,7 @@ repo_violations contains v if {
 }
 
 repo_violations contains v if {
-	some key, img in native_images
+	some key, img in native_c_images
 	not object.get(img, "source", missing) in object.keys(versions_sources)
 	v := {"code": "VERSIONS_NATIVE_SOURCE_DANGLING", "image": key, "message": sprintf("images.%v.source %q has no matching entry under sources. Denying.", [key, object.get(img, "source", missing)])}
 }
@@ -2095,17 +2292,51 @@ native_archive_names_ref(src) if {
 }
 
 repo_violations contains v if {
-	some key, img in native_images
+	some key, img in native_c_images
 	not native_archive_wellformed(native_source(img))
 	v := {"code": "VERSIONS_NATIVE_ARCHIVE_MISSING", "image": key, "source": object.get(img, "source", missing), "message": sprintf("images.%v builds sources.%v, which pins no well-formed `archive` (an https url and a 64-hex sha256). A native build compares the commit with the vendor's release archive; without the pin the commit has no independent check. Denying.", [key, object.get(img, "source", missing)])}
 }
 
 repo_violations contains v if {
-	some key, img in native_images
+	some key, img in native_c_images
 	src := native_source(img)
 	native_archive_wellformed(src)
 	not native_archive_names_ref(src)
 	v := {"code": "VERSIONS_NATIVE_ARCHIVE_REF_MISMATCH", "image": key, "source": object.get(img, "source", missing), "message": sprintf("sources.%v.archive.url %q does not name the pinned ref %q. Denying.", [object.get(img, "source", missing), object.get(src, ["archive", "url"], missing), object.get(src, "ref", missing)])}
+}
+
+# A python entry has no git source: its pinned input is the lock. A `source`
+# would suggest a commit that nothing checks.
+repo_violations contains v if {
+	some key, img in native_python_images
+	"source" in object.keys(img)
+	v := {"code": "VERSIONS_NATIVE_KIND_CONFLICT", "image": key, "field": "source", "message": sprintf("native python entry images.%v declares `source`; its pinned input is native.lock. Denying.", [key])}
+}
+
+# The lock lives under locks/<image key>/, so one image cannot install
+# another image's lock, and is pinned by a full sha256.
+repo_violations contains v if {
+	some key, img in native_python_images
+	not native_lock_pin_valid(key, img)
+	v := {"code": "VERSIONS_NATIVE_LOCK_INVALID", "image": key, "message": sprintf("images.%v.native.lock must be {path: \"locks/%v/requirements.txt\", sha256: <64 hex>}. Denying.", [key, key])}
+}
+
+native_lock_pin_valid(key, img) if {
+	object.get(img, ["native", "lock", "path"], missing) == sprintf("locks/%v/requirements.txt", [key])
+	regex.match(`^[0-9a-f]{64}$`, object.get(img, ["native", "lock", "sha256"], ""))
+}
+
+# The console script runs from the venv, never from a path the RPMs own.
+repo_violations contains v if {
+	some key, img in native_python_images
+	not native_install_path_in_venv(img)
+	v := {"code": "VERSIONS_NATIVE_INSTALL_PATH_OUTSIDE_VENV", "image": key, "message": sprintf("images.%v.native.installPath %q is not under %v/bin/. Denying.", [key, object.get(img, ["native", "installPath"], missing), object.get(img, ["native", "venv"], missing)])}
+}
+
+native_install_path_in_venv(img) if {
+	venv := object.get(img, ["native", "venv"], missing)
+	regex.match(`^/opt/[A-Za-z0-9][A-Za-z0-9._-]*$`, venv)
+	startswith(object.get(img, ["native", "installPath"], ""), concat("", [venv, "/bin/"]))
 }
 
 # --- sources ---------------------------------------------------------------

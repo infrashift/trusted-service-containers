@@ -6,10 +6,12 @@
 #   package  install signed RPMs at pinned NEVRAs from one pinned repository
 #            onto our trusted base, and prove with `rpm -q` that exactly those
 #            NEVRAs, signed by the pinned key, are in the image (ADR-009).
-#   native   compile a pinned source commit on a pinned UBI builder, with the
-#            compiler from the signed UBI repositories, onto our trusted base;
-#            prove that the commit's tree equals the vendor's release archive
-#            pinned by sha256, and record the hash of our binary (ADR-010).
+#   native   build on a pinned UBI builder, with the compiler or interpreter
+#            from the signed UBI repositories, onto our trusted base (ADR-010).
+#            Language c: compile a pinned commit, prove its tree equals the
+#            vendor's release archive pinned by sha256, record the binary hash.
+#            Language python: install a committed hash lock into a venv, and
+#            prove with the venv's own interpreter that it holds exactly it.
 #
 # The kind comes from versions.json, never from the matrix alone; an entry of
 # any other kind fails here.
@@ -123,9 +125,14 @@ DEST_TAG="pr-${PR_NUM}-${SRC_VERSION}-${ARCH}"
 
 elif [[ "$KIND" == native ]]; then
   # -------------------------------------------------------------------------
-  # 1n. Native kind (ADR-010): the source commit, its release archive, the
-  #     UBI builder and the build packages, for THIS arch.
+  # 1n. Native kind (ADR-010): the pinned input of the language, the UBI
+  #     builder and the build packages, for THIS arch.
   # -------------------------------------------------------------------------
+  NATIVE_LANG=$(jq -r '.native.language' <<<"$IMG")
+  INSTALL_PATH=$(jq -r '.native.installPath' <<<"$IMG")
+  case "$NATIVE_LANG" in
+  c)
+  [[ "$INSTALL_PATH" =~ ^/usr/bin/[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "native.installPath '${INSTALL_PATH}' is malformed"
   SRC_KEY=$(jq -r '.source' <<<"$IMG")
   SRC_URL=$(jq -r --arg s "$SRC_KEY" '.sources[$s].url // ""'    versions.json)
   SRC_REF=$(jq -r --arg s "$SRC_KEY" '.sources[$s].commit // ""' versions.json)
@@ -136,11 +143,38 @@ elif [[ "$KIND" == native ]]; then
   [[ "$SRC_URL" =~ ^https:// ]]      || fail "sources.${SRC_KEY}.url is not an https URL: ${SRC_URL}"
   [[ "$SRC_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || fail "sources.${SRC_KEY}.ref '${SRC_VERSION}' is not tag-safe"
   [[ "$ARCHIVE_SHA" =~ ^[a-f0-9]{64}$ ]] || fail "sources.${SRC_KEY}.archive.sha256 is not pinned"
-
-  NATIVE_LANG=$(jq -r '.native.language' <<<"$IMG")
-  [[ "$NATIVE_LANG" == c ]] || fail "native.language '${NATIVE_LANG}' is not supported by build-leg.sh"
-  INSTALL_PATH=$(jq -r '.native.installPath' <<<"$IMG")
-  [[ "$INSTALL_PATH" =~ ^/usr/bin/[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "native.installPath '${INSTALL_PATH}' is malformed"
+  ;;
+  python)
+  # The pinned input is the committed lock. Its sha256 must be the pin here,
+  # before anything is built; the Containerfile checks it again, and the
+  # review re-reads both the checkout and the copy in the image.
+  LOCK_PATH=$(jq -r '.native.lock.path' <<<"$IMG")
+  LOCK_SHA=$(jq -r '.native.lock.sha256' <<<"$IMG")
+  VENV=$(jq -r '.native.venv' <<<"$IMG")
+  PY_DIST=$(jq -r '.native.distribution' <<<"$IMG")
+  SRC_VERSION=$(jq -r '.native.version' <<<"$IMG")
+  SRC_URL=$(jq -r '.native.projectUrl' <<<"$IMG")
+  SRC_REF="$LOCK_SHA"
+  [[ "$LOCK_PATH" == "locks/${SERVICE}/requirements.txt" ]] || fail "native.lock.path '${LOCK_PATH}' is not locks/${SERVICE}/requirements.txt"
+  [[ "$LOCK_SHA" =~ ^[a-f0-9]{64}$ ]] || fail "native.lock.sha256 is not pinned"
+  [[ -f "$LOCK_PATH" ]] || fail "${LOCK_PATH} is not in the checkout"
+  GOT_SHA=$(sha256sum "$LOCK_PATH" | cut -d' ' -f1)
+  [[ "$GOT_SHA" == "$LOCK_SHA" ]] || fail "${LOCK_PATH} has sha256 ${GOT_SHA}; versions.json pins ${LOCK_SHA}"
+  [[ "$VENV" =~ ^/opt/[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "native.venv '${VENV}' is malformed"
+  [[ "$INSTALL_PATH" == "${VENV}/bin/"* ]] || fail "native.installPath '${INSTALL_PATH}' is not under ${VENV}/bin/"
+  [[ "$SRC_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || fail "native.version '${SRC_VERSION}' is not tag-safe"
+  [[ "$SRC_URL" =~ ^https:// ]] || fail "native.projectUrl is not an https URL: ${SRC_URL}"
+  LOCKED=$(./scripts/python-lock.sh "$LOCK_PATH") || fail "${LOCK_PATH} is not a hash lock"
+  jq -e --arg r "${PY_DIST}==${SRC_VERSION}" 'index($r) != null' <<<"$LOCKED" >/dev/null \
+    || fail "${LOCK_PATH} does not pin ${PY_DIST}==${SRC_VERSION}"
+  mapfile -t RUNTIME_PKGS < <(jq -r '.native.runtimePackages[]?' <<<"$IMG")
+  [[ ${#RUNTIME_PKGS[@]} -gt 0 ]] || fail "images.${SERVICE}.native.runtimePackages is empty"
+  for b in "${RUNTIME_PKGS[@]}"; do
+    [[ "$b" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || fail "runtime package '${b}' is not an RPM name"
+  done
+  ;;
+  *) fail "native.language '${NATIVE_LANG}' is not supported by build-leg.sh" ;;
+  esac
   mapfile -t BUILD_PKGS < <(jq -r '.native.buildPackages[]?' <<<"$IMG")
   [[ ${#BUILD_PKGS[@]} -gt 0 ]] || fail "images.${SERVICE}.native.buildPackages is empty"
   for b in "${BUILD_PKGS[@]}"; do
@@ -234,6 +268,7 @@ elif [[ "$KIND" == native ]]; then
 # 2n. Fetch the source at the pinned COMMIT, then the release archive pinned
 #     by sha256, and require identical file trees. (native kind only)
 # ---------------------------------------------------------------------------
+if [[ "$NATIVE_LANG" == c ]]; then
 ./scripts/fetch-source.sh "$SERVICE" "$SRC_URL" "$SRC_REF" "$SRC_VERSION"
 ./scripts/fetch-archive.sh "$SERVICE" "$SRC_KEY" > /tmp/archive-check.json \
   || fail "the release archive of ${SRC_KEY} does not verify against the pinned commit"
@@ -241,6 +276,7 @@ jq -e --arg sha "$ARCHIVE_SHA" '.tree_match == true and .sha256 == $sha' /tmp/ar
   || fail "fetch-archive.sh did not confirm the pinned archive"
 ARCHIVE_URL=$(jq -r '.url' /tmp/archive-check.json)
 SOURCE_DATE=$(cat "src/.meta/${SERVICE}.source-date")
+fi
 
 # The builder is one of our bases: verify it with the same release key as
 # the runtime base, and refuse to compile on anything that does not verify.
@@ -293,7 +329,20 @@ jq -n --arg tc "$TRUST_CLASS" --arg res "$UPSTREAM_RESULT" --arg reason "$UPSTRE
 # ---------------------------------------------------------------------------
 # 4. Build.
 # ---------------------------------------------------------------------------
-if [[ "$KIND" == native ]]; then
+if [[ "$KIND" == native && "$NATIVE_LANG" == python ]]; then
+buildah bud \
+  --platform "linux/${ARCH}" \
+  --build-arg BUILDER_BASE="$BUILDER_IMG"   --build-arg BUILDER_DIGEST="$BUILDER_DIGEST" \
+  --build-arg UPSTREAM_BASE="$BASE_IMG"     --build-arg UPSTREAM_DIGEST="$BASE_DIGEST" \
+  --build-arg BUILD_PACKAGES="${BUILD_PKGS[*]}" --build-arg RUNTIME_PACKAGES="${RUNTIME_PKGS[*]}" \
+  --build-arg LOCK_SHA256="$LOCK_SHA"       --build-arg VENV="$VENV" \
+  --build-arg SOURCE_URL="$SRC_URL"         --build-arg SOURCE_REF="$SRC_REF" \
+  --build-arg SOURCE_VERSION="$SRC_VERSION" \
+  --build-arg GIT_COMMIT="${GITHUB_SHA:-unknown}" \
+  --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --build-arg TARGETARCH="$ARCH" \
+  -t "${DEST_REPO}:${DEST_TAG}" -f "$CONTAINERFILE" .
+elif [[ "$KIND" == native ]]; then
 buildah bud \
   --platform "linux/${ARCH}" \
   --build-arg BUILDER_BASE="$BUILDER_IMG"   --build-arg BUILDER_DIGEST="$BUILDER_DIGEST" \
@@ -400,7 +449,46 @@ fi
 #     the change detector of ADR-004. There is no vendor comparison; see
 #     ADR-010. The archive check ran before the build (step 2n).
 # ---------------------------------------------------------------------------
-if [[ "$KIND" == native ]]; then
+if [[ "$KIND" == native && "$NATIVE_LANG" == python ]]; then
+  # Ask the venv's own interpreter, inside the pushed image, which
+  # distributions it sees, normalised as python-lock.sh normalises the lock.
+  # The venv was created --without-pip, so the two sets must be equal.
+  CTR=$(buildah from --pull=missing "${DEST_REPO}:${DEST_TAG}")
+  VERIFIED=$(buildah run "$CTR" -- "${VENV}/bin/python" -I -c '
+import importlib.metadata as m, json, re
+print(json.dumps(sorted(re.sub(r"[-_.]+", "-", d.metadata["Name"]).lower() + "==" + d.version for d in m.distributions())))') \
+    || { buildah rm "$CTR" >/dev/null 2>&1 || true; fail "the venv interpreter in the image could not list its distributions"; }
+  IMG_LOCK_SHA=$(buildah run "$CTR" -- sha256sum "${VENV}/requirements.txt" | cut -d' ' -f1)
+  buildah rm "$CTR" >/dev/null
+  [[ "$IMG_LOCK_SHA" == "$LOCK_SHA" ]] || fail "the lock in the image has sha256 ${IMG_LOCK_SHA}; versions.json pins ${LOCK_SHA}"
+  MISSING=$(jq -rn --argjson l "$LOCKED" --argjson v "$VERIFIED" '$l - $v | join(" ")')
+  EXTRA=$(jq -rn --argjson l "$LOCKED" --argjson v "$VERIFIED" '$v - $l | join(" ")')
+  [[ -z "$MISSING" ]] || fail "the venv does not hold the locked distribution(s): ${MISSING}"
+  [[ -z "$EXTRA" ]]   || fail "the venv holds distribution(s) the lock does not pin: ${EXTRA}"
+  echo "native python: ${LOCK_PATH} sha256=${LOCK_SHA}; the venv holds exactly its $(jq length <<<"$LOCKED") distributions"
+  jq -n --arg leg "$LEG" --arg arch "$ARCH" \
+        --arg path "$LOCK_PATH" --arg sha "$LOCK_SHA" --arg venv "$VENV" \
+        --arg dist "$PY_DIST" --arg ver "$SRC_VERSION" --arg url "$SRC_URL" \
+        --arg bimg "$BUILDER_IMG" --arg bdig "$BUILDER_DIGEST" \
+        --argjson pkgs "$(printf '%s\n' "${BUILD_PKGS[@]}" | jq -R -s -c 'split("\n")|map(select(length>0))')" \
+        --argjson rpkgs "$(printf '%s\n' "${RUNTIME_PKGS[@]}" | jq -R -s -c 'split("\n")|map(select(length>0))')" \
+        --argjson locked "$LOCKED" --argjson verified "$VERIFIED" \
+    '{ schema: "https://infrashift.io/attestation/native-verification/v1",
+       subject: { leg: $leg, arch: $arch },
+       language: "python",
+       lock: { path: $path, sha256: $sha, distributions: $locked,
+               install: "pip install --require-hashes --no-deps --only-binary=:all: into a venv created --without-pip" },
+       release: { distribution: $dist, version: $ver, projectUrl: $url },
+       venv: $venv,
+       builder: { image: $bimg, digest: $bdig, packages: $pkgs,
+                  note: "Installed by name from the Red Hat signed UBI repositories (gpgcheck=1). The builder stage is not shipped." },
+       runtimePackages: $rpkgs,
+       verified_distributions: $verified,
+       comparison: { performed: false, gating: false,
+                     note: "NATIVE BUILD, python. No vendor image comparison. The lock pins the bytes of every wheel; the wheels are binaries that their PyPI publishers built (ADR-010)." },
+       verification: { performed: true, tool: "importlib.metadata of the venv interpreter, inside the pushed image" } }' \
+    > "$EVIDENCE/native-verification.json"
+elif [[ "$KIND" == native ]]; then
   OURS=$(./scripts/binary-crosscheck.sh --ours-only "${DEST_REPO}:${DEST_TAG}" "$INSTALL_PATH")
   [[ "$OURS" =~ ^[0-9a-f]{64}$ ]] || fail "native binary hash is malformed: '${OURS}'"
   echo "native: ${INSTALL_PATH} sha256=${OURS}; archive ${ARCHIVE_SHA:0:12} matches commit ${SRC_REF:0:12}"
@@ -523,7 +611,46 @@ jq -n --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg tc "$TRUS
                     sbom: ("sbom-" + $slug + ".json"), cve: ("cve-" + $slug + ".json") } ],
      manifest_group: $leg }' > "$EVIDENCE/subject.json"
 
-if [[ "$KIND" == native ]]; then
+if [[ "$KIND" == native && "$NATIVE_LANG" == python ]]; then
+# ---------------------------------------------------------------------------
+# 9n-python. SLSA provenance, native python. The pinned input is the lock:
+#     externalParameters.lock. Index 0 is the base by contract; the builder,
+#     the lock and one entry per locked distribution follow, by role.
+# ---------------------------------------------------------------------------
+jq -n \
+  --arg leg "$LEG" --arg arch "$ARCH" --arg cf "$CONTAINERFILE" \
+  --arg recipe "git+${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}" \
+  --arg recipesha "${GITHUB_SHA:-unknown}" \
+  --arg out "${DEST_REPO}@${PUSHED}" --arg outdig "${PUSHED#sha256:}" \
+  --arg baseimg "$BASE_IMG" --arg basedig "${BASE_DIGEST#sha256:}" \
+  --arg bimg "$BUILDER_IMG" --arg bdig "${BUILDER_DIGEST#sha256:}" \
+  --arg lpath "$LOCK_PATH" --arg lsha "$LOCK_SHA" \
+  --arg dist "$PY_DIST" --arg ver "$SRC_VERSION" --arg url "$SRC_URL" \
+  --arg run "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID:-0}" \
+  --argjson native "$(jq -c '.native' <<<"$IMG")" \
+  --argjson locked "$LOCKED" \
+  '{ buildDefinition: {
+       buildType: "https://github.com/infrashift/trusted-service-containers/build/native/v1",
+       externalParameters: {
+         lock: { uri: ($recipe + "#" + $lpath), digest: { sha256: $lsha },
+                 annotations: { distribution: $dist, version: $ver, projectUrl: $url } },
+         leg: $leg, arch: $arch },
+       internalParameters: {
+         recipe: { uri: $recipe, digest: { sha1: $recipesha } },
+         containerfile: $cf, platform: ("linux/" + $arch),
+         native: $native,
+         output: { uri: $out, digest: { sha256: $outdig } } },
+       resolvedDependencies: (
+         [ { uri: $baseimg, digest: { sha256: $basedig }, annotations: { role: "runtime-base" } },
+           { uri: $bimg,    digest: { sha256: $bdig },    annotations: { role: "builder" } },
+           { uri: ($recipe + "#" + $lpath), digest: { sha256: $lsha }, annotations: { role: "python-lock" } } ]
+         + [ $locked[] | split("==") | { uri: ("pkg:pypi/" + .[0] + "@" + .[1]),
+                                          annotations: { role: "python-distribution", pinnedBy: "python-lock" } } ]) },
+     runDetails: {
+       builder: { id: $run },
+       byproducts: [ { name: "python/venv", annotations: { distributions: ($locked | length) } } ] } }' \
+  > "$EVIDENCE/provenance.json"
+elif [[ "$KIND" == native ]]; then
 # ---------------------------------------------------------------------------
 # 9n. SLSA provenance, native kind. The source commit is
 #     externalParameters.source, as on the build track. Index 0 is the base by

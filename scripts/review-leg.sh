@@ -251,6 +251,56 @@ elif [[ "$KIND" == native ]]; then
   [[ -f "$NV" ]] || fail "a native leg must carry native-verification.json"
   BASE_KEY=$(jq -r '.base' <<<"$IMG")
   BUILDER_KEY=$(jq -r '.builder' <<<"$IMG")
+  NATIVE_LANG=$(jq -r '.native.language // ""' <<<"$IMG")
+  if [[ "$NATIVE_LANG" == python ]]; then
+  # Language python: the lock is the pinned input. The lock in the CHECKOUT
+  # gives the locked set and its sha256; the copy of the lock in the image and
+  # the distributions under the venv come LIVE from GHCR; what the venv's
+  # interpreter listed during the build comes from the signed evidence.
+  if ! command -v syft >/dev/null 2>&1; then
+    TOOLS_BIN="${RUNNER_TEMP:-/tmp}/tsc-review-bin"
+    mkdir -p "$TOOLS_BIN"
+    BIN="$TOOLS_BIN" ./scripts/install-tools.sh syft >/dev/null || fail "could not install the pinned syft"
+    PATH="${TOOLS_BIN}:${PATH}"
+  fi
+  LOCK_PATH=$(jq -r '.native.lock.path // ""' <<<"$IMG")
+  [[ "$LOCK_PATH" =~ ^locks/[a-z0-9][a-z0-9._-]*/requirements\.txt$ && -f "$LOCK_PATH" ]] \
+    || fail "versions.json declares lock ${LOCK_PATH} but it is not in the checkout"
+  CHECKOUT_LOCK_SHA=$(sha256sum "$LOCK_PATH" | cut -d' ' -f1)
+  LOCKED=$(./scripts/python-lock.sh "$LOCK_PATH") || LOCKED='[]'
+  OBSERVED=$(scripts/native-python-observe.sh "${DEST_REPO}@${LIVE_DIGEST}" "$(jq -r '.native.venv // ""' <<<"$IMG")") \
+    || fail "could not re-derive the Python distributions of ${DEST_REPO}@${LIVE_DIGEST} from GHCR"
+  NATIVE_BLOCK=$(jq -n \
+    --arg pinbaserepo "$(jq -r --arg k "$BASE_KEY" '.bases[$k].image' versions.json)" \
+    --arg baserepo "$(jq -r '.buildDefinition.resolvedDependencies[0].uri' "$PROV")" \
+    --arg pinbasedig "$(jq -r --arg k "$BASE_KEY" --arg a "$ARCH" '.bases[$k][$a].digest' versions.json)" \
+    --arg basedig "sha256:$(jq -r '.buildDefinition.resolvedDependencies[0].digest.sha256' "$PROV")" \
+    --arg pinbuilderrepo "$(jq -r --arg k "$BUILDER_KEY" '.bases[$k].image' versions.json)" \
+    --arg pinbuilderdig "$(jq -r --arg k "$BUILDER_KEY" --arg a "$ARCH" '.bases[$k][$a].digest' versions.json)" \
+    --argjson builder "$(jq -c '[.buildDefinition.resolvedDependencies[] | select(.annotations.role == "builder")] | first // {}' "$PROV")" \
+    --argjson nat "$(jq -c '.native' <<<"$IMG")" \
+    --arg checkout "$CHECKOUT_LOCK_SHA" --argjson locked "$LOCKED" --argjson obs "$OBSERVED" \
+    --slurpfile nv "$NV" \
+    '{ pinned_base_repo:$pinbaserepo, base_image_repo:$baserepo,
+       pinned_base_digest:$pinbasedig, base_image_digest:$basedig,
+       pinned_builder_repo:$pinbuilderrepo, builder_image_repo:($builder.uri // ""),
+       pinned_builder_digest:$pinbuilderdig,
+       builder_image_digest:(if ($builder.digest.sha256 // "") == "" then "" else "sha256:" + $builder.digest.sha256 end),
+       language:"python",
+       pinned_source_url:($nat.projectUrl // ""), pinned_version:($nat.version // ""),
+       pinned_distribution:(($nat.distribution // "") | ascii_downcase | gsub("[-_.]+"; "-")),
+       pinned_lock_sha256:($nat.lock.sha256 // ""), checkout_lock_sha256:$checkout,
+       lock_sha256:$obs.lock_sha256,
+       locked_distributions:$locked, installed_distributions:$obs.installed_distributions,
+       verified_distributions:($nv[0].verified_distributions // null),
+       verification:{performed:($nv[0].verification.performed // false)} }')
+  LOCK_OK=$(jq -r 'if .lock_sha256 == .pinned_lock_sha256 and .checkout_lock_sha256 == .pinned_lock_sha256 then "PASS" else "FAIL" end' <<<"$NATIVE_BLOCK")
+  check "lock sha256 == versions.json pin" "$LOCK_OK"
+  record python_lock_match "$LOCK_OK" "$(jq -r '.pinned_lock_sha256' <<<"$NATIVE_BLOCK")"
+  SET_OK=$(jq -r 'if (.locked_distributions | sort) == (.installed_distributions | sort) then "PASS" else "FAIL" end' <<<"$NATIVE_BLOCK")
+  check "venv == lock (live)" "$SET_OK"
+  record python_distributions_match "$SET_OK" "$(jq -r '.locked_distributions | length' <<<"$NATIVE_BLOCK") locked"
+  else
   SRC_KEY=$(jq -r '.source' <<<"$IMG")
   SRC=$(jq -c --arg s "$SRC_KEY" '.sources[$s] // {}' versions.json)
   NATIVE_BLOCK=$(jq -n \
@@ -286,6 +336,7 @@ elif [[ "$KIND" == native ]]; then
   ARC_OK=$(jq -r 'if .archive_sha256 == .pinned_archive_sha256 and .archive_tree_match == true then "PASS" else "FAIL" end' <<<"$NATIVE_BLOCK")
   check "release archive == commit tree" "$ARC_OK"
   record source_archive_match "$ARC_OK" "$(jq -r '.pinned_archive_url + " sha256 " + .pinned_archive_sha256' <<<"$NATIVE_BLOCK")"
+  fi
   DECLARED_MODE=native
   check "provenance mode (versions.json)" "$DECLARED_MODE"
 elif [[ "$KIND" == build ]]; then

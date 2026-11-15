@@ -44,5 +44,6 @@
 * [The whoami mirror has 54 blocking findings and no triage](the-whoami-mirror-has-54-blocking-findings-and-no-triage--01a1839ccc1d.md) - On 2026-10-28 whoami had 54 blocking Go findings, no waiver and no triage record, so it stays in quarantine under observe.
 * [Two code comments point at moved skill cards](two-code-comments-point-at-moved-skill-cards--01a1838a173b.md) - Comments in policies.rego and exceptions.yaml cite skill cards that are now stubs; fix them with the next change to .github/pdp/.
 * [daprd and prometheus carry brotli and compress findings until upstream releases a fix](daprd-and-prometheus-carry-brotli-and-compress-findings-until-upstream-releases-a-fix--01a1dce6a75b.md) - On 2026-11-14, dapr v1.18.10 and prometheus v3.15.1 carried GO-2026-6888 and GO-2026-6865, and no release in the track had the fix.
+* [drift-upstream.sh does not propose new LiteLLM releases](drift-upstream-sh-does-not-propose-new-litellm-releases--01a1df7103b9.md) - A native python image pins a hash lock, which drift-upstream.sh cannot regenerate; a LiteLLM bump is a manual lock and pin change.
 * [lint-skills.sh does not check the paths in the wiki](lint-skills-sh-does-not-check-the-paths-in-the-wiki--01a1838a16b2.md) - scripts/lint-skills.sh scans a fixed file list without .okfw/, so a wiki concept can cite a path that does not exist.
 

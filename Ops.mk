@@ -39,6 +39,7 @@ REGISTRY   := ghcr.io/$(ORG)/$(REPO_NAME)
 IMAGES        := $(shell jq -r '.images | keys[]' $(VERSIONS) 2>/dev/null)
 MIRROR_IMAGES := $(shell jq -r '[.images | to_entries[] | select(.value.kind=="mirror") | .key] | .[]' $(VERSIONS) 2>/dev/null)
 BUILD_IMAGES  := $(shell jq -r '[.images | to_entries[] | select(.value.kind=="build")  | .key] | .[]' $(VERSIONS) 2>/dev/null)
+PACKAGE_IMAGES := $(shell jq -r '[.images | to_entries[] | select(.value.kind=="package") | .key] | .[]' $(VERSIONS) 2>/dev/null)
 
 define guard_namespace
 	if [ -z "$(target_namespace)" ]; then
@@ -63,14 +64,15 @@ help:
 	echo "  test-scripts          drift-upstream.sh, propose-drift.sh, provenance-mode.sh and the release Gate step against fixtures and stubs"
 	echo "  policy-test           opa check --strict, opa fmt, opa test --threshold 85"
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
-	echo "  verify-pins           re-resolve every upstream, base and crosscheck digest"
+	echo "  verify-pins           re-resolve every upstream, base, crosscheck and package pin"
 	echo "  verify-mirror-pins    mirror-track pins only"
 	echo "  verify-build-pins     build-track base, toolchain + crosscheck pins only"
+	echo "  verify-package-pins   package-track NEVRAs in their repository, and the live signing keys"
 	echo "  list-images           target_namespace=development|trusted|quarantine"
 	echo "  clean-ghcr-namespace  target_namespace=development  (refuses trusted/)"
 	echo
 	echo "  registry: $(REGISTRY)"
-	echo "  images:   $(words $(IMAGES)) ($(words $(MIRROR_IMAGES)) mirror, $(words $(BUILD_IMAGES)) build)"
+	echo "  images:   $(words $(IMAGES)) ($(words $(MIRROR_IMAGES)) mirror, $(words $(BUILD_IMAGES)) build, $(words $(PACKAGE_IMAGES)) package)"
 
 .PHONY: validate
 validate: check-versions check-schema check-keyring check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills check-wiki lint-shell test-scripts policy-test
@@ -108,8 +110,23 @@ check-keyring:
 	# sidecar in `sha256sum -c` format. The sidecar is what a reviewer reads
 	# as the pin; this makes it load-bearing rather than decorative.
 	(cd .github/pdp/keyring && for s in *.sha256; do sha256sum -c --quiet "$$s" || { echo "error: keyring sidecar $$s does not match its file" >&2; exit 1; }; done)
-	for f in .github/pdp/keyring/*.pub .github/pdp/keyring/*.crt; do [ -f "$$f.sha256" ] || { echo "error: $$f has no .sha256 sidecar" >&2; exit 1; }; done
-	echo "OK: keyring sidecars match"
+	for f in .github/pdp/keyring/*.pub .github/pdp/keyring/*.crt .github/pdp/keyring/*.asc; do [ -f "$$f" ] || continue; [ -f "$$f.sha256" ] || { echo "error: $$f has no .sha256 sidecar" >&2; exit 1; }; done
+	# A package repository key (ADR-009) is pinned three times: the sidecar,
+	# packageRepos.<r>.<arch>.signerFileSha256, and signerFingerprint. All three must
+	# describe the committed file, which must hold exactly one primary key.
+	jq -r '.packageRepos // {} | to_entries[] | .key as $$r | .value | to_entries[] | select(.key == "amd64" or .key == "arm64") | [$$r, .key, .value.key, .value.signerFileSha256, .value.signerFingerprint] | @tsv' $(VERSIONS) \
+	| while IFS=$$'\t' read -r r a key sha fpr; do
+		[ -f "$$key" ] || { echo "error: packageRepos.$$r.$$a.key $$key does not exist" >&2; exit 1; }
+		got=$$(sha256sum "$$key" | cut -d' ' -f1)
+		[ "$$got" = "$$sha" ] || { echo "error: packageRepos.$$r.$$a.signerFileSha256 is $$sha but $$key has $$got" >&2; exit 1; }
+		side=$$(cut -d' ' -f1 "$$key.sha256")
+		[ "$$side" = "$$sha" ] || { echo "error: $$key.sha256 says $$side but packageRepos.$$r.$$a.signerFileSha256 is $$sha" >&2; exit 1; }
+		cols=$$(GNUPGHOME=$$(mktemp -d) gpg --batch --with-colons --show-keys "$$key" 2>/dev/null)
+		[ "$$(grep -c '^pub:' <<<"$$cols")" = 1 ] || { echo "error: $$key must hold exactly one primary key" >&2; exit 1; }
+		gfpr=$$(awk -F: '/^pub:/ { p = 1; next } p && /^fpr:/ { print $$10; exit }' <<<"$$cols")
+		[ "$$gfpr" = "$$fpr" ] || { echo "error: packageRepos.$$r.$$a.signerFingerprint is $$fpr but $$key has $$gfpr" >&2; exit 1; }
+	done
+	echo "OK: keyring sidecars match; package keys match their sha256 and fingerprint pins"
 
 .PHONY: check-gitleaks-config
 check-gitleaks-config:
@@ -184,7 +201,7 @@ repo-gate:
 	./scripts/repo-gate.sh
 
 .PHONY: verify-pins
-verify-pins: verify-mirror-pins verify-build-pins
+verify-pins: verify-mirror-pins verify-build-pins verify-package-pins
 
 .PHONY: verify-mirror-pins
 verify-mirror-pins:
@@ -220,7 +237,7 @@ verify-build-pins:
 			printf '  %-16s base %-6s STALE  pinned=%s latest=%s\n' "$$key" "$$arch" "$$base_digest" "$$actual"
 			stale=$$((stale + 1))
 		fi
-	done < <(jq -r '. as $$d | $$d.images | to_entries[] | select(.value.kind=="build") | .key as $$k | .value.base as $$b | .value.arches[] as $$a | [$$k, $$d.bases[$$b].image, $$d.bases[$$b][$$a].digest, $$a] | @tsv' $(VERSIONS))
+	done < <(jq -r '. as $$d | $$d.images | to_entries[] | select(.value.kind=="build" or .value.kind=="package") | .key as $$k | .value.base as $$b | .value.arches[] as $$a | [$$k, $$d.bases[$$b].image, $$d.bases[$$b][$$a].digest, $$a] | @tsv' $(VERSIONS))
 	# Toolchains sit on a rolling tag that Go security releases move. A stale
 	# one compiles every build-track image with a known-vulnerable stdlib --
 	# go1.26 sat on 1.26.6 for five days past a Critical, until a review caught it.
@@ -245,6 +262,38 @@ verify-build-pins:
 	# First-party entries (ADR-008) have no vendor reference to re-resolve.
 	jq -r '.images | to_entries[] | select(.value.kind=="build" and (.value | has("firstParty"))) | "  \(.key)  first-party (no vendor binary)"' $(VERSIONS)
 	if [ "$$stale" -ne 0 ]; then echo "$$stale base or toolchain pin(s) stale." >&2; exit 1; fi
+
+.PHONY: verify-package-pins
+verify-package-pins:
+	# Every pinned NEVRA must still be in its repository (PGDG keeps old
+	# releases, but a pin that vanished would fail the next build), and the key
+	# at keyUrl must still be the committed copy. A newer release inside the
+	# track is drift-upstream.sh's job; this only proves the pins resolve.
+	echo "Checking package-track NEVRAs and signing keys..."
+	stale=0
+	prim=$$(mktemp)
+	while IFS=$$'\t' read -r img arch url; do
+		href=$$(curl -fsSL --retry 3 "$$url/repodata/repomd.xml" | grep -oE 'href="repodata/[^"]*primary\.xml[^"]*"' | head -1 | sed -E 's/^href="//; s/"$$//')
+		if [ -z "$$href" ] || ! curl -fsSL --retry 3 "$$url/$$href" -o "$$prim"; then
+			printf '  %-16s %-6s UNREADABLE  %s\n' "$$img" "$$arch" "$$url"; stale=$$((stale + 1)); continue
+		fi
+		nevras=$$(case "$$href" in *.gz) gzip -dc "$$prim" ;; *.xz) xz -dc "$$prim" ;; *.zst) zstd -dcq "$$prim" ;; *) cat "$$prim" ;; esac \
+			| grep -oE '<name>[^<]+</name>|<arch>[^<]+</arch>|<version epoch="[0-9]+" ver="[^"]+" rel="[^"]+"' \
+			| paste - - - \
+			| sed -E 's|<name>([^<]+)</name>\t<arch>([^<]+)</arch>\t<version epoch="[0-9]+" ver="([^"]+)" rel="([^"]+)"|\1-\3-\4.\2|')
+		for n in $$(jq -r --arg i "$$img" --arg a "$$arch" '.images[$$i].packages[$$a][]' $(VERSIONS)); do
+			if grep -qxF "$$n" <<<"$$nevras"; then printf '  %-16s %-6s present  %s\n' "$$img" "$$arch" "$$n"
+			else printf '  %-16s %-6s MISSING  %s\n' "$$img" "$$arch" "$$n"; stale=$$((stale + 1)); fi
+		done
+	done < <(jq -r '. as $$d | $$d.images | to_entries[] | select(.value.kind=="package") | .key as $$k | .value.packages.repo as $$r | .value.arches[] as $$a | [$$k, $$a, $$d.packageRepos[$$r][$$a].baseurl] | @tsv' $(VERSIONS))
+	rm -f "$$prim"
+	while IFS=$$'\t' read -r r arch kurl pinned; do
+		[ -n "$$kurl" ] || continue
+		live=$$(curl -fsSL --retry 3 "$$kurl" | sha256sum | cut -d' ' -f1)
+		if [ "$$live" = "$$pinned" ]; then printf '  %-16s %-6s key current\n' "$$r" "$$arch"
+		else printf '  %-16s %-6s KEY CHANGED  pinned=%s live=%s\n' "$$r" "$$arch" "$$pinned" "$$live"; stale=$$((stale + 1)); fi
+	done < <(jq -r '.packageRepos // {} | to_entries[] | .key as $$r | .value | to_entries[] | select(.key == "amd64" or .key == "arm64") | [$$r, .key, (.value.keyUrl // ""), .value.signerFileSha256] | @tsv' $(VERSIONS))
+	if [ "$$stale" -ne 0 ]; then echo "$$stale package pin(s) unresolvable or key(s) changed." >&2; exit 1; fi
 
 .PHONY: list-images
 list-images:
@@ -284,3 +333,4 @@ show-config:
 	echo "IMAGES     = $(IMAGES)"
 	echo "MIRROR     = $(MIRROR_IMAGES)"
 	echo "BUILD      = $(BUILD_IMAGES)"
+	echo "PACKAGE    = $(PACKAGE_IMAGES)"

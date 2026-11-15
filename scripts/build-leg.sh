@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-# Build one {service, arch} leg from pinned source onto our trusted ubi9-micro,
-# cross-check the binary against the vendor's official image, scan, sign, attest.
+# Build one {service, arch} leg of a BUILT image, scan, sign, attest. Two kinds:
 #
-# A first-party entry (versions.json `firstParty`, ADR-008) has no vendor
+#   build    compile a pinned source commit onto our trusted ubi9-micro and
+#            cross-check the binary against the vendor's official image.
+#   package  install signed RPMs at pinned NEVRAs from one pinned repository
+#            onto our trusted base, and prove with `rpm -q` that exactly those
+#            NEVRAs, signed by the pinned key, are in the image (ADR-009).
+#
+# The kind comes from versions.json, never from the matrix alone; an entry of
+# any other kind fails here.
+#
+# A first-party build entry (versions.json `firstParty`, ADR-008) has no vendor
 # image. It records the hash of our binary only, and says so in the evidence.
 # scripts/provenance-mode.sh decides the mode from versions.json and refuses
 # an absent, double or non-infrashift declaration before anything is built.
@@ -15,15 +23,32 @@ set -euo pipefail
 VARIANT="${VARIANT:-runtime}"
 TRUST_CLASS="${TRUST_CLASS:-internal}"
 
+fail() { echo "::error::$*"; exit 1; }
+
 EVIDENCE=evidence
 mkdir -p "$EVIDENCE"
-
-fail() { echo "::error::$*"; exit 1; }
 
 # ---------------------------------------------------------------------------
 # 1. Resolve every input from versions.json. jq --arg, never string concat.
 # ---------------------------------------------------------------------------
 IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
+KIND=$(jq -r '.kind' <<<"$IMG")
+[[ "$KIND" == build || "$KIND" == package ]] || fail "images.${SERVICE}.kind is '${KIND}'; build-leg.sh builds only kind build or package"
+if [[ -n "${MATRIX_KIND:-}" && "$MATRIX_KIND" != "$KIND" ]]; then
+  fail "the matrix says kind ${MATRIX_KIND} but versions.json says ${KIND} for ${SERVICE}"
+fi
+
+BASE_KEY=$(jq -r '.base'     <<<"$IMG")
+ENFORCEMENT=$(jq -r '.enforcement' <<<"$IMG")
+CONTAINERFILE=$(jq -r '.containerfile' <<<"$IMG")
+
+lookup() { jq -r --arg k "$1" --arg a "$ARCH" "$2" versions.json; }
+BASE_IMG=$(lookup "$BASE_KEY" '.bases[$k].image')
+BASE_DIGEST=$(lookup "$BASE_KEY" '.bases[$k][$a].digest')
+BASE_KEYFILE=$(lookup "$BASE_KEY" '.bases[$k].verifyKey')
+DEST_REPO="ghcr.io/${GITHUB_REPOSITORY}/development/${SERVICE}"
+
+if [[ "$KIND" == build ]]; then
 SRC_KEY=$(jq -r '.source' <<<"$IMG")
 REPO_KEY=$(jq -r '.repo // empty' <<<"$IMG")
 
@@ -47,16 +72,8 @@ SRC_SHORT=$(jq -r --arg s "$SRC_KEY" '.sources[$s].shortCommit // ""' versions.j
 # A tag is NOT a pin: tags move and can be force-pushed. Commits cannot.
 [[ "$SRC_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source ref for ${LEG} is not a 40-hex commit: ${SRC_REF}"; exit 1; }
 
-BASE_KEY=$(jq -r '.base'     <<<"$IMG")
 CA_KEY=$(jq   -r '.caSource' <<<"$IMG")
 TC_KEY=$(jq   -r '.toolchain' <<<"$IMG")
-ENFORCEMENT=$(jq -r '.enforcement' <<<"$IMG")
-CONTAINERFILE=$(jq -r '.containerfile' <<<"$IMG")
-
-lookup() { jq -r --arg k "$1" --arg a "$ARCH" "$2" versions.json; }
-BASE_IMG=$(lookup "$BASE_KEY" '.bases[$k].image')
-BASE_DIGEST=$(lookup "$BASE_KEY" '.bases[$k][$a].digest')
-BASE_KEYFILE=$(lookup "$BASE_KEY" '.bases[$k].verifyKey')
 CA_IMG=$(lookup "$CA_KEY" '.bases[$k].image')
 CA_DIGEST=$(lookup "$CA_KEY" '.bases[$k][$a].digest')
 TC_IMG=$(lookup "$TC_KEY" '.toolchains[$k].image')
@@ -96,11 +113,66 @@ for d in "${DIGESTS[@]}"; do
   [[ "$d" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::malformed digest: ${d}"; exit 1; }
 done
 
-DEST_REPO="ghcr.io/${GITHUB_REPOSITORY}/development/${SERVICE}"
 DEST_TAG="pr-${PR_NUM}-${SRC_VERSION}-${ARCH}"
 
+else
+  # -------------------------------------------------------------------------
+  # 1p. Package kind: the repository, the key and the NEVRAs for THIS arch.
+  # -------------------------------------------------------------------------
+  PKG_REPO_ID=$(jq -r '.packages.repo' <<<"$IMG")
+  PKG_VERSION=$(jq -r '.packages.version' <<<"$IMG")
+  [[ "$PKG_REPO_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "packages.repo '${PKG_REPO_ID}' is not a repository id"
+  [[ "$PKG_VERSION" =~ ^[0-9]+\.[0-9]+$ ]] || fail "packages.version '${PKG_VERSION}' is not a version"
+  PKG_REPO=$(jq -ce --arg r "$PKG_REPO_ID" --arg a "$ARCH" '.packageRepos[$r][$a]' versions.json) \
+    || fail "packageRepos.${PKG_REPO_ID}.${ARCH} is not pinned"
+  PKG_BASEURL=$(jq -r '.baseurl' <<<"$PKG_REPO")
+  PKG_KEY=$(jq -r '.key' <<<"$PKG_REPO")
+  PKG_KEY_FPR=$(jq -r '.signerFingerprint' <<<"$PKG_REPO")
+  PKG_KEY_SHA=$(jq -r '.signerFileSha256' <<<"$PKG_REPO")
+  mapfile -t PKG_NEVRAS < <(jq -r --arg a "$ARCH" '.packages[$a][]?' <<<"$IMG")
+  [[ ${#PKG_NEVRAS[@]} -gt 0 ]] || fail "images.${SERVICE}.packages.${ARCH} pins no NEVRA"
+
+  [[ "$PKG_BASEURL" =~ ^https://[^[:space:]\$]+$ ]] || fail "baseurl '${PKG_BASEURL}' is not a literal https URL"
+  [[ "$PKG_KEY" =~ ^\.github/pdp/keyring/[A-Za-z0-9._-]+\.asc$ ]] || fail "key '${PKG_KEY}' is not under .github/pdp/keyring/"
+  [[ "$PKG_KEY_FPR" =~ ^[0-9A-F]{40}$ ]] || fail "signerFingerprint '${PKG_KEY_FPR}' is not a 40-hex fingerprint"
+  [[ "$PKG_KEY_SHA" =~ ^[0-9a-f]{64}$ ]] || fail "signerFileSha256 '${PKG_KEY_SHA}' is not a sha256"
+  PKG_KEY_ID=$(tr '[:upper:]' '[:lower:]' <<<"${PKG_KEY_FPR:24:16}")
+
+  # The key file must be the pinned one, byte for byte AND by fingerprint,
+  # and hold exactly one primary key. The Containerfile checks the sha256
+  # again; the review re-derives both from the image on GHCR.
+  [[ -f "$PKG_KEY" ]] || fail "${PKG_KEY} is not in the checkout"
+  GOT_SHA=$(sha256sum "$PKG_KEY" | cut -d' ' -f1)
+  [[ "$GOT_SHA" == "$PKG_KEY_SHA" ]] || fail "${PKG_KEY} has sha256 ${GOT_SHA}; versions.json pins ${PKG_KEY_SHA}"
+  KEY_COLONS=$(GNUPGHOME="$(mktemp -d)" gpg --batch --with-colons --show-keys "$PKG_KEY" 2>/dev/null) \
+    || fail "gpg cannot read ${PKG_KEY}"
+  [[ "$(grep -c '^pub:' <<<"$KEY_COLONS")" -eq 1 ]] || fail "${PKG_KEY} must hold exactly one primary key"
+  GOT_FPR=$(awk -F: '/^pub:/ { p = 1; next } p && /^fpr:/ { print $10; exit }' <<<"$KEY_COLONS")
+  [[ "$GOT_FPR" == "$PKG_KEY_FPR" ]] || fail "${PKG_KEY} has fingerprint ${GOT_FPR}; versions.json pins ${PKG_KEY_FPR}"
+
+  # One SRPM build per arch: every pinned NEVRA carries the same
+  # version-release. It is the revision label.
+  PKG_EVR=""
+  for n in "${PKG_NEVRAS[@]}"; do
+    [[ "$n" =~ ^([A-Za-z0-9][A-Za-z0-9._+-]*)-([0-9][A-Za-z0-9._+~^]*)-([A-Za-z0-9._+~^]+)\.(x86_64|aarch64|noarch)$ ]] \
+      || fail "'${n}' is not NAME-VERSION-RELEASE.ARCH"
+    [[ "${BASH_REMATCH[2]}" == "$PKG_VERSION" ]] || fail "${n} is not version ${PKG_VERSION}"
+    vr="${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
+    [[ -z "$PKG_EVR" || "$PKG_EVR" == "$vr" ]] || fail "pinned NEVRAs for ${ARCH} span two version-releases (${PKG_EVR}, ${vr})"
+    PKG_EVR="$vr"
+  done
+
+  for v in BASE_IMG BASE_DIGEST; do
+    val="${!v}"
+    [[ -n "$val" && "$val" != "null" ]] || fail "${v} unresolved for ${LEG}"
+  done
+  [[ "$BASE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || fail "malformed digest: ${BASE_DIGEST}"
+  DEST_TAG="pr-${PR_NUM}-${PKG_VERSION}-${ARCH}"
+fi
+
+if [[ "$KIND" == build ]]; then
 # ---------------------------------------------------------------------------
-# 2. Fetch the source at the pinned COMMIT.
+# 2. Fetch the source at the pinned COMMIT. (build kind only)
 # ---------------------------------------------------------------------------
 ./scripts/fetch-source.sh "$SERVICE" "$SRC_URL" "$SRC_REF" "$SRC_VERSION"
 # Pinned vendor release assets the source build needs (Prometheus's web UI).
@@ -112,6 +184,7 @@ DEST_TAG="pr-${PR_NUM}-${SRC_VERSION}-${ARCH}"
 # cross-check meaningless even against ourselves.
 SOURCE_DATE=$(cat "src/.meta/${SERVICE}.source-date")
 SOURCE_GIT_VERSION=$(cat "src/.meta/${SERVICE}.source-git-version")
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Verify the base image we are about to build on.
@@ -132,8 +205,14 @@ fi
 
 # Written on EVERY path -- a missing file is a hole, a file saying failed is a
 # finding. Covered by checksums.sha256 so it cannot be quietly removed.
+if [[ "$KIND" == build ]]; then
+  CA_TRUST='{"injected": true, "reason": "ubi9-micro ships no CA trust bundle (verified by layer listing); every service here makes outbound TLS calls"}'
+else
+  CA_TRUST='{"injected": false, "reason": "the package-track base is ubi9-minimal, which ships its own CA trust bundle"}'
+fi
 jq -n --arg tc "$TRUST_CLASS" --arg res "$UPSTREAM_RESULT" --arg reason "$UPSTREAM_REASON" \
       --arg uri "$BASE_IMG" --arg dig "$BASE_DIGEST" --arg key "$BASE_KEYFILE" --arg arch "$ARCH" \
+      --argjson ca "$CA_TRUST" \
   '{ trust_class: $tc, result: $res, reason: $reason,
      subject: ($uri + "@" + $dig),
      verified_with: $key,
@@ -141,13 +220,25 @@ jq -n --arg tc "$TRUST_CLASS" --arg res "$UPSTREAM_RESULT" --arg reason "$UPSTRE
      upstream: { role: "base-image", uri: $uri, digest: $dig, arch: $arch,
                  pinned_in: "versions.json#/bases" },
      attestations: { sbom: "present", provenance: "present", vex: "absent" },
-     ca_trust: { injected: true,
-                 reason: "ubi9-micro ships no CA trust bundle (verified by layer listing); every service here makes outbound TLS calls" } }' \
+     ca_trust: $ca }' \
   > "$EVIDENCE/upstream-verification.json"
 
 # ---------------------------------------------------------------------------
 # 4. Build.
 # ---------------------------------------------------------------------------
+if [[ "$KIND" == package ]]; then
+buildah bud \
+  --platform "linux/${ARCH}" \
+  --build-arg UPSTREAM_BASE="$BASE_IMG"     --build-arg UPSTREAM_DIGEST="$BASE_DIGEST" \
+  --build-arg PACKAGE_REPO_ID="$PKG_REPO_ID" --build-arg PACKAGE_BASEURL="$PKG_BASEURL" \
+  --build-arg PACKAGE_KEY="$PKG_KEY"        --build-arg PACKAGE_KEY_SHA256="$PKG_KEY_SHA" \
+  --build-arg PACKAGE_KEY_ID="$PKG_KEY_ID"  --build-arg PACKAGE_NEVRAS="${PKG_NEVRAS[*]}" \
+  --build-arg PACKAGE_VERSION="$PKG_VERSION" --build-arg PACKAGE_EVR="$PKG_EVR" \
+  --build-arg GIT_COMMIT="${GITHUB_SHA:-unknown}" \
+  --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --build-arg TARGETARCH="$ARCH" \
+  -t "${DEST_REPO}:${DEST_TAG}" -f "$CONTAINERFILE" .
+else
 # A first-party Containerfile has no crosscheck label to fill, and
 # scripts/lint-containerfiles.sh forbids one, so the args are passed only for
 # a vendor comparison.
@@ -169,6 +260,7 @@ buildah bud \
   --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
   --build-arg TARGETARCH="$ARCH" \
   -t "${DEST_REPO}:${DEST_TAG}" -f "$CONTAINERFILE" .
+fi
 
 buildah push --digestfile /tmp/pushed-digest.txt "${DEST_REPO}:${DEST_TAG}"
 PUSHED=$(cat /tmp/pushed-digest.txt)
@@ -188,6 +280,42 @@ for L in org.opencontainers.image.source org.opencontainers.image.revision \
 done
 CONFIG_USER=$(skopeo inspect --config "docker://${DEST_REPO}@${PUSHED}" | jq -r '.config.User // ""')
 
+# ---------------------------------------------------------------------------
+# 6p. Package verification (package kind). Ask the image's own rpm database,
+#     before anything is signed: every pinned NEVRA at exactly that NEVRA,
+#     signed by the pinned key, and no unpinned package with that key. The
+#     Containerfile checked the same inside the build; this checks the image
+#     that was pushed. The review re-derives the installed set live from GHCR.
+# ---------------------------------------------------------------------------
+if [[ "$KIND" == package ]]; then
+  ./scripts/package-verify.sh "${DEST_REPO}:${DEST_TAG}" "${PKG_NEVRAS[@]}" > /tmp/package-verify.json
+  MISSING=$(jq -r '.missing | join(" ")' /tmp/package-verify.json)
+  [[ -z "$MISSING" ]] || fail "rpm -q does not find the pinned NEVRA(s) in the image: ${MISSING}"
+  for n in "${PKG_NEVRAS[@]}"; do
+    jq -e --arg n "$n" --arg k "$PKG_KEY_ID" 'any(.signatures[]; .nevra == $n and .key_id == $k)' /tmp/package-verify.json >/dev/null \
+      || fail "${n} is not signed by the pinned key ${PKG_KEY_ID}"
+  done
+  UNPINNED=$(jq -r --arg k "$PKG_KEY_ID" --argjson p "$(printf '%s\n' "${PKG_NEVRAS[@]}" | jq -R -s -c 'split("\n")|map(select(length>0))')" \
+    '[.signatures[] | select(.key_id == $k and (.nevra as $n | $p | index($n) | not)) | .nevra] | join(" ")' /tmp/package-verify.json)
+  [[ -z "$UNPINNED" ]] || fail "package(s) signed by ${PKG_KEY_ID} but not pinned: ${UNPINNED}"
+  echo "package verification: ${#PKG_NEVRAS[@]} pinned NEVRA(s) installed and signed by ${PKG_KEY_ID}; $(jq '.signatures | length' /tmp/package-verify.json) package(s) recorded"
+
+  jq -n --arg leg "$LEG" --arg arch "$ARCH" --arg repo "$PKG_REPO_ID" --arg url "$PKG_BASEURL" \
+        --arg key "$PKG_KEY" --arg fpr "$PKG_KEY_FPR" --arg sha "$PKG_KEY_SHA" --arg kid "$PKG_KEY_ID" \
+        --arg ver "$PKG_VERSION" --arg evr "$PKG_EVR" \
+        --argjson pinned "$(printf '%s\n' "${PKG_NEVRAS[@]}" | jq -R -s -c 'split("\n")|map(select(length>0))')" \
+        --slurpfile pv /tmp/package-verify.json \
+    '{ schema: "https://infrashift.io/attestation/package-verification/v1",
+       subject: { leg: $leg, arch: $arch },
+       repository: { id: $repo, baseurl: $url, gpgcheck: true, repo_gpgcheck: true },
+       key: { path: $key, fingerprint: $fpr, sha256: $sha, keyId: $kid },
+       packages: { version: $ver, versionRelease: $evr, pinned: $pinned,
+                   verified_nevras: $pv[0].verified_nevras, signatures: $pv[0].signatures },
+       verification: { performed: true, tool: "rpm -q (inside the built image)" } }' \
+    > "$EVIDENCE/package-verification.json"
+fi
+
+if [[ "$KIND" == build ]]; then
 # ---------------------------------------------------------------------------
 # 6. Dual-provenance cross-check.
 #
@@ -259,6 +387,7 @@ XC_BYPRODUCTS=$(jq -cn --arg ours "$OURS" --arg theirs "$THEIRS" --arg tier "$XC
      { name: "binary/upstream-reference", digest: { sha256: $theirs },
        annotations: { match: $match, gating: false, reproducibilityTier: $tier } } ]')
 fi
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Scan the local OCI copy (identical bits to what was pushed).
@@ -275,7 +404,8 @@ jq -n --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg tc "$TRUS
       --arg repo "$DEST_REPO" --arg tag "$DEST_TAG" --arg dig "$PUSHED" \
       --arg enf "$ENFORCEMENT" --arg arch "$ARCH" --arg slug "$SLUG" --arg cu "$CONFIG_USER" \
       --argjson labels "$LABELS" \
-  '{ kind: "build", leg: $leg, service: $svc, variant: $var, trust_class: $tc,
+  --arg kind "$KIND" \
+  '{ kind: $kind, leg: $leg, service: $svc, variant: $var, trust_class: $tc,
      enforcement: $enf, config_user: $cu, labels: $labels,
      subject: { repository: $repo, tag: $tag, digest: $dig,
                 media_type: "application/vnd.oci.image.manifest.v1+json", is_index: false },
@@ -283,6 +413,46 @@ jq -n --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg tc "$TRUS
                     sbom: ("sbom-" + $slug + ".json"), cve: ("cve-" + $slug + ".json") } ],
      manifest_group: $leg }' > "$EVIDENCE/subject.json"
 
+if [[ "$KIND" == package ]]; then
+# ---------------------------------------------------------------------------
+# 9p. SLSA provenance, package kind. The materials are the base image, the
+#     repository and its key, and one entry per pinned RPM. Index 0 is the base
+#     by contract, as on the build track.
+# ---------------------------------------------------------------------------
+jq -n \
+  --arg leg "$LEG" --arg arch "$ARCH" --arg cf "$CONTAINERFILE" \
+  --arg recipe "git+${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}" \
+  --arg recipesha "${GITHUB_SHA:-unknown}" \
+  --arg out "${DEST_REPO}@${PUSHED}" --arg outdig "${PUSHED#sha256:}" \
+  --arg baseimg "$BASE_IMG" --arg basedig "${BASE_DIGEST#sha256:}" \
+  --arg repo "$PKG_REPO_ID" --arg url "$PKG_BASEURL" --arg key "$PKG_KEY" \
+  --arg fpr "$PKG_KEY_FPR" --arg sha "$PKG_KEY_SHA" --arg ver "$PKG_VERSION" --arg evr "$PKG_EVR" \
+  --arg run "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID:-0}" \
+  --slurpfile pv "$EVIDENCE/package-verification.json" \
+  '{ buildDefinition: {
+       buildType: "https://github.com/infrashift/trusted-service-containers/build/rpm-package/v1",
+       externalParameters: {
+         packages: { repository: { id: $repo, baseurl: $url },
+                     version: $ver, versionRelease: $evr, nevras: $pv[0].packages.pinned },
+         leg: $leg, arch: $arch },
+       internalParameters: {
+         recipe: { uri: $recipe, digest: { sha1: $recipesha } },
+         containerfile: $cf, platform: ("linux/" + $arch),
+         gpgcheck: true, repo_gpgcheck: true,
+         output: { uri: $out, digest: { sha256: $outdig } } },
+       resolvedDependencies: (
+         [ { uri: $baseimg, digest: { sha256: $basedig }, annotations: { role: "runtime-base" } },
+           { uri: $key, digest: { sha256: $sha },
+             annotations: { role: "package-signing-key", fingerprint: $fpr } } ]
+         + [ $pv[0].packages.pinned[] | { uri: ("rpm:" + $repo + "/" + .),
+                                          annotations: { role: "package", signedBy: $fpr } } ]) },
+     runDetails: {
+       builder: { id: $run },
+       byproducts: [ { name: "packages/rpm-database",
+                       annotations: { packages: ($pv[0].packages.signatures | length),
+                                      note: "Every installed package and the key ID of its header signature, from rpm -qa inside the image. See package-verification.json." } } ] } }' \
+  > "$EVIDENCE/provenance.json"
+else
 # ---------------------------------------------------------------------------
 # 9. SLSA provenance. Unlike the mirror track this has REAL materials: the
 #    upstream project at a specific commit is externalParameters.source, our own
@@ -330,6 +500,7 @@ jq -n \
        builder: { id: $run },
        byproducts: $byproducts } }' \
   > "$EVIDENCE/provenance.json"
+fi
 
 # ---------------------------------------------------------------------------
 # 10. Sign, checksum, attest. No --replace, per the mirror-track rationale.
@@ -351,7 +522,12 @@ attest --type spdxjson       --predicate "$EVIDENCE/sbom-${SLUG}.json"          
 attest --type vuln           --predicate "$EVIDENCE/cve-${SLUG}.json"            "$URI"
 attest --type https://infrashift.io/attestation/upstream-verification/v1 \
        --predicate "$EVIDENCE/upstream-verification.json" "$URI"
-attest --type https://infrashift.io/attestation/binary-crosscheck/v1 \
-       --predicate "$EVIDENCE/crosscheck.json" "$URI"
+if [[ "$KIND" == build ]]; then
+  attest --type https://infrashift.io/attestation/binary-crosscheck/v1 \
+         --predicate "$EVIDENCE/crosscheck.json" "$URI"
+else
+  attest --type https://infrashift.io/attestation/package-verification/v1 \
+         --predicate "$EVIDENCE/package-verification.json" "$URI"
+fi
 
 echo "OK: ${LEG} (${ARCH}) built -> ${URI}"

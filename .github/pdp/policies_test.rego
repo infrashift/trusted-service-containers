@@ -2084,7 +2084,10 @@ test_native_remediation_hint if {
 		{"op": "replace", "path": "/scan_results/fixable_high_count", "value": 1},
 		{"op": "replace", "path": "/scan_results/findings", "value": [{"id": "CVE-2026-71199", "severity": "High", "fix_state": "fixed", "package": "krb5-libs"}]},
 	])
-	d := pdp.decision with input as i
+
+	# The committed register waives this CVE on valkey (EXC-2026-0042); the
+	# hint is about an unwaived finding, so read an empty register.
+	d := pdp.decision with input as i with data.exceptions as []
 	some v in d.violations
 	v.code == "CVE_HIGH_FIXABLE"
 	contains(v.remediation_hint, "native image")
@@ -2544,4 +2547,74 @@ test_native_python_malformed_dist_everywhere_denies if {
 		],
 		"NATIVE_DISTRIBUTIONS_MALFORMED",
 	)
+}
+
+# ===========================================================================
+# The committed register
+#
+# `opa test .github/pdp/` loads .github/pdp/exceptions.yaml as data.exceptions,
+# so these tests read the register as it is committed. They pin the owner's
+# decision of 2026-11-15 (EXC-2026-0042 valkey, EXC-2026-0043 litellm): the 14
+# krb5-libs Highs of the ubi9-minimal base, nothing more, for 30 days. Delete
+# them with the entries when UBI publishes krb5-libs-1.21.1-10.el9_9.2.
+# ===========================================================================
+
+KRB5_CVES := [
+	"CVE-2026-71199", "CVE-2026-71200", "CVE-2026-107364",
+	"CVE-2026-112315", "CVE-2026-112316", "CVE-2026-112317", "CVE-2026-112318",
+	"CVE-2026-112319", "CVE-2026-112320", "CVE-2026-112321", "CVE-2026-112322",
+	"CVE-2026-112323", "CVE-2026-118380", "CVE-2026-119079",
+]
+
+krb5_findings := [{"id": c, "severity": "High", "fix_state": "fixed", "package": "krb5-libs"} | some c in KRB5_CVES]
+
+# An observe leg, as both entries are, evaluated the day after the decision.
+krb5_leg(base, fs, at) := patch(with_findings(base, fs, 0, count(fs)), [
+	{"op": "replace", "path": "/evaluated_at", "value": at},
+	{"op": "replace", "path": "/image/enforcement", "value": "observe"},
+])
+
+register_waives_krb5(base, id) if {
+	d := pdp.decision with input as krb5_leg(base, krb5_findings, "2026-11-16T00:00:00Z")
+	d.namespace == "trusted"
+	d.counts.blocking == 0
+	d.counts.waived == 14
+	every f in d.findings {
+		f.state == "waived"
+		f.waiver_id == id
+	}
+}
+
+test_register_waives_the_krb5_libs_set_on_valkey if {
+	register_waives_krb5(base_native, "EXC-2026-0042")
+}
+
+test_register_waives_the_krb5_libs_set_on_litellm if {
+	register_waives_krb5(base_native_python, "EXC-2026-0043")
+}
+
+# Scoped to krb5-libs: the same CVE in another package still blocks...
+test_register_krb5_waiver_is_package_scoped if {
+	f := {"id": "CVE-2026-71199", "severity": "High", "fix_state": "fixed", "package": "krb5-workstation"}
+	d := pdp.decision with input as krb5_leg(base_native, [f], "2026-11-16T00:00:00Z")
+	"CVE_HIGH_FIXABLE" in codes(d)
+	d.namespace == "quarantine"
+}
+
+# ...a CVE outside the set still blocks...
+test_register_krb5_waiver_is_cve_scoped if {
+	f := {"id": "CVE-2026-71201", "severity": "High", "fix_state": "fixed", "package": "krb5-libs"}
+	d := pdp.decision with input as krb5_leg(base_native_python, [f], "2026-11-16T00:00:00Z")
+	"CVE_HIGH_FIXABLE" in codes(d)
+	d.namespace == "quarantine"
+}
+
+# ...and on 2026-12-15 the whole set blocks again on both images.
+test_register_krb5_waiver_expires if {
+	every base in [base_native, base_native_python] {
+		d := pdp.decision with input as krb5_leg(base, krb5_findings, "2026-12-15T00:00:00Z")
+		d.counts.blocking == 14
+		d.counts.waived == 0
+		d.namespace == "quarantine"
+	}
 }

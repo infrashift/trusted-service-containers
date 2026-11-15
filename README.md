@@ -15,7 +15,7 @@ The images divide into two kinds, and that split drives the whole design.
 
 ### Mirror track — we do not rebuild
 
-`traefik`, `postgres`, `nexus3`, `mssql`, `whoami` arrive as the vendor built
+`traefik`, `postgres`, `nexus3`, `mssql`, `whoami`, `ollama` arrive as the vendor built
 them, and for Docker Hardened Images already attested; `mssql` arrives with a
 Notary Project signature we verify. Rebuilding them would destroy the
 vendor's signature and, for DHI, their zero-known-CVE claim. So we copy them **content-addressed**,

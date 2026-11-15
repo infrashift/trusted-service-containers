@@ -20,7 +20,7 @@ sources:
 
 # Mirror track
 
-The mirror track copies a vendor image by its digest and keeps its signatures and attestations. It never rebuilds the image. The mirror track has five images: [traefik](/images/traefik--01a183832cbc.md), [postgres](/images/postgres--01a183832d06.md), [nexus3](/images/nexus3--01a183832d26.md), [mssql](/images/mssql--01a183832d44.md) and [whoami](/images/whoami--01a183832d61.md).
+The mirror track copies a vendor image by its digest and keeps its signatures and attestations. It never rebuilds the image. The mirror track has six images: [traefik](/images/traefik--01a183832cbc.md), [postgres](/images/postgres--01a183832d06.md), [nexus3](/images/nexus3--01a183832d26.md), [mssql](/images/mssql--01a183832d44.md), [whoami](/images/whoami--01a183832d61.md) and [ollama](/images/ollama--01a1dfaa6878.md).
 
 ## Why we do not rebuild
 

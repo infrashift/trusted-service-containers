@@ -61,6 +61,8 @@ The review actor reads digests live from GHCR. It reads the trust class from the
 
 The `Review Summary` job writes one table row for each leg. The columns are Leg, Kind, Trust, Verdict, Namespace, Blocking, Waived and Recorded.
 
+The job finds the verdicts with `find verdicts -maxdepth 2`, not with a `verdicts/*/` glob. `download-artifact` puts one artifact directly in `verdicts/`, and puts each of two or more artifacts in its own directory. When the job finds no verdict, the status is not `success`. See [The review summary finds no verdict when the PR has one review leg](/issues/the-review-summary-finds-no-verdict-when-the-pr-has-one-review-leg--01a1dfc571ae.md).
+
 * If a leg has the verdict `PASS` but its namespace is not `trusted`, the comment shows **PASS (observe)** with a warning sign. The comment never shows a bare **PASS** in this state.
 * If one or more legs go to `quarantine/` and the overall result is success, the comment adds a warning block.
 * A folded section lists the violations of each leg, with the "Next step" hint from the PDP.

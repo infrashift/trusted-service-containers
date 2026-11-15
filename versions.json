@@ -1218,7 +1218,7 @@
       "kind": "package",
       "upstreamTrust": "internal",
       "base": "ubi9-minimal",
-      "enforcement": "observe",
+      "enforcement": "enforce",
       "arches": [
         "amd64",
         "arm64"

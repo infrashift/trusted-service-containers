@@ -37,7 +37,7 @@ The image installs four PGDG packages: `postgresql17-server`, `postgresql17` (th
 
 ## Enforcement
 
-See `versions.json` for the current value. The image started in `observe` on 2026-11-14, as step 5 of [Add an upstream image](/operations/add-an-upstream-image--01a18383d9be.md) requires.
+See `versions.json` for the current value. The image started in `observe` on 2026-11-14, as step 5 of [Add an upstream image](/operations/add-an-upstream-image--01a18383d9be.md) requires. The first review of PR #55 gave both legs **PASS**, namespace `trusted`, 0 blocking and 14 waived (`EXC-2026-0041`). Thus the same PR moved the image to `enforce`, as step 7 allows.
 
 ## Why the key is postgresql17
 

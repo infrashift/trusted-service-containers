@@ -62,6 +62,10 @@ The [Roadmap](/plans/roadmap--01a18396ce3c.md) puts the open issues in time orde
 * [The pinned mssql signing identity expires on 2027-10-31](/issues/the-pinned-mssql-signing-identity-expires-on-2027-10-31--01a1838a166f.md) (PRD)
 * [drift-upstream.sh does not propose new LiteLLM releases](/issues/drift-upstream-sh-does-not-propose-new-litellm-releases--01a1df7103b9.md) (new). A LiteLLM bump is a manual lock and pin change.
 
+### Open: features
+
+* [The litellm image has no database features](/issues/the-litellm-image-has-no-database-features--01a1dfa29810.md) (new). Virtual keys, spend logs and the UI login need Prisma and Node.js. The owner wants them later.
+
 ### Open: pipeline
 
 * [No check asserts that DHI attestations survive the copy to GHCR](/issues/no-check-asserts-that-dhi-attestations-survive-the-copy-to-ghcr--01a1838a1514.md) (PRD)

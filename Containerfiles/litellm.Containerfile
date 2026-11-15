@@ -14,6 +14,9 @@
 #   * The venv is created --without-pip, so it holds exactly the lock. The
 #     review compares the Python distributions in the image with the lock.
 #   * No Node.js and no Prisma. The admin UI is static files in the wheel.
+#   * The entrypoint (rootfs/litellm/usr/local/bin/litellm-entrypoint.sh)
+#     refuses to start without LITELLM_MASTER_KEY: without a master key the
+#     proxy accepts every request without authentication.
 #
 # scripts/lint-containerfiles.sh enforces the shape.
 
@@ -114,17 +117,27 @@ ENV PATH=/opt/litellm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbi
 # useradd, so the entry is appended. The code under /opt/litellm stays owned
 # by root; only HOME is writable.
 #
-# Then the runtime smoke test: the proxy starts with a throwaway config,
-# answers /health/liveliness without a key and lists the model with the key.
+# Then the runtime smoke tests. The entrypoint refuses to start with no key
+# and with an empty key. With the key from the environment, the proxy starts
+# through the entrypoint with a throwaway config, answers /health/liveliness
+# without a key, refuses /v1/models without the key (401) and lists the model
+# with the key.
 RUN set -euo pipefail; \
     echo "litellm:x:1001:0:LiteLLM:/var/lib/litellm:/sbin/nologin" >> /etc/passwd; \
     mkdir -p /var/lib/litellm; \
     chown -R 1001:0 /var/lib/litellm /etc/litellm; \
     chmod -R g=u /var/lib/litellm /etc/litellm; \
+    chmod 0755 /usr/local/bin/litellm-entrypoint.sh; \
     test "$(readlink -f /opt/litellm/bin/python)" = /usr/bin/python3.12; \
     litellm --version; \
-    printf 'model_list:\n  - model_name: smoke\n    litellm_params:\n      model: openai/smoke\n      api_base: http://127.0.0.1:9/v1\n      api_key: none\ngeneral_settings:\n  master_key: sk-smoke\n' > /tmp/smoke.yaml; \
-    litellm --config /tmp/smoke.yaml --host 127.0.0.1 --port 4000 > /tmp/smoke.log 2>&1 & pid=$!; \
+    for k in unset empty; do \
+      if [ "$k" = unset ]; then env -u LITELLM_MASTER_KEY litellm-entrypoint.sh --version > /tmp/refuse.log 2>&1 && rc=0 || rc=$?; \
+      else LITELLM_MASTER_KEY= litellm-entrypoint.sh --version > /tmp/refuse.log 2>&1 && rc=0 || rc=$?; fi; \
+      test "$rc" -ne 0 || { echo "the entrypoint started with the master key $k" >&2; exit 1; }; \
+      grep -q 'LITELLM_MASTER_KEY is unset or empty' /tmp/refuse.log || { cat /tmp/refuse.log >&2; exit 1; }; \
+    done; \
+    printf 'model_list:\n  - model_name: smoke\n    litellm_params:\n      model: openai/smoke\n      api_base: http://127.0.0.1:9/v1\n      api_key: none\ngeneral_settings:\n  master_key: os.environ/LITELLM_MASTER_KEY\n' > /tmp/smoke.yaml; \
+    LITELLM_MASTER_KEY=sk-smoke litellm-entrypoint.sh --config /tmp/smoke.yaml --host 127.0.0.1 --port 4000 > /tmp/smoke.log 2>&1 & pid=$!; \
     printf '%s\n' \
       'import json, sys, time, urllib.request as u' \
       'for _ in range(240):' \
@@ -135,14 +148,18 @@ RUN set -euo pipefail; \
       'else:' \
       '    sys.exit("no answer on /health/liveliness")' \
       'assert r.status == 200, r.status' \
+      'try:' \
+      '    u.urlopen("http://127.0.0.1:4000/v1/models", timeout=10); sys.exit("/v1/models answered without the key")' \
+      'except u.HTTPError as e:' \
+      '    assert e.code == 401, e.code' \
       'q = u.Request("http://127.0.0.1:4000/v1/models", headers={"Authorization": "Bearer sk-smoke"})' \
       'ids = [m["id"] for m in json.load(u.urlopen(q, timeout=10))["data"]]' \
       'assert ids == ["smoke"], ids' \
-      'print("liveliness 200, /v1/models", ids)' > /tmp/smoke.py; \
+      'print("liveliness 200, /v1/models 401 without the key and", ids, "with it")' > /tmp/smoke.py; \
     /opt/litellm/bin/python /tmp/smoke.py \
       || { kill "$pid" 2>/dev/null; cat /tmp/smoke.log >&2; exit 1; }; \
     kill "$pid"; wait "$pid" 2>/dev/null || true; \
-    rm -rf /tmp/smoke.py /tmp/smoke.yaml /tmp/smoke.log /var/lib/litellm/* /var/lib/litellm/.[!.]*; \
+    rm -rf /tmp/smoke.py /tmp/smoke.yaml /tmp/smoke.log /tmp/refuse.log /var/lib/litellm/* /var/lib/litellm/.[!.]*; \
     echo "runtime smoke test: OK"
 
 WORKDIR /var/lib/litellm
@@ -150,7 +167,7 @@ WORKDIR /var/lib/litellm
 # EXPOSE is metadata only. 4000 is above 1024, so UID 1001 needs no capability.
 EXPOSE 4000
 
-ENTRYPOINT ["litellm"]
+ENTRYPOINT ["litellm-entrypoint.sh"]
 CMD ["--config", "/etc/litellm/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
 
 USER 1001

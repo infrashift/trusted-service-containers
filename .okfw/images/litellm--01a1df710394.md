@@ -8,7 +8,7 @@ tags:
   - "native"
   - "python"
 created: "2026-11-15T07:41:28-06:00"
-timestamp: "2026-11-15T07:41:28-06:00"
+timestamp: "2026-11-15T08:40:00-06:00"
 status: "draft"
 resource: "https://github.com/infrashift/trusted-service-containers/blob/main/Containerfiles/litellm.Containerfile"
 sources:
@@ -16,9 +16,11 @@ sources:
     title: "locks/litellm/requirements.txt"
   - resource: "https://github.com/infrashift/trusted-service-containers/blob/main/rootfs/litellm/etc/litellm/config.yaml"
     title: "rootfs/litellm/etc/litellm/config.yaml"
+  - resource: "https://github.com/infrashift/trusted-service-containers/blob/main/rootfs/litellm/usr/local/bin/litellm-entrypoint.sh"
+    title: "rootfs/litellm/usr/local/bin/litellm-entrypoint.sh"
   - resource: "https://pypi.org/project/litellm/"
     title: "LiteLLM on PyPI"
-description: "The LiteLLM proxy 1.109.1 from a hash-locked wheel set on the Python 3.12 of UBI; native python (ADR-010), no Node.js, no database."
+description: "The LiteLLM proxy 1.109.1 from a hash-locked wheel set on the Python 3.12 of UBI; native python (ADR-010), refuses to start without LITELLM_MASTER_KEY, no Node.js, no database."
 ---
 
 # litellm
@@ -50,21 +52,34 @@ See `versions.json` for the current value. The image starts in `observe`. For th
 | Image | `ghcr.io/infrashift/trusted-service-containers/trusted/litellm:<version>` (for example `1.109.1`), also `<version>-<shortsha>` and `<version>-<YYYYMMDD>` |
 | User | UID 1001, primary group GID 0. `HOME=/var/lib/litellm` is the only writable path that the image prepares. The code in `/opt/litellm` belongs to root. |
 | Port | 4000 |
-| Entrypoint | `litellm`, command `--config /etc/litellm/config.yaml --host 0.0.0.0 --port 4000` |
+| Entrypoint | `litellm-entrypoint.sh`, command `--config /etc/litellm/config.yaml --host 0.0.0.0 --port 4000`. The entrypoint checks `LITELLM_MASTER_KEY`, then runs `litellm` with the arguments unchanged. |
 | Health | `/health/liveliness` and `/health/liveness` need no key. `/health/readiness` also exists. |
-| Environment | `LITELLM_MASTER_KEY` (required, see below). `LITELLM_LOCAL_MODEL_COST_MAP=True` is set, so the proxy uses the model cost map from the wheel and does not fetch it from GitHub at start. |
+| Environment | `LITELLM_MASTER_KEY` (required: the image does not start without it, see below). `LITELLM_LOCAL_MODEL_COST_MAP=True` is set, so the proxy uses the model cost map from the wheel and does not fetch it from GitHub at start. |
 
 ### The configuration
 
 `rootfs/litellm/etc/litellm/config.yaml` is ours. It has no model, and it reads the master key from `LITELLM_MASTER_KEY`.
 
-WARNING: Set `LITELLM_MASTER_KEY`. Without a master key, the proxy accepts every request without authentication.
-
 To add models and the shared Redis state, mount a config over `/etc/litellm/config.yaml`. Do not set `DATABASE_URL`: the image has no Prisma.
+
+### The master key
+
+Without a master key, the proxy accepts every request without authentication. Thus the image does not start without one. On 2026-11-15 the owner decided this.
+
+* `rootfs/litellm/usr/local/bin/litellm-entrypoint.sh` is the entrypoint. It is a POSIX `sh` script of one check.
+* When `LITELLM_MASTER_KEY` is unset or empty, it writes `litellm-entrypoint: error: LITELLM_MASTER_KEY is unset or empty; ...` to stderr and exits with status 1. The proxy does not start.
+* When the key is set, it runs `exec litellm "$@"`. The proxy is PID 1 and gets the signals.
+* The check also applies with a mounted config, and also to `--version` and `--help`. To run `litellm` without the check, use `--entrypoint litellm`.
+* The entrypoint does not check the key itself. Use a long random key that starts with `sk-`, from a secret.
 
 ### Smoke tests
 
-The runtime stage starts the proxy with a throwaway config and a fake model. It requires `200` from `/health/liveliness` without a key, and the list `["smoke"]` from `/v1/models` with the key. The builder runs `litellm --version` and `pip check`.
+The runtime stage runs these tests:
+
+1. The entrypoint with no `LITELLM_MASTER_KEY`, and with an empty one, must exit with a status that is not 0 and print the error.
+2. Then it starts the proxy through the entrypoint, with `LITELLM_MASTER_KEY` set and a throwaway config with a fake model. It requires `200` from `/health/liveliness` without a key, `401` from `/v1/models` without the key, and the list `["smoke"]` from `/v1/models` with the key.
+
+The builder runs `litellm --version` and `pip check`.
 
 ## What HALO sets
 
@@ -74,7 +89,7 @@ The runtime stage starts the proxy with a throwaway config and a fake model. It 
 
 ## Not in this image
 
-* The database features: virtual keys, spend logs and the admin UI login against a database. They need Prisma, its query engine and Node.js. That needs a new decision (ADR-010).
+* The database features: virtual keys, spend logs and the admin UI login against a database. They need Prisma, its query engine and Node.js. That needs a new decision (ADR-010). On 2026-11-15 the owner decided to add them later. See [The litellm image has no database features](/issues/the-litellm-image-has-no-database-features--01a1dfa29810.md).
 * A release bump from the drift workflow. See [drift-upstream.sh does not propose new LiteLLM releases](/issues/drift-upstream-sh-does-not-propose-new-litellm-releases--01a1df7103b9.md).
 
 ## Related

@@ -698,6 +698,39 @@ exceptions:
       module clears it. 30 days, because the module fix exists; re-pin and
       delete this entry when prometheus ships it.
 
+  - id: EXC-2026-0041
+    image: postgresql17
+    variant: "*"
+    package: krb5-libs
+    cves:
+      - CVE-2026-71199
+      - CVE-2026-71200
+      - CVE-2026-107364
+      - CVE-2026-112315
+      - CVE-2026-112316
+      - CVE-2026-112317
+      - CVE-2026-112318
+      - CVE-2026-112319
+      - CVE-2026-112320
+      - CVE-2026-112321
+      - CVE-2026-112322
+      - CVE-2026-112323
+      - CVE-2026-118380
+      - CVE-2026-119079
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2026-12-14T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/the-ubi-repositories-do-not-yet-carry-the-krb5-libs-fix-for-14-highs-in-postgresql17--01a1dd21edb8.md"
+    justification: >-
+      RHEL fixed these 14 krb5-libs Highs in 1.21.1-10.el9_9.2, but on
+      2026-11-14 the newest krb5-libs in the UBI repositories was
+      1.21.1-10.el9_8.1, which the image already installs: the Containerfile
+      upgrades the base from UBI before it installs PostgreSQL. krb5-libs is a
+      base package that libpq and the server link, so it cannot be removed.
+      No rebuild or re-pin clears it until UBI publishes the build. 30 days,
+      because UBI already carries other el9_9 builds; rebuild and delete this
+      entry when it does.
+
 # --- Example. Delete before the first real entry. --------------------------
 #
 # - id: EXC-2026-0001

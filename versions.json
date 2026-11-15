@@ -149,8 +149,28 @@
       "arm64": {
         "digest": "sha256:073a8431f9610056ef5ba271a28e0d836de1fdd7f29bda13cf97dc2cb8642fcc"
       },
-      "note": "Donor for /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem only. Assert the copied bundle is >100000 bytes so a truncated one fails loudly.",
+      "note": "Donor for /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem only. Assert the copied bundle is >100000 bytes so a truncated one fails loudly. Since 2026-11-14 also the RUNTIME base of the package-track image postgresql17 (ADR-009), whose Containerfile upgrades it from the signed UBI repositories before it installs anything.",
       "updated": "2026-10-28"
+    }
+  },
+  "packageRepos": {
+    "pgdg17-el9": {
+      "name": "PostgreSQL Global Development Group (PGDG), PostgreSQL 17 for EL9",
+      "amd64": {
+        "baseurl": "https://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-x86_64",
+        "key": ".github/pdp/keyring/pgdg-rpm-gpg-key-rhel.asc",
+        "keyUrl": "https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL",
+        "signerFingerprint": "D4BF08AE67A0B4C7A1DBCCD240BCA2B408B40D20",
+        "signerFileSha256": "a70c9527426017d00fa4e6f9d2941d515357a27a7be82e155248ece53bbe5453"
+      },
+      "arm64": {
+        "baseurl": "https://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-aarch64",
+        "key": ".github/pdp/keyring/pgdg-rpm-gpg-key-aarch64-rhel.asc",
+        "keyUrl": "https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-AARCH64-RHEL",
+        "signerFingerprint": "B031F89FC983E98262906B6E177B343BB9738825",
+        "signerFileSha256": "cc506fa92aa97e8e58f88551a2ec99a61d9d603f7f2c1ae0c06191f58c29979f"
+      },
+      "note": "Chosen 2026-11-14 because UBI9 AppStream has no PostgreSQL 17: no server package and no `postgresql` module stream (its modules.yaml lists maven, nginx, nodejs, php, redis and ruby only; the only PostgreSQL RPMs are the 13 client and its private libs). See ADR-009. PGDG signs each architecture with its own key: the x86_64 RPMs and repomd.xml with 40BCA2B408B40D20, the aarch64 ones with 177B343BB9738825. Both keys were fetched from keyUrl on 2026-11-14 (TOFU: neither is on keyserver.ubuntu.com); every pinned RPM and both repomd.xml.asc signatures verified against them. scripts/build-leg.sh refuses a key file whose sha256 or primary fingerprint differs from these values, and `make -f Ops.mk verify-package-pins` compares the live keyUrl with the committed copy, so a PGDG key rotation becomes a reviewed PR."
     }
   },
   "images": {
@@ -1193,6 +1213,64 @@
       },
       "updated": "2026-11-14",
       "reason": "Initial pin. No UBI-based exporter exists: the vendor image is Alpine and unsigned. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; moved to enforce 2026-10-14 after its first review on a pcre2-patched ubi9-micro (PR #32) came back clean on both arches: allow=true, blocking=0, waived=0, recorded=0, namespace trusted, so no exception was needed. Licence Apache-2.0. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/nats (a sidecar behind an mTLS metrics door; PLAN-SSHadowForge-Dashboards-20261012.md Part A/B, the deferred E5 of PLAN-SSHadowForge-Review-20261012.md)."
+    },
+    "postgresql17": {
+      "kind": "package",
+      "upstreamTrust": "internal",
+      "base": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/postgresql17.Containerfile",
+      "packages": {
+        "repo": "pgdg17-el9",
+        "version": "17.12",
+        "track": "^17\\.[0-9]+-[0-9]+PGDG\\.rhel9(\\.[0-9]+)?$",
+        "amd64": [
+          "postgresql17-17.12-1PGDG.rhel9.8.x86_64",
+          "postgresql17-contrib-17.12-1PGDG.rhel9.8.x86_64",
+          "postgresql17-libs-17.12-1PGDG.rhel9.8.x86_64",
+          "postgresql17-server-17.12-1PGDG.rhel9.8.x86_64"
+        ],
+        "arm64": [
+          "postgresql17-17.12-1PGDG.rhel9.8.aarch64",
+          "postgresql17-contrib-17.12-1PGDG.rhel9.8.aarch64",
+          "postgresql17-libs-17.12-1PGDG.rhel9.8.aarch64",
+          "postgresql17-server-17.12-1PGDG.rhel9.8.aarch64"
+        ],
+        "note": "Exact NEVRAs, per architecture: PGDG can publish a different release on each (17.7 was 3PGDG.rhel9.6 on x86_64 and 2PGDG.rhel9 on aarch64). `track` bounds the VERSION-RELEASE of every pinned NEVRA to the 17 major line of the EL9 builds; scripts/drift-upstream.sh proposes the newest version-release in the repository that matches it, for every package and both architectures together. postgresql17 carries psql, pg_isready and createdb, which HALO and Chit run inside the container; postgresql17-libs is libpq; postgresql17-contrib carries pgcrypto, which Chit's first migration creates (the Docker and DHI images ship contrib too). contrib links libperl and libpython for its PL transform modules, so the perl and python3 runtime libraries come with it: on 2026-11-14 that added Mediums and one unfixable High (python3-pip-wheel), and no fixable finding. UBI dependencies (systemd-libs, libicu, krb5-libs and others) resolve at build time from the Red Hat signed UBI repositories and are recorded in the SBOM."
+      },
+      "runtime": {
+        "ports": [
+          5432
+        ],
+        "volumes": [
+          "/var/lib/pgsql/data"
+        ],
+        "entrypoint": [
+          "docker-entrypoint.sh"
+        ],
+        "cmd": [
+          "postgres"
+        ],
+        "user": 26,
+        "dataDirectory": "/var/lib/pgsql/data/userdata",
+        "env": [
+          "POSTGRES_USER",
+          "POSTGRES_PASSWORD",
+          "POSTGRES_PASSWORD_FILE",
+          "POSTGRES_DB",
+          "POSTGRES_INITDB_ARGS",
+          "POSTGRES_HOST_AUTH_METHOD",
+          "PGDATA",
+          "PGPORT"
+        ],
+        "note": "The environment contract of the Docker official and DHI postgres images, which HALO and Chit use today. UID 26 is the RHEL postgres user; its primary group is GID 0. The volume is mounted at /var/lib/pgsql/data and the cluster is in its userdata/ subdirectory, as in the Red Hat images. See images/postgresql17 in the wiki for what each consumer changes."
+      },
+      "updated": "2026-11-14",
+      "reason": "Replaces the DHI postgres mirror for PostgreSQL 17 (owner decision 2026-11-14). The DHI 17 legs had 144 blocking Debian base findings that only Docker can clear; this image is PGDG's signed RPMs on our own ubi9-minimal, so its CVE surface is Red Hat's UBI content. The key is postgresql17, not postgresql with a 17 variant: a build-kind entry has one implicit variant, and one repository per major makes a major upgrade -- a dump and restore, never an image swap -- impossible to receive from a tag move. It does not collide with the mirror key `postgres`, which stays until HALO and Chit move."
     }
   }
 }

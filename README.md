@@ -68,6 +68,20 @@ re-derives the installed set, the repository file and the key live from GHCR.
 |---|---|---|
 | `postgresql17` | PGDG EL9 (UBI9 AppStream has no PostgreSQL 17) | `17.x`, per-arch NEVRAs |
 
+#### Native kind — compiled on UBI from a pinned commit
+
+C software that no free signed repository ships is a built entry of kind
+`native` ([ADR-010](./.okfw/decisions/adr-010-valkey-and-litellm-build-on-ubi-as-the-kind-native--01a1dee688b9.md)).
+It compiles the pinned commit on a pinned UBI builder, with the compiler from
+the signed UBI repositories, onto `ubi9-minimal`. The source also pins the
+vendor's release archive by sha256, and `scripts/fetch-archive.sh` fails the
+build unless the archive's file tree equals the commit's. There is no vendor
+binary comparison; the binary hash is recorded as a change detector.
+
+| Image | Source | Track |
+|---|---|---|
+| `valkey` | `valkey-io/valkey`, archive sha256 from `valkey-io/valkey-hashes` | `9.1.x`, built with TLS |
+
 ---
 
 ## Consuming the images

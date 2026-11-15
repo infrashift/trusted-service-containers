@@ -149,7 +149,8 @@ cat > "$TMP/work/versions.json" <<EOF
 {
   "sources": {
     "nats": { "url": "file://$TMP/nats.git", "track": "^v2\\\\.14\\\\.[0-9]+\$", "ref": "v2.14.5", "commit": "$SHA40", "shortCommit": "0000000",
-      "assets": { "ui": { "url": "https://example.invalid/releases/download/v2.14.5/ui-2.14.5.tar.gz", "sha256": "$(printf 'f%.0s' {1..64})" } } },
+      "assets": { "ui": { "url": "https://example.invalid/releases/download/v2.14.5/ui-2.14.5.tar.gz", "sha256": "$(printf 'f%.0s' {1..64})" } },
+      "archive": { "url": "https://example.invalid/archive/refs/tags/v2.14.5.tar.gz", "sha256": "$(printf 'e%.0s' {1..64})", "hashSource": "https://example.invalid/hashes" } },
     "dapr": { "url": "https://example.invalid/dapr", "track": "^v1\\\\.18\\\\.[0-9]+\$", "ref": "v1.18.4-pre.233f2b49", "commit": "$SHA40" }
   },
   "toolchains": {
@@ -232,6 +233,15 @@ got=$(jq -r '.sources.nats.assets.ui.url' "$V")
 grep -q 'source `nats` asset `ui`: url moved to `v2.14.7`, but `sha256` still holds the `v2.14.5` hash' "$TMP/report.md" \
   || fail "no alarm for the nats asset sha256 left on the old release"
 
+# --- Release archive (native, ADR-010): URL follows, hash is flagged ------
+got=$(jq -r '.sources.nats.archive.url' "$V")
+[[ "$got" == "https://example.invalid/archive/refs/tags/v2.14.7.tar.gz" ]] \
+  || fail "nats archive url not moved to the new release: ${got}"
+[[ "$(jq -r '.sources.nats.archive.sha256' "$V")" == "$(printf 'e%.0s' {1..64})" ]] \
+  || fail "nats archive sha256 changed; drift has no trusted source for it and must leave it to fail closed"
+grep -q 'source `nats` archive: url moved to `v2.14.7`, but `sha256` still holds the `v2.14.5` hash' "$TMP/report.md" \
+  || fail "no alarm for the nats archive sha256 left on the old release"
+
 # --- Toolchains: the rolling tag moved, so re-pin per platform and record ---
 # the compiler patch from the new image's own config. Nothing watched these
 # until 2026-10-13, when go1.26 had sat on 1.26.6 for five days past a Critical.
@@ -269,4 +279,4 @@ grep -q 'package repository `pgdg` arm64' "$TMP/report.md" \
   && fail "an alarm for the arm64 key, which matches the committed copy"
 
 echo "OK: drift-upstream.sh proposes the newest complete in-track package release per arch and flags a rotated package key"
-echo "OK: drift-upstream.sh pins crosschecks and toolchains per platform, records the toolchain's compiler patch, abbreviates in a full clone, moves asset URLs, and flags what it cannot move"
+echo "OK: drift-upstream.sh pins crosschecks and toolchains per platform, records the toolchain's compiler patch, abbreviates in a full clone, moves asset and release-archive URLs, and flags what it cannot move"

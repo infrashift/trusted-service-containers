@@ -104,11 +104,12 @@ record build_attestations PASS "provenance, upstream-verification and per-platfo
 # ===========================================================================
 IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
 # So does the image kind, which picks the policy track. The matrix kind is the
-# job family: build and package images (ADR-009) are both "build" legs there,
-# so it only has to be consistent with versions.json, never decisive.
+# job family: build, package (ADR-009) and native (ADR-010) images are all
+# "build" legs there, so it only has to be consistent with versions.json,
+# never decisive.
 REPO_KIND=$(jq -r '.kind' <<<"$IMG")
 case "${KIND}/${REPO_KIND}" in
-  mirror/mirror|build/build|build/package) ;;
+  mirror/mirror|build/build|build/package|build/native) ;;
   *) fail "the matrix runs a ${KIND} leg but versions.json declares kind ${REPO_KIND} for ${SERVICE}" ;;
 esac
 KIND="$REPO_KIND"
@@ -151,10 +152,11 @@ record upstream_verification "$(tr '[:lower:]' '[:upper:]' <<<"${SIG_STATE:0:1}"
 # 5. Kind-specific integrity blocks for the policy input.
 # ===========================================================================
 PROV="$EV/provenance.json"
-MIRROR_BLOCK='{}'; BUILD_BLOCK='{}'; PACKAGE_BLOCK='{}'
+MIRROR_BLOCK='{}'; BUILD_BLOCK='{}'; PACKAGE_BLOCK='{}'; NATIVE_BLOCK='{}'
 # Mirror legs have no build provenance mode; build legs set it below from
 # versions.json, never from the evidence, and a package leg's mode is
-# `package` (ADR-009), also read from versions.json.
+# `package` (ADR-009) and a native leg's `native` (ADR-010), also read from
+# versions.json.
 DECLARED_MODE=""
 
 if [[ "$KIND" == "mirror" ]]; then
@@ -237,6 +239,54 @@ elif [[ "$KIND" == package ]]; then
   check "pinned NEVRAs installed (live)" "$PKG_OK"
   record package_pins_installed "$PKG_OK" "$(jq -r '.pinned_nevras | join(" ")' <<<"$PACKAGE_BLOCK")"
   DECLARED_MODE=package
+  check "provenance mode (versions.json)" "$DECLARED_MODE"
+elif [[ "$KIND" == native ]]; then
+  # Every pinned_* value and the language come from the CHECKED-OUT
+  # versions.json. The source, base and builder the build used come from its
+  # signed SLSA provenance; the archive check and the binary hash from its
+  # signed native-verification.json. The policy holds each against the pins.
+  verify_att https://infrashift.io/attestation/native-verification/v1 "${DEST_REPO}@${LIVE_DIGEST}" \
+    || fail "native-verification attestation does not verify against build.pub"
+  NV="$EV/native-verification.json"
+  [[ -f "$NV" ]] || fail "a native leg must carry native-verification.json"
+  BASE_KEY=$(jq -r '.base' <<<"$IMG")
+  BUILDER_KEY=$(jq -r '.builder' <<<"$IMG")
+  SRC_KEY=$(jq -r '.source' <<<"$IMG")
+  SRC=$(jq -c --arg s "$SRC_KEY" '.sources[$s] // {}' versions.json)
+  NATIVE_BLOCK=$(jq -n \
+    --arg pinbaserepo "$(jq -r --arg k "$BASE_KEY" '.bases[$k].image' versions.json)" \
+    --arg baserepo "$(jq -r '.buildDefinition.resolvedDependencies[0].uri' "$PROV")" \
+    --arg pinbasedig "$(jq -r --arg k "$BASE_KEY" --arg a "$ARCH" '.bases[$k][$a].digest' versions.json)" \
+    --arg basedig "sha256:$(jq -r '.buildDefinition.resolvedDependencies[0].digest.sha256' "$PROV")" \
+    --arg pinbuilderrepo "$(jq -r --arg k "$BUILDER_KEY" '.bases[$k].image' versions.json)" \
+    --arg pinbuilderdig "$(jq -r --arg k "$BUILDER_KEY" --arg a "$ARCH" '.bases[$k][$a].digest' versions.json)" \
+    --argjson builder "$(jq -c '[.buildDefinition.resolvedDependencies[] | select(.annotations.role == "builder")] | first // {}' "$PROV")" \
+    --arg lang "$(jq -r '.native.language // ""' <<<"$IMG")" \
+    --argjson src "$SRC" \
+    --arg ref "$(jq -r '.buildDefinition.externalParameters.source.digest.gitCommit // ""' "$PROV")" \
+    --arg url "$(jq -r '.buildDefinition.externalParameters.source.uri // "" | ltrimstr("git+")' "$PROV")" \
+    --slurpfile nv "$NV" \
+    '{ pinned_base_repo:$pinbaserepo, base_image_repo:$baserepo,
+       pinned_base_digest:$pinbasedig, base_image_digest:$basedig,
+       pinned_builder_repo:$pinbuilderrepo, builder_image_repo:($builder.uri // ""),
+       pinned_builder_digest:$pinbuilderdig,
+       builder_image_digest:(if ($builder.digest.sha256 // "") == "" then "" else "sha256:" + $builder.digest.sha256 end),
+       language:$lang,
+       pinned_source_ref:($src.commit // ""), source_revision:$ref,
+       pinned_source_url:($src.url // ""), source_url:$url,
+       pinned_version:($src.ref // ""),
+       pinned_archive_url:($src.archive.url // ""), pinned_archive_sha256:($src.archive.sha256 // ""),
+       archive_url:($nv[0].archive.url // ""), archive_sha256:($nv[0].archive.sha256 // ""),
+       archive_tree_match:($nv[0].archive.tree_match // false),
+       from_source_sha256:($nv[0].builtFromSource.sha256 // ""),
+       verification:{performed:($nv[0].verification.performed // false)} }')
+  SRC_OK=$([[ "$(jq -r '.source_revision' <<<"$NATIVE_BLOCK")" == "$(jq -r '.pinned_source_ref' <<<"$NATIVE_BLOCK")" ]] && echo PASS || echo FAIL)
+  check "source commit == versions.json pin" "$SRC_OK"
+  record source_pin_match "$SRC_OK" "pinned $(jq -r '.pinned_source_ref' <<<"$NATIVE_BLOCK")"
+  ARC_OK=$(jq -r 'if .archive_sha256 == .pinned_archive_sha256 and .archive_tree_match == true then "PASS" else "FAIL" end' <<<"$NATIVE_BLOCK")
+  check "release archive == commit tree" "$ARC_OK"
+  record source_archive_match "$ARC_OK" "$(jq -r '.pinned_archive_url + " sha256 " + .pinned_archive_sha256' <<<"$NATIVE_BLOCK")"
+  DECLARED_MODE=native
   check "provenance mode (versions.json)" "$DECLARED_MODE"
 elif [[ "$KIND" == build ]]; then
   SRC_KEY=$(jq -r '.source' <<<"$IMG")
@@ -334,6 +384,7 @@ while read -r slug cve_file; do
     --arg kp "$KEYRING_PINNED" --arg kf "$KEYRING_FETCHED" \
     --arg asbom "$ATT_SBOM" --arg aprov "$ATT_PROV" --arg avex "$ATT_VEX" \
     --argjson mirror "$MIRROR_BLOCK" --argjson build "$BUILD_BLOCK" --argjson package "$PACKAGE_BLOCK" \
+    --argjson native "$NATIVE_BLOCK" \
     --argjson findings "$FINDINGS" \
     --argjson c "$(counts Critical)" --argjson h "$(counts High)" \
     --argjson m "$(counts Medium)" --argjson l "$(counts Low)" \
@@ -348,7 +399,7 @@ while read -r slug cve_file; do
                     keyring_pinned_sha256:$kp, keyring_fetched_sha256:$kf }
                   | with_entries(select(.value != ""))
                   | . + { attestations: { sbom:$asbom, provenance:$aprov, vex:$avex } }),
-       mirror: $mirror, build: $build, package: $package,
+       mirror: $mirror, build: $build, package: $package, native: $native,
        scan_results: { critical_count:$c, high_count:$h, medium_count:$m, low_count:$l,
                        fixable_critical_count:$fc, fixable_high_count:$fh,
                        findings:$findings },

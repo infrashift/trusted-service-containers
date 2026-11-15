@@ -27,9 +27,11 @@ REQUIRED_LABELS = [
 
 build_imgs = {k: v for k, v in V['images'].items() if v['kind'] == 'build'}
 package_imgs = {k: v for k, v in V['images'].items() if v['kind'] == 'package'}
+native_imgs = {k: v for k, v in V['images'].items() if v['kind'] == 'native'}
 
 # --- Every declared Containerfile exists, and none is orphaned -------------
-declared = {v['containerfile'] for v in build_imgs.values()} | {v['containerfile'] for v in package_imgs.values()}
+declared = ({v['containerfile'] for v in build_imgs.values()} | {v['containerfile'] for v in package_imgs.values()}
+            | {v['containerfile'] for v in native_imgs.values()})
 on_disk = {os.path.join('Containerfiles', f) for f in os.listdir('Containerfiles')
            if f.endswith('.Containerfile')}
 for p in sorted(declared - on_disk):
@@ -336,11 +338,117 @@ for svc, img in sorted(package_imgs.items()):
         err(p, f"does not copy rootfs/{svc}/")
     runtime_checks(p, ins, rt)
 
+# ===========================================================================
+# Native Containerfiles (ADR-010): compile a pinned source commit on a pinned
+# UBI builder, with the compiler from the signed UBI repositories, onto our
+# base. Two stages, `AS builder` and the runtime.
+# ===========================================================================
+SIG_BYPASS = (r'--nogpgcheck', r'gpgcheck\s*=\s*0', r'--setopt=\S*gpgcheck=(0|False|false)', r'--no-gpg',
+              r'rpm\s+(-i|-U|--install|--upgrade)\b.*--nosignature')
+
+for svc, img in sorted(native_imgs.items()):
+    p = img['containerfile']
+    if p not in on_disk:
+        continue
+    ins = instructions(open(p).read())
+    code = "\n".join(ins)
+    heads = [i.split(None, 1)[0].upper() for i in ins]
+    rt = img['runtime']
+    nat = img.get('native', {})
+
+    froms = [i for i in ins if i.upper().startswith('FROM ')]
+    want_froms = ['FROM ${BUILDER_BASE}@${BUILDER_DIGEST} AS builder', 'FROM ${UPSTREAM_BASE}@${UPSTREAM_DIGEST}']
+    if froms != want_froms:
+        err(p, f"a native image has exactly 2 stages, the pinned UBI builder then the pinned runtime base: {want_froms}; found {froms}")
+    if 'FROM' not in heads:
+        continue
+    first_from = heads.index('FROM')
+    last_from = max(n for n, h in enumerate(heads) if h == 'FROM')
+    pre = {i.split()[1] for i in ins[:first_from] if i.upper().startswith('ARG ')}
+    post = {i.split()[1] for i in ins[last_from:] if i.upper().startswith('ARG ')}
+    for need in ("BUILDER_BASE", "BUILDER_DIGEST", "UPSTREAM_BASE", "UPSTREAM_DIGEST"):
+        if need not in pre:
+            err(p, f"missing pre-FROM `ARG {need}`")
+    for need in ("UPSTREAM_BASE", "UPSTREAM_DIGEST", "SOURCE_URL", "SOURCE_REF", "SOURCE_VERSION"):
+        if need not in post:
+            err(p, f"`ARG {need}` is not declared after the runtime FROM; the LABEL referencing it would expand to an empty string")
+
+    for m in re.finditer(r'sha256:[a-f0-9]{7,}', code):
+        err(p, f"hardcoded digest {m.group(0)[:20]}...; digests belong in versions.json only")
+
+    # The five labels, each from the build arg the policy holds it against:
+    # NATIVE_SOURCE_LABEL_DISAGREES, BUILD_REVISION_LABEL_DISAGREES,
+    # NATIVE_VERSION_LABEL_DISAGREES and BUILD_LABEL_DIGEST_DISAGREES.
+    labels = [i for i in ins[last_from:] if i.upper().startswith('LABEL ')]
+    if len(labels) != 1 or len([i for i in ins if i.upper().startswith('LABEL ')]) != 1:
+        err(p, "expected exactly 1 LABEL instruction, in the runtime stage")
+    else:
+        for name, arg in (("org.opencontainers.image.source", "SOURCE_URL"),
+                          ("org.opencontainers.image.revision", "SOURCE_REF"),
+                          ("org.opencontainers.image.version", "SOURCE_VERSION"),
+                          ("io.infrashift.image.upstream.digest", "UPSTREAM_DIGEST"),
+                          ("io.infrashift.image.upstream.source", "UPSTREAM_BASE")):
+            if f'{name}="${{{arg}}}"' not in labels[0]:
+                err(p, f'LABEL block must set {name}="${{{arg}}}"')
+
+    # Signed UBI packages only: no way to turn a signature check off, and no
+    # third-party repository or key.
+    for bad in SIG_BYPASS:
+        if re.search(bad, code):
+            err(p, f"disables signature checking ({bad}); every RPM must verify against the Red Hat key")
+    for bad in (r'/etc/yum\.repos\.d', r'\bbaseurl=', r'rpm\s+--import', r'--repofrompath', r'--enablerepo'):
+        if re.search(bad, code):
+            err(p, f"adds or enables a repository ({bad}); a native build uses only the signed UBI repositories of its base")
+
+    builder = "\n".join(ins[first_from:last_from])
+    runtime = "\n".join(ins[last_from:])
+    if not re.search(r'\bmicrodnf\b[^;]*\binstall\b[^;]*\$\{BUILD_PACKAGES\}', builder):
+        err(p, "the builder does not install exactly ${BUILD_PACKAGES} (versions.json native.buildPackages)")
+    if 'ARG BUILD_PACKAGES' not in builder:
+        err(p, "the builder stage does not declare `ARG BUILD_PACKAGES`")
+    if not re.search(r'\bmicrodnf\b[^;]*\bupgrade\b', runtime):
+        err(p, "the runtime stage does not upgrade its base from the signed UBI repositories")
+    if '${BUILD_PACKAGES}' in runtime or re.search(r'\binstall\b[^;]*\b(gcc|gcc-c\+\+|make|binutils|[A-Za-z0-9_.+-]+-devel)\b', runtime):
+        err(p, "the runtime stage installs a compiler or a -devel package; they belong in the builder only")
+
+    if nat.get('language') == 'c':
+        if f"COPY src/{svc}/ " not in builder:
+            err(p, f"the builder does not copy the pinned source checkout src/{svc}/")
+        # Every make command, split at ; && ||, so a flag on `make install`
+        # alone cannot stand in for the compile.
+        make = [m for m in re.findall(r'(?:^|[;&|]\s*)(make\b[^;&|]*)', builder, re.M)]
+        if not make:
+            err(p, "the builder runs no make command")
+        for flag in nat.get('makeFlags', []):
+            for m in make:
+                if not re.search(r'(^|\s)' + re.escape(flag) + r'(\s|$)', m):
+                    err(p, f"versions.json native.makeFlags declares {flag}, but `{m.strip()[:60]}` does not pass it")
+        for path in [nat.get('installPath')] + nat.get('extraBinaries', []):
+            if path and f"COPY --from=builder /out{path} {path}" not in runtime:
+                err(p, f"the runtime stage does not install {path} from the builder (COPY --from=builder /out{path} {path})")
+
+    # Non-root, group 0, and USER 1001 last.
+    if 'x:1001:0:' not in runtime:
+        err(p, "does not append a UID 1001 / GID 0 passwd entry")
+    if 'chmod -R g=u' not in runtime:
+        err(p, "does not `chmod g=u`; the image would break under OpenShift's arbitrary-UID SCC")
+    if not ins or ins[-1].upper() != 'USER 1001':
+        err(p, f"last instruction must be `USER 1001`, found {ins[-1]!r}" if ins else "empty file")
+    if os.path.isdir(f"rootfs/{svc}") and f"COPY rootfs/{svc}/ /" not in runtime:
+        err(p, f"rootfs/{svc}/ exists but the runtime stage does not copy it")
+    cf = rt.get('configFile')
+    if cf and not os.path.isfile(cf):
+        err(p, f"versions.json runtime.configFile {cf} does not exist")
+    if cf and not cf.startswith(f"rootfs/{svc}/"):
+        err(p, f"versions.json runtime.configFile {cf} is not under rootfs/{svc}/")
+    runtime_checks(p, ins, rt)
+
 if fail:
     for m in fail:
         print(f"error: {m}", file=sys.stderr)
     print(f"\n{len(fail)} Containerfile issue(s)", file=sys.stderr)
     sys.exit(1)
 
-print(f"OK: {len(build_imgs) + len(package_imgs)} Containerfiles ({len(build_imgs)} build, {len(package_imgs)} package) pass shape and versions.json agreement")
+print(f"OK: {len(build_imgs) + len(package_imgs) + len(native_imgs)} Containerfiles ({len(build_imgs)} build, "
+      f"{len(package_imgs)} package, {len(native_imgs)} native) pass shape and versions.json agreement")
 PY

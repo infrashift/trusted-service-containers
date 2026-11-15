@@ -40,6 +40,7 @@ IMAGES        := $(shell jq -r '.images | keys[]' $(VERSIONS) 2>/dev/null)
 MIRROR_IMAGES := $(shell jq -r '[.images | to_entries[] | select(.value.kind=="mirror") | .key] | .[]' $(VERSIONS) 2>/dev/null)
 BUILD_IMAGES  := $(shell jq -r '[.images | to_entries[] | select(.value.kind=="build")  | .key] | .[]' $(VERSIONS) 2>/dev/null)
 PACKAGE_IMAGES := $(shell jq -r '[.images | to_entries[] | select(.value.kind=="package") | .key] | .[]' $(VERSIONS) 2>/dev/null)
+NATIVE_IMAGES := $(shell jq -r '[.images | to_entries[] | select(.value.kind=="native") | .key] | .[]' $(VERSIONS) 2>/dev/null)
 
 define guard_namespace
 	if [ -z "$(target_namespace)" ]; then
@@ -66,13 +67,13 @@ help:
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
 	echo "  verify-pins           re-resolve every upstream, base, crosscheck and package pin"
 	echo "  verify-mirror-pins    mirror-track pins only"
-	echo "  verify-build-pins     build-track base, toolchain + crosscheck pins only"
+	echo "  verify-build-pins     build/package/native base and builder, toolchain + crosscheck pins only"
 	echo "  verify-package-pins   package-track NEVRAs in their repository, and the live signing keys"
 	echo "  list-images           target_namespace=development|trusted|quarantine"
 	echo "  clean-ghcr-namespace  target_namespace=development  (refuses trusted/)"
 	echo
 	echo "  registry: $(REGISTRY)"
-	echo "  images:   $(words $(IMAGES)) ($(words $(MIRROR_IMAGES)) mirror, $(words $(BUILD_IMAGES)) build, $(words $(PACKAGE_IMAGES)) package)"
+	echo "  images:   $(words $(IMAGES)) ($(words $(MIRROR_IMAGES)) mirror, $(words $(BUILD_IMAGES)) build, $(words $(PACKAGE_IMAGES)) package, $(words $(NATIVE_IMAGES)) native)"
 
 .PHONY: validate
 validate: check-versions check-schema check-keyring check-gitleaks-config check-no-orphan-rego lint-workflows lint-containerfiles lint-skills check-wiki lint-shell test-scripts policy-test
@@ -237,7 +238,7 @@ verify-build-pins:
 			printf '  %-16s base %-6s STALE  pinned=%s latest=%s\n' "$$key" "$$arch" "$$base_digest" "$$actual"
 			stale=$$((stale + 1))
 		fi
-	done < <(jq -r '. as $$d | $$d.images | to_entries[] | select(.value.kind=="build" or .value.kind=="package") | .key as $$k | .value.base as $$b | .value.arches[] as $$a | [$$k, $$d.bases[$$b].image, $$d.bases[$$b][$$a].digest, $$a] | @tsv' $(VERSIONS))
+	done < <(jq -r '. as $$d | $$d.images | to_entries[] | select(.value.kind=="build" or .value.kind=="package" or .value.kind=="native") | .key as $$k | ([.value.base] + (if .value.kind=="native" then [.value.builder] else [] end) | unique[]) as $$b | .value.arches[] as $$a | [$$k, $$d.bases[$$b].image, $$d.bases[$$b][$$a].digest, $$a] | @tsv' $(VERSIONS))
 	# Toolchains sit on a rolling tag that Go security releases move. A stale
 	# one compiles every build-track image with a known-vulnerable stdlib --
 	# go1.26 sat on 1.26.6 for five days past a Critical, until a review caught it.
@@ -261,6 +262,12 @@ verify-build-pins:
 	jq -r '.images | to_entries[] | select(.value.kind=="build" and (.value | has("crosscheck"))) | .key as $$k | .value.crosscheck as $$c | $$c.arches // ["amd64","arm64"] | .[] as $$a | "  \($$k) \($$a)  \($$c[$$a].tag // "-")"' $(VERSIONS) 2>/dev/null || true
 	# First-party entries (ADR-008) have no vendor reference to re-resolve.
 	jq -r '.images | to_entries[] | select(.value.kind=="build" and (.value | has("firstParty"))) | "  \(.key)  first-party (no vendor binary)"' $(VERSIONS)
+	echo "Native release archives (ADR-010):"
+	while IFS=$$'\t' read -r src url sha; do
+		live=$$(curl -fsSL --proto '=https' --retry 3 "$$url" 2>/dev/null | sha256sum | cut -d' ' -f1)
+		if [ "$$live" = "$$sha" ]; then printf '  %-16s archive current  %s\n' "$$src" "$$url"
+		else printf '  %-16s archive CHANGED  pinned=%s live=%s\n' "$$src" "$$sha" "$$live"; stale=$$((stale + 1)); fi
+	done < <(jq -r '. as $$d | [$$d.images[] | select(.kind=="native") | .source] | unique[] as $$s | [$$s, ($$d.sources[$$s].archive.url // ""), ($$d.sources[$$s].archive.sha256 // "")] | @tsv' $(VERSIONS))
 	if [ "$$stale" -ne 0 ]; then echo "$$stale base or toolchain pin(s) stale." >&2; exit 1; fi
 
 .PHONY: verify-package-pins
@@ -334,3 +341,4 @@ show-config:
 	echo "MIRROR     = $(MIRROR_IMAGES)"
 	echo "BUILD      = $(BUILD_IMAGES)"
 	echo "PACKAGE    = $(PACKAGE_IMAGES)"
+	echo "NATIVE     = $(NATIVE_IMAGES)"

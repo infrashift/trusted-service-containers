@@ -7,6 +7,7 @@ tags:
   - "issue"
   - "open"
   - "postgresql17"
+  - "valkey"
   - "cve"
   - "waiver"
 created: "2026-11-14T20:55:50-06:00"
@@ -36,16 +37,19 @@ The [postgresql17](/images/postgresql17--01a1dd2247ba.md) image has 14 High find
 * The UBI repositories already carry other `el9_9` builds, for example `expat-2.5.0-9.el9_9.4`. Thus the fix is probably near.
 * The 14 findings: CVE-2026-71199, CVE-2026-71200, CVE-2026-107364, CVE-2026-112315 to CVE-2026-112323, CVE-2026-118380 and CVE-2026-119079.
 * `EXC-2026-0041` waives them until 2026-12-14. See [The first postgresql17 scan found no Critical and 14 krb5-libs Highs on 2026-11-14](/findings/the-first-postgresql17-scan-found-no-critical-and-14-krb5-libs-highs-on-2026-11-14--01a1dd2247cf.md).
+* On 2026-11-15 the first [valkey](/images/valkey--01a1df5f8878.md) build had the same 14 findings. It is a native image on the same `ubi9-minimal`, and its runtime stage also upgrades the base from UBI. On 2026-11-15 `ubi-9-baseos` still had only `krb5-libs-1.21.1-10.el9_8.1` (x86_64 revision 1794413174, aarch64 1794416385). No waiver covers valkey: it is in `observe`, and its legs go to `quarantine/` until UBI publishes the fix or the owner decides on a waiver. See [The first valkey scan found no Critical and 14 krb5-libs Highs on 2026-11-15](/findings/the-first-valkey-scan-found-no-critical-and-14-krb5-libs-highs-on-2026-11-15--01a1df6016ea.md).
 
 ## Acceptance criteria
 
 - [ ] `ubi-9-baseos` carries `krb5-libs-1.21.1-10.el9_9.2` or later.
 - [ ] A rebuild of postgresql17 shows 0 `krb5-libs` findings.
+- [ ] A rebuild of valkey shows 0 `krb5-libs` findings.
 - [ ] A change removes `EXC-2026-0041` from `.github/pdp/exceptions.yaml`.
 
 ## Related
 
 * [postgresql17](/images/postgresql17--01a1dd2247ba.md)
+* [valkey](/images/valkey--01a1df5f8878.md)
 * [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md)
 * [Waive a CVE](/operations/waive-a-cve--01a18383da9f.md)
 * [Waivers](/supply-chain/waivers--01a18383d898.md)

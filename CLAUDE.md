@@ -116,6 +116,18 @@ it that way. UBI dependencies are not pinned by NEVRA, so a fix that RHEL has
 shipped but UBI has not yet published shows up as a fixable High that no
 rebuild clears: check the UBI repodata before you blame the pin.
 
+## A native image proves its commit and its archive, not a vendor match
+
+Kind `native` (ADR-010, `valkey`) compiles a pinned commit on a pinned UBI
+builder. The source also pins the vendor's release archive by the sha256 the
+vendor publishes elsewhere (`sources.<s>.archive`), and `scripts/fetch-archive.sh`
+fails the build unless the archive's tree equals the commit's. A drift bump
+moves the archive URL but cannot re-pin the hash: copy it from `hashSource`.
+Compilers come from the signed UBI repositories in the builder stage only; the
+lint rejects a signature bypass, any extra repository and a compiler in the
+runtime stage. There is no vendor comparison -- do not add a `crosscheck` or
+`firstParty` to a native entry; the repo gate denies both.
+
 ## Workflow conventions
 
 - Every `uses:` pinned to a 40-char SHA; every tool version pinned in `tools.lock`.

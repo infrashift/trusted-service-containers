@@ -43,9 +43,9 @@
     },
     "chit": {
       "track": "^v0\\.0\\.0-[0-9]{14}-[0-9a-f]{12}$",
-      "ref": "v0.0.0-20261114214224-033e4e928f4b",
+      "ref": "v0.0.0-20261115061050-1af19e66764d",
       "url": "https://github.com/infrashift/chit",
-      "commit": "033e4e928f4b542d3c72890a503be97b0b1f25b0",
+      "commit": "1af19e66764dbe985f497d1e1997e057a1738595",
       "note": "First-party (ADR-008). Chit publishes no release tags yet, so `ref` is the Go pseudo-version of the pinned commit (committer time in UTC, then the 12-char commit prefix). The track admits only that shape, so drift-upstream.sh finds no tag to propose and every bump is a reviewed manual edit of commit and ref together. When Chit starts tagging releases, replace the track with one for its release line in its own reviewed PR."
     },
     "nats": {
@@ -575,7 +575,7 @@
         "extraLdflags": "-s -w",
         "ldflagsVars": {},
         "noVersionSymbol": "Chit declares no version variable in any package (cmd/chitd and cmd/chit-reconcile have none; internal/api/system.go returns a literal), so there is no symbol to stamp. The module version and vcs.revision are in the Go build info, and the image labels carry the pinned commit.",
-        "note": "One image, as chit's own deploy/Containerfile ships it: chitd (server) plus chit-reconcile, the one-shot job that pushes auth/*.cue grants into Keto, so the job and the server read the same CUE from the same commit. auth/ ships at /etc/chit/auth (CHIT_COMMANDS_CUE_DIR) and migrations/*.sql at /usr/share/chit/migrations for a golang-migrate job; Chit has no migrate binary. chit-mcp and chit-claude are client tools and are not built. CGO_ENABLED=0 as upstream; GOWORK=off as chit's Makefile, because go.work also names clients/chit-tui. go.mod asks for go 1.25.14, which the go1.26 toolchain satisfies under GOTOOLCHAIN=local."
+        "note": "One image, as chit's own deploy/Containerfile ships it: chitd (server) plus chit-reconcile, the one-shot job that pushes auth/*.cue grants into Keto, so the job and the server read the same CUE from the same commit. auth/ ships at /etc/chit/auth (CHIT_COMMANDS_CUE_DIR) and migrations/*.sql at /usr/share/chit/migrations for a golang-migrate job; Chit has no migrate binary. chit-mcp and chit-claude are client tools and are not built. CGO_ENABLED=0 as upstream; GOWORK=off as chit's Makefile, because go.work also names clients/chit-tui. go.mod asks for go 1.26.10 and names toolchain go1.26.11; GOTOOLCHAIN=local ignores the toolchain line and the pinned go1.26 compiler (1.26.11) builds it. Attachments (pkg/imagecheck with golang.org/x/image, internal/blob as a hand-written SigV4 S3 client) and the membership hook (golang.org/x/oauth2 clientcredentials) are pure Go and need no cgo, no runtime file and no new directory: the blob store is a remote S3 endpoint (SeaweedFS) set by CHIT_S3_ENDPOINT, and both features are off when their URL is empty."
       },
       "firstParty": {
         "noVendorBinary": true,
@@ -592,8 +592,8 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-11-14",
-      "reason": "Initial pin for HALO (P-TSC-3): Chit holds HALO's Channels and Messages. Onboarded in observe."
+      "updated": "2026-11-15",
+      "reason": "Bump for HALO to Chit main 1af19e66 (PR #9 merge): file attachments stored in S3-compatible SeaweedFS (P-CHIT-5, migration 000009) and the membership policy hook (P-CHIT-2), plus scoped tags (migration 000008). Initial pin for HALO (P-TSC-3): Chit holds HALO's Channels and Messages. Onboarded in observe."
     },
     "oathkeeper": {
       "kind": "build",

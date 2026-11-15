@@ -8,17 +8,17 @@ tags:
   - "build"
   - "first-party"
 created: "2026-11-14T14:52:27-06:00"
-timestamp: "2026-11-14T14:52:46-06:00"
+timestamp: "2026-11-15T04:57:55-06:00"
 description: "The infrashift chat service: chitd and chit-reconcile with their CUE and SQL migrations, built first-party from a pinned infrashift commit onto ubi9-micro."
 status: "draft"
 generated:
   by: "claude-code/opus-5-5"
-  at: "2026-11-14T14:52:46-06:00"
+  at: "2026-11-15T04:57:55-06:00"
 resource: "https://github.com/infrashift/trusted-service-containers/blob/main/versions.json"
 sources:
   - resource: "https://github.com/infrashift/trusted-service-containers/blob/main/Containerfiles/chit.Containerfile"
     title: "chit.Containerfile"
-  - resource: "https://github.com/infrashift/chit/blob/033e4e928f4b542d3c72890a503be97b0b1f25b0/deploy/Containerfile"
+  - resource: "https://github.com/infrashift/chit/blob/1af19e66764dbe985f497d1e1997e057a1738595/deploy/Containerfile"
     title: "chit deploy/Containerfile"
 ---
 
@@ -65,6 +65,15 @@ Chit has no migration binary. A deployment runs `golang-migrate` against `/usr/s
 * Build: `CGO_ENABLED=0`, `GOWORK=off`, `-trimpath`, `-s -w`, `GOTOOLCHAIN=local`.
 * Chit has no version variable. The entry sets `noVersionSymbol` and an empty `ldflagsVars`, and the build passes no `-X`. The Go build info has the module version and `vcs.revision`.
 
+## Attachments and the membership hook
+
+The pin `1af19e66` (2026-11-15) adds two features that HALO needs:
+
+* File attachments. `pkg/imagecheck` checks and re-encodes uploaded images. `internal/blob` stores the files in an S3-compatible store, for example the [seaweedfs](/images/seaweedfs--01a183832ee2.md) image. Migration `000009_files` adds the tables.
+* The membership policy hook. Before `chitd` adds a member to a channel, it asks a hook URL. It gets a token for the hook with the OAuth2 client credentials flow.
+
+Both features are pure Go. They need no cgo, no file in the image and no new directory. Both features are off when their URL is empty. The deployment sets `CHIT_S3_ENDPOINT` with the bucket, region and keys, and `CHIT_MEMBERSHIP_HOOK_URL` with the token URL, client ID and client secret.
+
 ## Smoke tests on 2026-11-14
 
 We ran these tests on the local amd64 image:
@@ -73,6 +82,14 @@ We ran these tests on the local amd64 image:
 2. In the builder stage, `chit-reconcile` loaded the CUE of the commit (5 commands, 3 roles). Then it failed on a closed Keto port, as expected.
 3. `migrate up` applied the 7 migrations from `/usr/share/chit/migrations` of the image to PostgreSQL 17.
 4. `chitd` on that database loaded 5 slash commands, opened `/var/log/chit/audit.log` as UID 1001, and answered `GET /api/v1/system/ping` with `{"status":"OK"}`. An unauthenticated request got 401.
+
+## Smoke tests and scan on 2026-11-15
+
+We built the pin `1af19e66` for amd64 on the local machine:
+
+1. In the builder stage, `chitd` stopped with "CHIT_DATABASE_URL is required", and `chit-reconcile` loaded the CUE (5 commands, 3 roles).
+2. The image has 18 files in `/usr/share/chit/migrations`: 9 up and 9 down migrations.
+3. `grype --fail-on critical` and `grype --only-fixed --fail-on high` both passed. The grype database was built on 2026-11-15. The image has no Critical and no High finding.
 
 ## Issues
 

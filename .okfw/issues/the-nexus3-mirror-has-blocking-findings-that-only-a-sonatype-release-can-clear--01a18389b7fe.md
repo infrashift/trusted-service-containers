@@ -11,11 +11,12 @@ tags:
   - "waiver"
 created: "2026-10-28T12:23:23-05:00"
 timestamp: "2026-10-28T12:24:33-05:00"
-description: "nexus3 is a mirror, so only a new Sonatype image clears its Java library findings; waiver EXC-2026-0001 expires on 2026-11-22."
+description: "nexus3 is a mirror, so only a new Sonatype image clears its Java library findings; waiver EXC-2026-0033 expires on 2027-02-12."
 x:
   github: 5
   waivers:
     - "EXC-2026-0001"
+    - "EXC-2026-0033"
 status: "draft"
 generated:
   by: "claude-code/opus-5-5"
@@ -47,7 +48,7 @@ The `nexus3-runtime` leg has blocking findings in the Java libraries inside the 
 
 - [ ] A review of the `3.90.6-ubi` pin, or of a newer tag on the track, gives the blocking count.
 - [ ] The new pin clears each blocking finding, or a new waiver with a current justification covers it.
-- [ ] Before 2026-11-22, a new review renews `EXC-2026-0001`, or a change removes it.
+- [x] Before 2026-11-22, a new review renews `EXC-2026-0001`, or a change removes it. (2026-11-14: `EXC-2026-0033` renews all 32 advisories until 2027-02-12. See [Six waivers renew the 2026-11-22 expiries; traefik needs none](/findings/six-waivers-renew-the-2026-11-22-expiries-traefik-needs-none--01a1dc27b857.md).)
 
 ## Related
 

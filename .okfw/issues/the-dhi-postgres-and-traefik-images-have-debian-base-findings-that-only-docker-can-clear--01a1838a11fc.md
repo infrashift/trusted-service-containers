@@ -18,6 +18,7 @@ x:
   waivers:
     - "EXC-2026-0002"
     - "EXC-2026-0003"
+    - "EXC-2026-0034"
 status: "draft"
 generated:
   by: "claude-code/opus-5-5"
@@ -53,12 +54,16 @@ The DHI images of postgres and traefik have Critical findings in their Debian ba
 * The review records `UPSTREAM_VEX_ABSENT` for these legs. DHI publishes an OpenVEX attestation. If the scan reads that VEX data, some findings can close on evidence, not by a waiver.
 * The drift report of 2026-10-28 proposed new digests for all six DHI variants. That change is not merged. See [Mirror pins and the prometheus-nats-exporter source are behind the 2026-10-28 drift report](/issues/mirror-pins-and-the-prometheus-nats-exporter-source-are-behind-the-2026-10-28-drift-report--01a1838a139f.md).
 
+* **Decision, 2026-11-14:** the owner chose to build PostgreSQL 17 on UBI in this repository, in place of the DHI mirror. Until this repository trusts that image, the DHI postgres mirror runs in `observe` mode. Its images stay in `quarantine/` and never reach `trusted/`, as before. When HALO and Chit move to the UBI image, a change removes the DHI postgres entries and `EXC-2026-0034`.
+* On 2026-11-14, the drift re-pin (PR #52) cleared every traefik finding. The postgres legs still had 8 (16) and 144 (17) blocking findings at the newest DHI digest.
+
 ## Acceptance criteria
 
 - [ ] A PR moves the DHI pins to the newest digests on their tags, and a review gives the new blocking counts.
 - [ ] A decision records whether the scan reads the DHI OpenVEX attestation.
 - [ ] A new pin clears each blocking finding, or a waiver with a current justification covers it.
-- [ ] Before 2026-11-22, a new review renews `EXC-2026-0002` and `EXC-2026-0003`, or a change removes them.
+- [x] Before 2026-11-22, a new review renews `EXC-2026-0002` and `EXC-2026-0003`, or a change removes them. (2026-11-14: `EXC-2026-0034` renews 7 of the 15 postgres CVEs until 2026-12-14. `EXC-2026-0003` is not renewed: none of its 6 CVEs match. See [Six waivers renew the 2026-11-22 expiries; traefik needs none](/findings/six-waivers-renew-the-2026-11-22-expiries-traefik-needs-none--01a1dc27b857.md).)
+- [ ] Before 2026-12-14, re-pin the four stale postgres DHI digests, and read the scan. Then renew or remove `EXC-2026-0034`.
 
 ## Related
 

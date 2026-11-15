@@ -104,6 +104,18 @@ source outside `infrashift/` may not make it; the schema, the repo gate, the
 leg policy and `scripts/provenance-mode.sh` all deny both. See
 [ADR-008](./.okfw/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md).
 
+## A package image proves its packages, not a binary
+
+Kind `package` (ADR-009, `postgresql17`) installs signed RPMs at exact NEVRAs.
+The key is pinned three times -- the `.asc` file, its `.sha256` sidecar, and
+`keySha256` + `keyFingerprint` in `packageRepos` -- and `check-keyring` holds
+them together. Never pass `--nogpgcheck` or set `gpgcheck=0`; the Containerfile
+lint rejects every spelling. The review re-reads the repository file, the key
+and the rpm database from the image on GHCR (`scripts/package-observe.sh`); keep
+it that way. UBI dependencies are not pinned by NEVRA, so a fix that RHEL has
+shipped but UBI has not yet published shows up as a fixable High that no
+rebuild clears: check the UBI repodata before you blame the pin.
+
 ## Workflow conventions
 
 - Every `uses:` pinned to a 40-char SHA; every tool version pinned in `tools.lock`.

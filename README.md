@@ -56,6 +56,18 @@ vendor binary exists to cross-check them against. Their entries declare
 `firstParty` with a reason instead
 ([ADR-008](./.okfw/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md)).
 
+#### Package kind — signed RPMs, no compiler
+
+Software that is not Go, and that its vendor ships as signed RPMs, is a build
+entry of kind `package` ([ADR-009](./.okfw/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md)).
+It installs exact NEVRAs from one pinned repository and key onto our
+`ubi9-minimal`, with `gpgcheck=1` and `repo_gpgcheck=1`, and the review actor
+re-derives the installed set, the repository file and the key live from GHCR.
+
+| Image | Repository | Track |
+|---|---|---|
+| `postgresql17` | PGDG EL9 (UBI9 AppStream has no PostgreSQL 17) | `17.x`, per-arch NEVRAs |
+
 ---
 
 ## Consuming the images

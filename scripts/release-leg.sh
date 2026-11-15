@@ -21,10 +21,11 @@ DEV_REPO="ghcr.io/${GITHUB_REPOSITORY}/development/${SERVICE}"
 
 # The kind comes from versions.json and must agree with the matrix: it decides
 # which tag the development image carries.
-# The matrix kind is the job family; a package image (ADR-009) is a "build" leg.
+# The matrix kind is the job family; a package (ADR-009) or native (ADR-010)
+# image is a "build" leg.
 REPO_KIND=$(jq -r '.kind' <<<"$IMG")
 case "${KIND}/${REPO_KIND}" in
-  mirror/mirror|build/build|build/package) KIND="$REPO_KIND" ;;
+  mirror/mirror|build/build|build/package|build/native) KIND="$REPO_KIND" ;;
   *) fail "the matrix runs a ${KIND} leg but versions.json declares kind ${REPO_KIND} for ${SERVICE}" ;;
 esac
 
@@ -32,10 +33,10 @@ if [[ "$KIND" == "mirror" ]]; then
   UPSTREAM_TAG=$(jq -r --arg v "$VARIANT" '.variants[$v].tag' <<<"$IMG")
   DEV_TAG="pr-${PR_NUM}-${UPSTREAM_TAG}"
   BASE_TAG="$UPSTREAM_TAG"
-elif [[ "$KIND" == "build" || "$KIND" == "package" ]]; then
-  # A build image is versioned by its source ref, a package image by the
-  # upstream version that every pinned NEVRA carries (packages.version).
-  if [[ "$KIND" == "build" ]]; then
+elif [[ "$KIND" == "build" || "$KIND" == "package" || "$KIND" == "native" ]]; then
+  # A build or native image is versioned by its source ref, a package image by
+  # the upstream version that every pinned NEVRA carries (packages.version).
+  if [[ "$KIND" == "build" || "$KIND" == "native" ]]; then
     SRC_KEY=$(jq -r '.source' <<<"$IMG")
     VERSION=$(jq -r --arg s "$SRC_KEY" '.sources[$s].ref' versions.json)
   else

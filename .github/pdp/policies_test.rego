@@ -1805,3 +1805,435 @@ test_repo_package_track_is_matched_anchored if {
 		"VERSIONS_PACKAGE_TRACK_MISMATCH",
 	)
 }
+
+# ===========================================================================
+# Native track (ADR-010)
+#
+# Each test below breaks ONE fact of a known-good native leg and expects the
+# specific code AND the catch-all NATIVE_PROVENANCE_NOT_RECORDED where the
+# fact is part of the provenance. A deleted specific rule fails the first
+# assertion; a predicate that loses a condition fails the second.
+# ===========================================================================
+
+VK_COMMIT := "29173b67508b2de4c0f0ed551f3b47cf19fc3ca8"
+
+VK_URL := "https://github.com/valkey-io/valkey"
+
+VK_ARCHIVE := "https://github.com/valkey-io/valkey/archive/refs/tags/9.1.3.tar.gz"
+
+VK_ARCHIVE_SHA := "184e34ed2d9b51879b682b5b15205e2b9d677c60280e3cb453be8f520d04e293"
+
+UBI_MINIMAL := "ghcr.io/infrashift/trusted-base-images/trusted/ubi9-minimal"
+
+D3 := "sha256:419f18caf8425f5c95c8f5aadd7b05dc947a85e4ae9c41ac9299dcd80036fc24"
+
+base_native := {
+	"track": "native",
+	"evaluated_at": NOW,
+	"image": {
+		"key": "valkey", "variant": "runtime", "enforcement": "enforce",
+		"destination_repo": "ghcr.io/infrashift/trusted-service-containers/development/valkey",
+		"destination_digest": D, "config_user": "1001",
+		"labels": {
+			"org.opencontainers.image.source": VK_URL,
+			"org.opencontainers.image.revision": VK_COMMIT,
+			"org.opencontainers.image.version": "9.1.3",
+			"io.infrashift.image.upstream.digest": D2,
+			"io.infrashift.image.upstream.source": UBI_MINIMAL,
+		},
+	},
+	"upstream": {
+		"trust_class": "internal", "signature": "verified",
+		"verified_with": ".github/pdp/public-keys/upstream/trusted-base-images-release.pub",
+		"attestations": {"sbom": "present", "provenance": "present", "vex": "absent"},
+	},
+	"native": {
+		"pinned_base_repo": UBI_MINIMAL, "base_image_repo": UBI_MINIMAL,
+		"pinned_base_digest": D2, "base_image_digest": D2,
+		"pinned_builder_repo": UBI_MINIMAL, "builder_image_repo": UBI_MINIMAL,
+		"pinned_builder_digest": D3, "builder_image_digest": D3,
+		"language": "c",
+		"pinned_source_ref": VK_COMMIT, "source_revision": VK_COMMIT,
+		"pinned_source_url": VK_URL, "source_url": VK_URL,
+		"pinned_version": "9.1.3",
+		"pinned_archive_url": VK_ARCHIVE, "archive_url": VK_ARCHIVE,
+		"pinned_archive_sha256": VK_ARCHIVE_SHA, "archive_sha256": VK_ARCHIVE_SHA,
+		"archive_tree_match": true,
+		"from_source_sha256": "cccc000000000000000000000000000000000000000000000000000000000000",
+		"verification": {"performed": true},
+	},
+	"scan_results": {
+		"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0,
+		"fixable_critical_count": 0, "fixable_high_count": 0, "findings": [],
+	},
+	"published_attestation_keys": {},
+}
+
+native_denies(ops, code) if {
+	d := pdp.decision with input as patch(base_native, ops)
+	not d.allow
+	d.namespace == "quarantine"
+	code in codes(d)
+}
+
+native_provenance_denies(ops, code) if {
+	native_denies(ops, code)
+	d := pdp.decision with input as patch(base_native, ops)
+	"NATIVE_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+test_base_native_allows if {
+	d := pdp.decision with input as base_native
+	d.allow
+	d.namespace == "trusted"
+	d.track == "native"
+	some o in d.observations
+	o.code == "NATIVE_BUILD"
+	o.gating == false
+	o.from_source_sha256 == base_native.native.from_source_sha256
+}
+
+# A native leg is not a build leg: it needs no crosscheck and no first-party
+# declaration, and the build-track dual-provenance rules do not apply.
+test_native_needs_no_crosscheck if {
+	d := pdp.decision with input as base_native
+	not "DUAL_PROVENANCE_NOT_RECORDED" in codes(d)
+	not "PROVENANCE_MODE_MISMATCH" in codes(d)
+}
+
+# ...and a build leg that carries a native block is still a build leg.
+test_build_leg_with_native_block_still_needs_crosscheck if {
+	i := patch(base_build, [
+		{"op": "add", "path": "/native", "value": base_native.native},
+		{"op": "replace", "path": "/build/dual_provenance/performed", "value": false},
+	])
+	d := pdp.decision with input as i
+	"DUAL_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+test_native_absent_block_denies if {
+	native_provenance_denies([{"op": "remove", "path": "/native"}], "NATIVE_PIN_MALFORMED")
+}
+
+test_native_verification_not_performed_denies if {
+	d := pdp.decision with input as patch(base_native, [{"op": "replace", "path": "/native/verification/performed", "value": false}])
+	not d.allow
+	"NATIVE_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+test_native_language_unknown_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/language", "value": "rust"}], "NATIVE_LANGUAGE_INVALID")
+}
+
+test_native_language_absent_denies if {
+	native_provenance_denies([{"op": "remove", "path": "/native/language"}], "NATIVE_LANGUAGE_INVALID")
+}
+
+test_native_label_missing_denies if {
+	native_denies([{"op": "remove", "path": "/image/labels/io.infrashift.image.upstream.digest"}], "BUILD_LABEL_MISSING")
+}
+
+test_native_label_empty_denies if {
+	native_denies([{"op": "replace", "path": "/image/labels/org.opencontainers.image.version", "value": " "}], "BUILD_LABEL_EMPTY")
+}
+
+test_native_base_digest_mismatch_denies if {
+	native_denies([{"op": "replace", "path": "/native/base_image_digest", "value": D}], "BUILD_BASE_DIGEST_MISMATCH")
+}
+
+test_native_base_repo_mismatch_denies if {
+	native_denies([{"op": "replace", "path": "/native/base_image_repo", "value": "ghcr.io/evil/ubi9-minimal"}], "BUILD_BASE_REPO_MISMATCH")
+}
+
+test_native_source_ref_mismatch_denies if {
+	native_denies([{"op": "replace", "path": "/native/source_revision", "value": COMMIT}], "BUILD_SOURCE_REF_MISMATCH")
+}
+
+test_native_source_ref_tag_denies if {
+	native_denies(
+		[
+			{"op": "replace", "path": "/native/source_revision", "value": "9.1.3"},
+			{"op": "replace", "path": "/native/pinned_source_ref", "value": "9.1.3"},
+			{"op": "replace", "path": "/image/labels/org.opencontainers.image.revision", "value": "9.1.3"},
+		],
+		"BUILD_SOURCE_REF_NOT_PINNED",
+	)
+}
+
+test_native_revision_label_disagrees_denies if {
+	native_denies([{"op": "replace", "path": "/image/labels/org.opencontainers.image.revision", "value": COMMIT}], "BUILD_REVISION_LABEL_DISAGREES")
+}
+
+test_native_pinned_ref_malformed_denies if {
+	native_provenance_denies(
+		[
+			{"op": "replace", "path": "/native/pinned_source_ref", "value": "29173b67"},
+			{"op": "replace", "path": "/native/source_revision", "value": "29173b67"},
+			{"op": "replace", "path": "/image/labels/org.opencontainers.image.revision", "value": "29173b67"},
+		],
+		"NATIVE_PIN_MALFORMED",
+	)
+}
+
+test_native_builder_digest_mismatch_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/builder_image_digest", "value": D}], "NATIVE_BUILDER_DIGEST_MISMATCH")
+}
+
+test_native_builder_digest_both_absent_denies if {
+	native_provenance_denies(
+		[
+			{"op": "remove", "path": "/native/builder_image_digest"},
+			{"op": "remove", "path": "/native/pinned_builder_digest"},
+		],
+		"NATIVE_BUILDER_DIGEST_MISMATCH",
+	)
+}
+
+test_native_builder_digest_malformed_denies if {
+	native_provenance_denies(
+		[
+			{"op": "replace", "path": "/native/builder_image_digest", "value": "latest"},
+			{"op": "replace", "path": "/native/pinned_builder_digest", "value": "latest"},
+		],
+		"INPUT_DIGEST_MALFORMED",
+	)
+}
+
+test_native_builder_repo_mismatch_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/builder_image_repo", "value": "registry.access.redhat.com/ubi9/ubi"}], "NATIVE_BUILDER_REPO_MISMATCH")
+}
+
+test_native_source_url_mismatch_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/source_url", "value": "https://github.com/evil/valkey"}], "NATIVE_SOURCE_URL_MISMATCH")
+}
+
+test_native_source_label_disagrees_denies if {
+	native_denies([{"op": "replace", "path": "/image/labels/org.opencontainers.image.source", "value": "https://github.com/evil/valkey"}], "NATIVE_SOURCE_LABEL_DISAGREES")
+}
+
+test_native_version_label_disagrees_denies if {
+	native_denies([{"op": "replace", "path": "/image/labels/org.opencontainers.image.version", "value": "9.1.2"}], "NATIVE_VERSION_LABEL_DISAGREES")
+}
+
+test_native_pinned_version_absent_denies if {
+	native_provenance_denies([{"op": "remove", "path": "/native/pinned_version"}], "NATIVE_PIN_MALFORMED")
+}
+
+test_native_archive_sha_mismatch_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/archive_sha256", "value": "19c23908e7d57e8d91ef85b41f5646307582f10f4f0fb999bbf89ed24ec9c983"}], "NATIVE_ARCHIVE_SHA256_MISMATCH")
+}
+
+test_native_archive_sha_both_absent_denies if {
+	native_provenance_denies(
+		[
+			{"op": "remove", "path": "/native/archive_sha256"},
+			{"op": "remove", "path": "/native/pinned_archive_sha256"},
+		],
+		"NATIVE_ARCHIVE_SHA256_MISMATCH",
+	)
+}
+
+test_native_archive_sha_malformed_pin_denies if {
+	native_provenance_denies(
+		[
+			{"op": "replace", "path": "/native/archive_sha256", "value": "184e34ed"},
+			{"op": "replace", "path": "/native/pinned_archive_sha256", "value": "184e34ed"},
+		],
+		"NATIVE_PIN_MALFORMED",
+	)
+}
+
+test_native_archive_url_mismatch_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/archive_url", "value": "https://github.com/valkey-io/valkey/archive/refs/tags/9.1.2.tar.gz"}], "NATIVE_ARCHIVE_URL_MISMATCH")
+}
+
+test_native_archive_tree_mismatch_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/archive_tree_match", "value": false}], "NATIVE_ARCHIVE_TREE_MISMATCH")
+}
+
+test_native_archive_tree_absent_denies if {
+	native_provenance_denies([{"op": "remove", "path": "/native/archive_tree_match"}], "NATIVE_ARCHIVE_TREE_MISMATCH")
+}
+
+# A string "true" is not a comparison that ran.
+test_native_archive_tree_string_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/archive_tree_match", "value": "true"}], "NATIVE_ARCHIVE_TREE_MISMATCH")
+}
+
+test_native_binary_hash_missing_denies if {
+	native_provenance_denies([{"op": "remove", "path": "/native/from_source_sha256"}], "NATIVE_BINARY_HASH_MALFORMED")
+}
+
+test_native_binary_hash_empty_denies if {
+	native_provenance_denies([{"op": "replace", "path": "/native/from_source_sha256", "value": ""}], "NATIVE_BINARY_HASH_MALFORMED")
+}
+
+test_native_observe_still_quarantines if {
+	i := patch(base_native, [
+		{"op": "replace", "path": "/image/enforcement", "value": "observe"},
+		{"op": "replace", "path": "/native/archive_tree_match", "value": false},
+	])
+	d := pdp.decision with input as i
+	d.allow
+	d.namespace == "quarantine"
+}
+
+test_native_remediation_hint if {
+	i := patch(base_native, [
+		{"op": "replace", "path": "/scan_results/high_count", "value": 1},
+		{"op": "replace", "path": "/scan_results/fixable_high_count", "value": 1},
+		{"op": "replace", "path": "/scan_results/findings", "value": [{"id": "CVE-2026-71199", "severity": "High", "fix_state": "fixed", "package": "krb5-libs"}]},
+	])
+	d := pdp.decision with input as i
+	some v in d.violations
+	v.code == "CVE_HIGH_FIXABLE"
+	contains(v.remediation_hint, "native image")
+}
+
+# --- Repo gate: native entries ---------------------------------------------
+
+base_repo_native := patch(base_repo, [
+	{"op": "add", "path": "/versions/bases/ubi9-minimal", "value": {}},
+	{"op": "add", "path": "/versions/sources/valkey", "value": {
+		"track": "^9\\.1\\.[0-9]+$", "ref": "9.1.3", "url": VK_URL, "commit": VK_COMMIT,
+		"archive": {"url": VK_ARCHIVE, "sha256": VK_ARCHIVE_SHA},
+	}},
+	{"op": "add", "path": "/versions/images/valkey", "value": {
+		"kind": "native", "upstreamTrust": "internal", "source": "valkey",
+		"builder": "ubi9-minimal", "base": "ubi9-minimal",
+		"containerfile": "Containerfiles/valkey.Containerfile", "arches": ["amd64", "arm64"],
+		"native": {"language": "c", "buildPackages": ["gcc", "make"], "binary": "valkey-server", "installPath": "/usr/bin/valkey-server"},
+	}},
+])
+
+repo_native_denies(ops, code) if {
+	d := pdp.repo_decision with input as patch(base_repo_native, ops) with data.exceptions as []
+	not d.allow
+	code in repo_codes(d)
+}
+
+test_base_repo_native_allows if {
+	d := pdp.repo_decision with input as base_repo_native with data.exceptions as []
+	d.allow
+}
+
+test_repo_native_kind_is_known if {
+	d := pdp.repo_decision with input as base_repo_native with data.exceptions as []
+	not "VERSIONS_KIND_INVALID" in repo_codes(d)
+}
+
+test_repo_native_field_missing_denies if {
+	repo_native_denies([{"op": "remove", "path": "/versions/images/valkey/builder"}], "VERSIONS_NATIVE_FIELD_MISSING")
+}
+
+test_repo_native_install_path_missing_denies if {
+	repo_native_denies([{"op": "remove", "path": "/versions/images/valkey/native/installPath"}], "VERSIONS_NATIVE_FIELD_MISSING")
+}
+
+test_repo_native_language_invalid_denies if {
+	repo_native_denies([{"op": "replace", "path": "/versions/images/valkey/native/language", "value": "cgo"}], "VERSIONS_NATIVE_LANGUAGE_INVALID")
+}
+
+test_repo_native_language_absent_denies if {
+	repo_native_denies([{"op": "remove", "path": "/versions/images/valkey/native"}], "VERSIONS_NATIVE_LANGUAGE_INVALID")
+}
+
+test_repo_native_trust_class_denies if {
+	repo_native_denies([{"op": "replace", "path": "/versions/images/valkey/upstreamTrust", "value": "none"}], "VERSIONS_NATIVE_TRUST_CLASS_INVALID")
+}
+
+test_repo_native_with_crosscheck_denies if {
+	repo_native_denies([{"op": "add", "path": "/versions/images/valkey/crosscheck", "value": {"amd64": {"digest": D}}}], "VERSIONS_NATIVE_KIND_CONFLICT")
+}
+
+test_repo_native_with_first_party_denies if {
+	repo_native_denies([{"op": "add", "path": "/versions/images/valkey/firstParty", "value": {"noVendorBinary": true, "reason": FP_REASON}}], "VERSIONS_NATIVE_KIND_CONFLICT")
+}
+
+test_repo_native_with_toolchain_denies if {
+	repo_native_denies([{"op": "add", "path": "/versions/images/valkey/toolchain", "value": "go1.26"}], "VERSIONS_NATIVE_KIND_CONFLICT")
+}
+
+test_repo_native_source_dangling_denies if {
+	repo_native_denies([{"op": "replace", "path": "/versions/images/valkey/source", "value": "redis"}], "VERSIONS_NATIVE_SOURCE_DANGLING")
+}
+
+test_repo_native_builder_dangling_denies if {
+	repo_native_denies([{"op": "replace", "path": "/versions/images/valkey/builder", "value": "ubi9"}], "VERSIONS_NATIVE_BASE_DANGLING")
+}
+
+test_repo_native_base_dangling_denies if {
+	repo_native_denies([{"op": "replace", "path": "/versions/images/valkey/base", "value": "ubi9-standard"}], "VERSIONS_NATIVE_BASE_DANGLING")
+}
+
+test_repo_native_archive_missing_denies if {
+	repo_native_denies([{"op": "remove", "path": "/versions/sources/valkey/archive"}], "VERSIONS_NATIVE_ARCHIVE_MISSING")
+}
+
+test_repo_native_archive_http_denies if {
+	repo_native_denies([{"op": "replace", "path": "/versions/sources/valkey/archive/url", "value": "http://github.com/valkey-io/valkey/archive/refs/tags/9.1.3.tar.gz"}], "VERSIONS_NATIVE_ARCHIVE_MISSING")
+}
+
+test_repo_native_archive_short_sha_denies if {
+	repo_native_denies([{"op": "replace", "path": "/versions/sources/valkey/archive/sha256", "value": "184e34ed"}], "VERSIONS_NATIVE_ARCHIVE_MISSING")
+}
+
+# A bump that moved ref and commit but left the archive on the old release.
+test_repo_native_archive_names_other_release_denies if {
+	repo_native_denies(
+		[
+			{"op": "replace", "path": "/versions/sources/valkey/ref", "value": "9.1.4"},
+			{"op": "replace", "path": "/versions/sources/valkey/archive/url", "value": VK_ARCHIVE},
+		],
+		"VERSIONS_NATIVE_ARCHIVE_REF_MISMATCH",
+	)
+}
+
+# `9.1.3` must not match inside `19.1.3`.
+test_repo_native_archive_ref_is_a_path_segment if {
+	repo_native_denies(
+		[{"op": "replace", "path": "/versions/sources/valkey/archive/url", "value": "https://github.com/valkey-io/valkey/archive/refs/tags/19.1.3.tar.gz"}],
+		"VERSIONS_NATIVE_ARCHIVE_REF_MISMATCH",
+	)
+}
+
+test_repo_native_archive_dir_form_allows if {
+	i := patch(base_repo_native, [{"op": "replace", "path": "/versions/sources/valkey/archive/url", "value": "https://download.valkey.io/releases/9.1.3/valkey-9.1.3.tar.gz"}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	d.allow
+}
+
+test_repo_native_source_commit_tag_denies if {
+	repo_native_denies([{"op": "replace", "path": "/versions/sources/valkey/commit", "value": "9.1.3"}], "VERSIONS_SOURCE_REF_NOT_PINNED")
+}
+
+test_native_pinned_source_url_http_denies if {
+	native_provenance_denies(
+		[
+			{"op": "replace", "path": "/native/pinned_source_url", "value": "http://github.com/valkey-io/valkey"},
+			{"op": "replace", "path": "/native/source_url", "value": "http://github.com/valkey-io/valkey"},
+			{"op": "replace", "path": "/image/labels/org.opencontainers.image.source", "value": "http://github.com/valkey-io/valkey"},
+		],
+		"NATIVE_PIN_MALFORMED",
+	)
+}
+
+test_native_pinned_archive_url_http_denies if {
+	native_provenance_denies(
+		[
+			{"op": "replace", "path": "/native/pinned_archive_url", "value": "http://github.com/valkey-io/valkey/archive/refs/tags/9.1.3.tar.gz"},
+			{"op": "replace", "path": "/native/archive_url", "value": "http://github.com/valkey-io/valkey/archive/refs/tags/9.1.3.tar.gz"},
+		],
+		"NATIVE_PIN_MALFORMED",
+	)
+}
+
+test_native_builder_repo_both_absent_denies if {
+	native_provenance_denies(
+		[
+			{"op": "remove", "path": "/native/pinned_builder_repo"},
+			{"op": "remove", "path": "/native/builder_image_repo"},
+		],
+		"NATIVE_PIN_MALFORMED",
+	)
+}

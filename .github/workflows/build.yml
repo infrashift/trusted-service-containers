@@ -65,8 +65,8 @@ jobs:
           # invariant holds uniformly and the schema guard can assert it.
           #
           # The matrix `kind` is the JOB FAMILY, not the image kind: a package
-          # entry (ADR-009) is built per arch on the build runners, so it is a
-          # "build" leg here. build-leg.sh, review-leg.sh and release-leg.sh
+          # entry (ADR-009) and a native entry (ADR-010) are built per arch on
+          # the build runners, so each is a "build" leg here. build-leg.sh, review-leg.sh and release-leg.sh
           # read the image kind from the checked-out versions.json. The guard
           # below stays as it was: review.yml runs on workflow_run, from the
           # DEFAULT branch, so a guard that learned a new kind on a PR would
@@ -98,7 +98,9 @@ jobs:
           # every other Go image kept the vulnerable compiler, and the PR
           # looked green because the legs that would fail never ran. A package
           # entry references its base and its package repository (key and
-          # base URL), and rebuilds when either moves.
+          # base URL), and rebuilds when either moves. A native entry
+          # (ADR-010) references its source (commit and release archive), its
+          # builder and its base.
           CHANGED=$(jq -c --argjson base "$BASE" '
             . as $head
             | [ .images | to_entries[]
@@ -111,7 +113,11 @@ jobs:
                             or ($base.bases[$v.caSource]       // null) != ($head.bases[$v.caSource]       // null) ) )
                         or ( $v.kind == "package" and (
                                ($base.bases[$v.base]                           // null) != ($head.bases[$v.base]                           // null)
-                            or ($base.packageRepos[$v.packages.repo // ""]     // null) != ($head.packageRepos[$v.packages.repo // ""]     // null) ) ) )
+                            or ($base.packageRepos[$v.packages.repo // ""]     // null) != ($head.packageRepos[$v.packages.repo // ""]     // null) ) )
+                        or ( $v.kind == "native" and (
+                               ($base.sources[$v.source]       // null) != ($head.sources[$v.source]       // null)
+                            or ($base.bases[$v.builder]        // null) != ($head.bases[$v.builder]        // null)
+                            or ($base.bases[$v.base]           // null) != ($head.bases[$v.base]           // null) ) ) )
               | if $v.kind == "mirror"
                 then ( $v.variants | to_entries[]
                        | { service: $svc, variant: .key, leg: ($svc + "-" + .key) } )
@@ -299,8 +305,8 @@ jobs:
     name: Build ${{ matrix.leg }} (${{ matrix.arch }})
     needs: matrix-setup
     if: needs.matrix-setup.outputs.build_matrix != '[]'
-    # Build AND package images (ADR-009): both are "build" legs in the matrix
-    # and run buildah on a pinned base.
+    # Build, package (ADR-009) and native (ADR-010) images: all are "build"
+    # legs in the matrix and run buildah on a pinned base.
     # Native arm64 runners here, unlike the mirror job: buildah EXECUTES the RUN
     # steps in the Containerfile, so the builder architecture must match.
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}

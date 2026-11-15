@@ -244,6 +244,24 @@ while read -r key; do
     ALARMS+="- source \`${key}\` asset \`${aname}\`: url moved to \`${CAND}\`, but \`sha256\` still holds the \`${ref}\` hash. Copy the \`${CAND}\` value from the vendor's release checksums before merging; until then scripts/fetch-assets.sh fails the build on the mismatch."$'\n'
   done < <(jq -r --arg k "$key" '.sources[$k].assets // {} | keys[]' "$VERSIONS")
 
+  # The release archive of a native source (ADR-010) is named after the
+  # release too, so its URL moves the same way and its sha256 cannot: the
+  # vendor publishes it elsewhere (Valkey: valkey-io/valkey-hashes). Left on
+  # the OLD release's value, scripts/fetch-archive.sh fails the build on the
+  # mismatch until someone copies the new value from that place.
+  aurl=$(jq -r --arg k "$key" '.sources[$k].archive.url // ""' "$VERSIONS")
+  if [[ -n "$aurl" ]]; then
+    NEWURL="${aurl//$ref/$CAND}"; NEWURL="${NEWURL//$OLD_BARE/$NEW_BARE}"
+    if [[ "$NEWURL" == "$aurl" ]]; then
+      ALARMS+="- source \`${key}\` archive: url does not embed \`${ref}\`, so it was not moved to \`${CAND}\`. Re-pin url and sha256 by hand before merging."$'\n'
+    else
+      jq --arg k "$key" --arg u "$NEWURL" '.sources[$k].archive.url = $u' \
+        "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
+      BUILD_ROWS+="| \`${key}\` archive | \`${ref}\` → \`${CAND}\` | url only |"$'\n'
+      ALARMS+="- source \`${key}\` archive: url moved to \`${CAND}\`, but \`sha256\` still holds the \`${ref}\` hash. Copy the \`${CAND}\` value from \`$(jq -r --arg k "$key" '.sources[$k].archive.hashSource // "the vendor"' "$VERSIONS")\` before merging; until then scripts/fetch-archive.sh fails the build on the mismatch."$'\n'
+    fi
+  fi
+
   CHANGED=1
 done < <(jq -r '.sources | keys[]' "$VERSIONS")
 

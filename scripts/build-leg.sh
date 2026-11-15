@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Build one {service, arch} leg of a BUILT image, scan, sign, attest. Two kinds:
+# Build one {service, arch} leg of a BUILT image, scan, sign, attest. Three kinds:
 #
 #   build    compile a pinned source commit onto our trusted ubi9-micro and
 #            cross-check the binary against the vendor's official image.
 #   package  install signed RPMs at pinned NEVRAs from one pinned repository
 #            onto our trusted base, and prove with `rpm -q` that exactly those
 #            NEVRAs, signed by the pinned key, are in the image (ADR-009).
+#   native   compile a pinned source commit on a pinned UBI builder, with the
+#            compiler from the signed UBI repositories, onto our trusted base;
+#            prove that the commit's tree equals the vendor's release archive
+#            pinned by sha256, and record the hash of our binary (ADR-010).
 #
 # The kind comes from versions.json, never from the matrix alone; an entry of
 # any other kind fails here.
@@ -33,8 +37,9 @@ mkdir -p "$EVIDENCE"
 # ---------------------------------------------------------------------------
 IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
 KIND=$(jq -r '.kind' <<<"$IMG")
-[[ "$KIND" == build || "$KIND" == package ]] || fail "images.${SERVICE}.kind is '${KIND}'; build-leg.sh builds only kind build or package"
-# The matrix kind is the job family: both image kinds are "build" legs there.
+[[ "$KIND" == build || "$KIND" == package || "$KIND" == native ]] \
+  || fail "images.${SERVICE}.kind is '${KIND}'; build-leg.sh builds only kind build, package or native"
+# The matrix kind is the job family: all three image kinds are "build" legs there.
 if [[ -n "${MATRIX_KIND:-}" && "$MATRIX_KIND" != build ]]; then
   fail "the matrix runs ${SERVICE} as a ${MATRIX_KIND} leg, but versions.json kind ${KIND} is built by the build job"
 fi
@@ -116,6 +121,45 @@ done
 
 DEST_TAG="pr-${PR_NUM}-${SRC_VERSION}-${ARCH}"
 
+elif [[ "$KIND" == native ]]; then
+  # -------------------------------------------------------------------------
+  # 1n. Native kind (ADR-010): the source commit, its release archive, the
+  #     UBI builder and the build packages, for THIS arch.
+  # -------------------------------------------------------------------------
+  SRC_KEY=$(jq -r '.source' <<<"$IMG")
+  SRC_URL=$(jq -r --arg s "$SRC_KEY" '.sources[$s].url // ""'    versions.json)
+  SRC_REF=$(jq -r --arg s "$SRC_KEY" '.sources[$s].commit // ""' versions.json)
+  SRC_VERSION=$(jq -r --arg s "$SRC_KEY" '.sources[$s].ref // ""' versions.json)
+  ARCHIVE_SHA=$(jq -r --arg s "$SRC_KEY" '.sources[$s].archive.sha256 // ""' versions.json)
+  ARCHIVE_SRC=$(jq -r --arg s "$SRC_KEY" '.sources[$s].archive.hashSource // ""' versions.json)
+  [[ "$SRC_REF" =~ ^[0-9a-f]{40}$ ]] || fail "source ref for ${LEG} is not a 40-hex commit: ${SRC_REF}"
+  [[ "$SRC_URL" =~ ^https:// ]]      || fail "sources.${SRC_KEY}.url is not an https URL: ${SRC_URL}"
+  [[ "$SRC_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || fail "sources.${SRC_KEY}.ref '${SRC_VERSION}' is not tag-safe"
+  [[ "$ARCHIVE_SHA" =~ ^[a-f0-9]{64}$ ]] || fail "sources.${SRC_KEY}.archive.sha256 is not pinned"
+
+  NATIVE_LANG=$(jq -r '.native.language' <<<"$IMG")
+  [[ "$NATIVE_LANG" == c ]] || fail "native.language '${NATIVE_LANG}' is not supported by build-leg.sh"
+  INSTALL_PATH=$(jq -r '.native.installPath' <<<"$IMG")
+  [[ "$INSTALL_PATH" =~ ^/usr/bin/[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "native.installPath '${INSTALL_PATH}' is malformed"
+  mapfile -t BUILD_PKGS < <(jq -r '.native.buildPackages[]?' <<<"$IMG")
+  [[ ${#BUILD_PKGS[@]} -gt 0 ]] || fail "images.${SERVICE}.native.buildPackages is empty"
+  for b in "${BUILD_PKGS[@]}"; do
+    [[ "$b" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || fail "build package '${b}' is not an RPM name"
+  done
+
+  BUILDER_KEY=$(jq -r '.builder' <<<"$IMG")
+  BUILDER_IMG=$(lookup "$BUILDER_KEY" '.bases[$k].image')
+  BUILDER_DIGEST=$(lookup "$BUILDER_KEY" '.bases[$k][$a].digest')
+  BUILDER_KEYFILE=$(lookup "$BUILDER_KEY" '.bases[$k].verifyKey')
+  for v in BASE_IMG BASE_DIGEST BUILDER_IMG BUILDER_DIGEST BUILDER_KEYFILE; do
+    val="${!v}"
+    [[ -n "$val" && "$val" != "null" ]] || fail "${v} unresolved for ${LEG}"
+  done
+  for d in "$BASE_DIGEST" "$BUILDER_DIGEST"; do
+    [[ "$d" =~ ^sha256:[a-f0-9]{64}$ ]] || fail "malformed digest: ${d}"
+  done
+  DEST_TAG="pr-${PR_NUM}-${SRC_VERSION}-${ARCH}"
+
 else
   # -------------------------------------------------------------------------
   # 1p. Package kind: the repository, the key and the NEVRAs for THIS arch.
@@ -185,6 +229,28 @@ if [[ "$KIND" == build ]]; then
 # cross-check meaningless even against ourselves.
 SOURCE_DATE=$(cat "src/.meta/${SERVICE}.source-date")
 SOURCE_GIT_VERSION=$(cat "src/.meta/${SERVICE}.source-git-version")
+elif [[ "$KIND" == native ]]; then
+# ---------------------------------------------------------------------------
+# 2n. Fetch the source at the pinned COMMIT, then the release archive pinned
+#     by sha256, and require identical file trees. (native kind only)
+# ---------------------------------------------------------------------------
+./scripts/fetch-source.sh "$SERVICE" "$SRC_URL" "$SRC_REF" "$SRC_VERSION"
+./scripts/fetch-archive.sh "$SERVICE" "$SRC_KEY" > /tmp/archive-check.json \
+  || fail "the release archive of ${SRC_KEY} does not verify against the pinned commit"
+jq -e --arg sha "$ARCHIVE_SHA" '.tree_match == true and .sha256 == $sha' /tmp/archive-check.json >/dev/null \
+  || fail "fetch-archive.sh did not confirm the pinned archive"
+ARCHIVE_URL=$(jq -r '.url' /tmp/archive-check.json)
+SOURCE_DATE=$(cat "src/.meta/${SERVICE}.source-date")
+
+# The builder is one of our bases: verify it with the same release key as
+# the runtime base, and refuse to compile on anything that does not verify.
+cosign verify-attestation \
+    --key "$BUILDER_KEYFILE" \
+    --type https://infrashift.io/attestation/release/v1 \
+    --insecure-ignore-tlog \
+    --certificate-identity-regexp='.*' --certificate-oidc-issuer-regexp='.*' \
+    "${BUILDER_IMG}@${BUILDER_DIGEST}" > /dev/null 2>/tmp/builder-att.err \
+  || fail "the builder ${BUILDER_IMG}@${BUILDER_DIGEST} does not verify against ${BUILDER_KEYFILE}: $(head -c 300 /tmp/builder-att.err)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -209,7 +275,7 @@ fi
 if [[ "$KIND" == build ]]; then
   CA_TRUST='{"injected": true, "reason": "ubi9-micro ships no CA trust bundle (verified by layer listing); every service here makes outbound TLS calls"}'
 else
-  CA_TRUST='{"injected": false, "reason": "the package-track base is ubi9-minimal, which ships its own CA trust bundle"}'
+  CA_TRUST='{"injected": false, "reason": "the package-track and native-track base is ubi9-minimal, which ships its own CA trust bundle"}'
 fi
 jq -n --arg tc "$TRUST_CLASS" --arg res "$UPSTREAM_RESULT" --arg reason "$UPSTREAM_REASON" \
       --arg uri "$BASE_IMG" --arg dig "$BASE_DIGEST" --arg key "$BASE_KEYFILE" --arg arch "$ARCH" \
@@ -227,7 +293,20 @@ jq -n --arg tc "$TRUST_CLASS" --arg res "$UPSTREAM_RESULT" --arg reason "$UPSTRE
 # ---------------------------------------------------------------------------
 # 4. Build.
 # ---------------------------------------------------------------------------
-if [[ "$KIND" == package ]]; then
+if [[ "$KIND" == native ]]; then
+buildah bud \
+  --platform "linux/${ARCH}" \
+  --build-arg BUILDER_BASE="$BUILDER_IMG"   --build-arg BUILDER_DIGEST="$BUILDER_DIGEST" \
+  --build-arg UPSTREAM_BASE="$BASE_IMG"     --build-arg UPSTREAM_DIGEST="$BASE_DIGEST" \
+  --build-arg BUILD_PACKAGES="${BUILD_PKGS[*]}" \
+  --build-arg SOURCE_URL="$SRC_URL"         --build-arg SOURCE_REF="$SRC_REF" \
+  --build-arg SOURCE_VERSION="$SRC_VERSION" --build-arg SOURCE_DATE="$SOURCE_DATE" \
+  --build-arg ARCHIVE_SHA256="$ARCHIVE_SHA" \
+  --build-arg GIT_COMMIT="${GITHUB_SHA:-unknown}" \
+  --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+  --build-arg TARGETARCH="$ARCH" \
+  -t "${DEST_REPO}:${DEST_TAG}" -f "$CONTAINERFILE" .
+elif [[ "$KIND" == package ]]; then
 buildah bud \
   --platform "linux/${ARCH}" \
   --build-arg UPSTREAM_BASE="$BASE_IMG"     --build-arg UPSTREAM_DIGEST="$BASE_DIGEST" \
@@ -314,6 +393,36 @@ if [[ "$KIND" == package ]]; then
                    verified_nevras: $pv[0].verified_nevras, signatures: $pv[0].signatures },
        verification: { performed: true, tool: "rpm -q (inside the built image)" } }' \
     > "$EVIDENCE/package-verification.json"
+fi
+
+# ---------------------------------------------------------------------------
+# 6n. Native verification (native kind). Hash our binary in the pushed image:
+#     the change detector of ADR-004. There is no vendor comparison; see
+#     ADR-010. The archive check ran before the build (step 2n).
+# ---------------------------------------------------------------------------
+if [[ "$KIND" == native ]]; then
+  OURS=$(./scripts/binary-crosscheck.sh --ours-only "${DEST_REPO}:${DEST_TAG}" "$INSTALL_PATH")
+  [[ "$OURS" =~ ^[0-9a-f]{64}$ ]] || fail "native binary hash is malformed: '${OURS}'"
+  echo "native: ${INSTALL_PATH} sha256=${OURS}; archive ${ARCHIVE_SHA:0:12} matches commit ${SRC_REF:0:12}"
+  jq -n --arg leg "$LEG" --arg arch "$ARCH" --arg lang "$NATIVE_LANG" \
+        --arg srcurl "$SRC_URL" --arg srcref "$SRC_REF" --arg srcver "$SRC_VERSION" \
+        --arg bimg "$BUILDER_IMG" --arg bdig "$BUILDER_DIGEST" \
+        --argjson pkgs "$(printf '%s\n' "${BUILD_PKGS[@]}" | jq -R -s -c 'split("\n")|map(select(length>0))')" \
+        --arg hsrc "$ARCHIVE_SRC" --slurpfile ac /tmp/archive-check.json \
+        --arg path "$INSTALL_PATH" --arg ours "$OURS" \
+    '{ schema: "https://infrashift.io/attestation/native-verification/v1",
+       subject: { leg: $leg, arch: $arch },
+       language: $lang,
+       source: { url: $srcurl, commit: $srcref, ref: $srcver },
+       archive: { url: $ac[0].url, sha256: $ac[0].sha256, hashSource: $hsrc,
+                  tree_match: $ac[0].tree_match, files: $ac[0].files },
+       builder: { image: $bimg, digest: $bdig, packages: $pkgs,
+                  note: "Installed by name from the Red Hat signed UBI repositories (gpgcheck=1). The builder stage is not shipped." },
+       builtFromSource: { path: $path, sha256: $ours },
+       comparison: { performed: false, gating: false,
+                     note: "NATIVE BUILD. No vendor binary comparison: the vendor builds on another distribution with another compiler and glibc, so a mismatch is certain. The hash of our binary is a change detector over time (ADR-004, ADR-010)." },
+       verification: { performed: true, tool: "scripts/fetch-archive.sh, scripts/binary-crosscheck.sh --ours-only" } }' \
+    > "$EVIDENCE/native-verification.json"
 fi
 
 if [[ "$KIND" == build ]]; then
@@ -414,7 +523,47 @@ jq -n --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg tc "$TRUS
                     sbom: ("sbom-" + $slug + ".json"), cve: ("cve-" + $slug + ".json") } ],
      manifest_group: $leg }' > "$EVIDENCE/subject.json"
 
-if [[ "$KIND" == package ]]; then
+if [[ "$KIND" == native ]]; then
+# ---------------------------------------------------------------------------
+# 9n. SLSA provenance, native kind. The source commit is
+#     externalParameters.source, as on the build track. Index 0 is the base by
+#     contract; the builder and the release archive follow, by role.
+# ---------------------------------------------------------------------------
+jq -n \
+  --arg srcurl "$SRC_URL" --arg srcref "$SRC_REF" --arg srcver "$SRC_VERSION" \
+  --arg leg "$LEG" --arg arch "$ARCH" --arg cf "$CONTAINERFILE" \
+  --arg recipe "git+${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}" \
+  --arg recipesha "${GITHUB_SHA:-unknown}" \
+  --arg out "${DEST_REPO}@${PUSHED}" --arg outdig "${PUSHED#sha256:}" \
+  --arg baseimg "$BASE_IMG" --arg basedig "${BASE_DIGEST#sha256:}" \
+  --arg bimg "$BUILDER_IMG" --arg bdig "${BUILDER_DIGEST#sha256:}" \
+  --arg aurl "$ARCHIVE_URL" --arg asha "$ARCHIVE_SHA" \
+  --arg run "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID:-0}" \
+  --argjson native "$(jq -c '.native' <<<"$IMG")" \
+  --slurpfile nv "$EVIDENCE/native-verification.json" \
+  '{ buildDefinition: {
+       buildType: "https://github.com/infrashift/trusted-service-containers/build/native/v1",
+       externalParameters: {
+         source: { uri: ("git+" + $srcurl), digest: { gitCommit: $srcref },
+                   annotations: { ref: $srcver } },
+         leg: $leg, arch: $arch },
+       internalParameters: {
+         recipe: { uri: $recipe, digest: { sha1: $recipesha } },
+         containerfile: $cf, platform: ("linux/" + $arch),
+         native: $native,
+         sourceDateBasis: "committer-date-of-pinned-commit",
+         output: { uri: $out, digest: { sha256: $outdig } } },
+       resolvedDependencies: [
+         { uri: $baseimg, digest: { sha256: $basedig }, annotations: { role: "runtime-base" } },
+         { uri: $bimg,    digest: { sha256: $bdig },    annotations: { role: "builder" } },
+         { uri: $aurl,    digest: { sha256: $asha },
+           annotations: { role: "source-archive", treeMatchesCommit: $nv[0].archive.tree_match } } ] },
+     runDetails: {
+       builder: { id: $run },
+       byproducts: [ { name: "binary/built-from-source", digest: { sha256: $nv[0].builtFromSource.sha256 },
+                       annotations: { path: $nv[0].builtFromSource.path, vendorReference: "none" } } ] } }' \
+  > "$EVIDENCE/provenance.json"
+elif [[ "$KIND" == package ]]; then
 # ---------------------------------------------------------------------------
 # 9p. SLSA provenance, package kind. The materials are the base image, the
 #     repository and its key, and one entry per pinned RPM. Index 0 is the base
@@ -526,6 +675,9 @@ attest --type https://infrashift.io/attestation/upstream-verification/v1 \
 if [[ "$KIND" == build ]]; then
   attest --type https://infrashift.io/attestation/binary-crosscheck/v1 \
          --predicate "$EVIDENCE/crosscheck.json" "$URI"
+elif [[ "$KIND" == native ]]; then
+  attest --type https://infrashift.io/attestation/native-verification/v1 \
+         --predicate "$EVIDENCE/native-verification.json" "$URI"
 else
   attest --type https://infrashift.io/attestation/package-verification/v1 \
          --predicate "$EVIDENCE/package-verification.json" "$URI"

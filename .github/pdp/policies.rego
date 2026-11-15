@@ -91,18 +91,24 @@ package tsc.pdp
 
 missing := "<missing>"
 
-tracks := {"mirror", "build", "package"}
+tracks := {"mirror", "build", "package", "native"}
 
 # The tracks whose images WE build, and therefore label and base on a pinned
-# base image. `build` compiles a pinned source commit; `package` installs
-# signed RPMs at pinned NEVRAs (ADR-009). Both carry the five required labels
-# and both must land on the base that versions.json pins. Each reads its
+# base image. `build` compiles a pinned Go source commit; `package` installs
+# signed RPMs at pinned NEVRAs (ADR-009); `native` compiles a pinned source
+# commit on a pinned UBI builder (ADR-010). All carry the five required labels
+# and all must land on the base that versions.json pins. Each reads its
 # integrity block from input.<track>, so the shared rules below never confuse
-# the two.
-built_tracks := {"build", "package"}
+# them.
+built_tracks := {"build", "package", "native"}
+
+# The built tracks that compile a pinned source commit. They share the
+# source-ref rules below.
+source_tracks := {"build", "native"}
 
 # input.build.<field> on the build track, input.package.<field> on the package
-# track. Only called where `track in built_tracks` holds.
+# track, input.native.<field> on the native track. Only called where
+# `track in built_tracks` holds.
 built_field(field, fallback) := object.get(input, [track, field], fallback)
 
 trust_classes := {"dhi", "none", "internal", "notation"}
@@ -712,26 +718,26 @@ violations contains v if {
 # The check that gives the build track its meaning: the review actor
 # independently confirms the artifact was built from the reviewed source pin.
 violations contains v if {
-	track == "build"
-	pinned := object.get(input, ["build", "pinned_source_ref"], "<pin-absent>")
-	actual := object.get(input, ["build", "source_revision"], "<actual-absent>")
+	track in source_tracks
+	pinned := built_field("pinned_source_ref", "<pin-absent>")
+	actual := built_field("source_revision", "<actual-absent>")
 	pinned != actual
 	v := {"code": "BUILD_SOURCE_REF_MISMATCH", "pinned": pinned, "actual": actual, "message": sprintf("versions.json pins source ref %v but the build used %v. Denying.", [pinned, actual])}
 }
 
 # A git tag or branch is not a pin -- it can be moved or force-pushed. Build
-# entries pin a 40-character commit SHA.
+# and native entries pin a 40-character commit SHA.
 violations contains v if {
-	track == "build"
-	ref := object.get(input, ["build", "source_revision"], missing)
+	track in source_tracks
+	ref := built_field("source_revision", missing)
 	not regex.match(`^[0-9a-f]{40}$`, ref)
-	v := {"code": "BUILD_SOURCE_REF_NOT_PINNED", "value": ref, "message": sprintf("build.source_revision %q is not a 40-character commit SHA. Tags and branches move; commits do not. Denying.", [ref])}
+	v := {"code": "BUILD_SOURCE_REF_NOT_PINNED", "value": ref, "message": sprintf("%v.source_revision %q is not a 40-character commit SHA. Tags and branches move; commits do not. Denying.", [track, ref])}
 }
 
 violations contains v if {
-	track == "build"
+	track in source_tracks
 	labelled := object.get(input, ["image", "labels", "org.opencontainers.image.revision"], "<label-absent>")
-	actual := object.get(input, ["build", "source_revision"], "<actual-absent>")
+	actual := built_field("source_revision", "<actual-absent>")
 	labelled != actual
 	v := {"code": "BUILD_REVISION_LABEL_DISAGREES", "message": sprintf("Label org.opencontainers.image.revision says %v but the build recorded revision %v. Denying.", [labelled, actual])}
 }
@@ -1143,6 +1149,163 @@ violations contains v if {
 }
 
 # ===========================================================================
+# TRACK: native
+# ===========================================================================
+# A native image compiles a pinned source commit on a pinned UBI builder,
+# with the compiler from the Red Hat signed UBI repositories, onto our base
+# (ADR-010). It answers P-TSC-4 for C software that no free signed repository
+# ships (Valkey). The provenance is:
+#
+#   the runtime base    shared rules above (BUILD_BASE_*, BUILD_LABEL_*)
+#   the source commit   shared rules above (BUILD_SOURCE_REF_*,
+#                       BUILD_REVISION_LABEL_DISAGREES), NATIVE_SOURCE_*
+#   the builder         NATIVE_BUILDER_DIGEST_MISMATCH, NATIVE_BUILDER_REPO_MISMATCH
+#   the archive         NATIVE_ARCHIVE_SHA256_MISMATCH, NATIVE_ARCHIVE_URL_MISMATCH,
+#                       NATIVE_ARCHIVE_TREE_MISMATCH
+#   our binary          NATIVE_BINARY_HASH_MALFORMED
+#
+# There is NO vendor binary comparison: the vendor builds on another
+# distribution with another compiler and glibc, so a mismatch is certain and
+# proves nothing (ADR-004). The hash of our binary is the change detector.
+#
+# Where each value comes from (scripts/review-leg.sh):
+#
+#   pinned_*, language   the CHECKED-OUT versions.json, re-read by the review
+#                        actor. Never the evidence bundle.
+#   source_revision, source_url, base_image_*, builder_image_*
+#                        the build actor's signed SLSA provenance.
+#   archive_*, from_source_sha256
+#                        the build actor's signed native-verification.json:
+#                        what scripts/fetch-archive.sh measured and the hash
+#                        of the binary in the pushed image.
+#
+# NATIVE_PROVENANCE_NOT_RECORDED negates the POSITIVE predicate
+# native_mode_valid, which repeats every condition. A deleted or weakened
+# specific rule therefore still denies (contract point 4).
+
+native_languages := {"c"}
+
+native_field(f, fallback) := object.get(input, ["native", f], fallback)
+
+native_pins_wellformed if {
+	native_field("language", missing) in native_languages
+	regex.match(`^[0-9a-f]{40}$`, native_field("pinned_source_ref", ""))
+	regex.match(`^https://`, native_field("pinned_source_url", ""))
+	regex.match(`^[0-9a-f]{64}$`, native_field("pinned_archive_sha256", ""))
+	regex.match(`^https://`, native_field("pinned_archive_url", ""))
+	is_digest(native_field("pinned_builder_digest", null))
+	is_string(native_field("pinned_builder_repo", null))
+	is_string(native_field("pinned_version", null))
+}
+
+native_mode_valid if {
+	track == "native"
+	native_pins_wellformed
+	object.get(input, ["native", "verification", "performed"], false) == true
+	native_field("pinned_builder_digest", "<pin-absent>") == native_field("builder_image_digest", "<observed-absent>")
+	native_field("pinned_builder_repo", "<pin-absent>") == native_field("builder_image_repo", "<observed-absent>")
+	native_field("pinned_source_url", "<pin-absent>") == native_field("source_url", "<observed-absent>")
+	native_field("pinned_archive_sha256", "<pin-absent>") == native_field("archive_sha256", "<observed-absent>")
+	native_field("pinned_archive_url", "<pin-absent>") == native_field("archive_url", "<observed-absent>")
+	native_field("archive_tree_match", "<observed-absent>") == true
+	regex.match(`^[0-9a-f]{64}$`, native_field("from_source_sha256", ""))
+}
+
+violations contains v if {
+	track == "native"
+	not native_mode_valid
+	v := {"code": "NATIVE_PROVENANCE_NOT_RECORDED", "message": "The native provenance is not complete: the builder, the source URL, the release archive (sha256, URL and file tree) and the hash of the built binary must all agree with the checked-out versions.json. The specific violations say which part failed. Denying."}
+}
+
+violations contains v if {
+	track == "native"
+	not native_pins_wellformed
+	v := {"code": "NATIVE_PIN_MALFORMED", "message": "The review passed no well-formed native pins: a known language, a 40-hex commit, https source and archive URLs, a 64-hex archive sha256, a builder repository and digest, and a version. Denying."}
+}
+
+violations contains v if {
+	track == "native"
+	not native_field("language", missing) in native_languages
+	v := {"code": "NATIVE_LANGUAGE_INVALID", "value": native_field("language", missing), "message": sprintf("native.language %q is not one of %v. Denying.", [native_field("language", missing), native_languages])}
+}
+
+violations contains v if {
+	track == "native"
+	not is_digest(native_field("builder_image_digest", null))
+	v := {"code": "INPUT_DIGEST_MALFORMED", "field": "native.builder_image_digest", "message": "native.builder_image_digest is not a sha256: digest. Denying."}
+}
+
+violations contains v if {
+	track == "native"
+	pinned := native_field("pinned_builder_digest", "<pin-absent>")
+	observed := native_field("builder_image_digest", "<observed-absent>")
+	pinned != observed
+	v := {"code": "NATIVE_BUILDER_DIGEST_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins builder digest %v but the build compiled on %v. Denying.", [pinned, observed])}
+}
+
+violations contains v if {
+	track == "native"
+	pinned := native_field("pinned_builder_repo", "<pin-absent>")
+	observed := native_field("builder_image_repo", "<observed-absent>")
+	pinned != observed
+	v := {"code": "NATIVE_BUILDER_REPO_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("Compiled on %v but versions.json pins builder repository %v. Denying.", [observed, pinned])}
+}
+
+violations contains v if {
+	track == "native"
+	pinned := native_field("pinned_source_url", "<pin-absent>")
+	observed := native_field("source_url", "<observed-absent>")
+	pinned != observed
+	v := {"code": "NATIVE_SOURCE_URL_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins source %v but the provenance says the build fetched %v. Denying.", [pinned, observed])}
+}
+
+violations contains v if {
+	track == "native"
+	pinned := native_field("pinned_source_url", "<pin-absent>")
+	labelled := object.get(input, ["image", "labels", "org.opencontainers.image.source"], "<label-absent>")
+	pinned != labelled
+	v := {"code": "NATIVE_SOURCE_LABEL_DISAGREES", "pinned": pinned, "labelled": labelled, "message": sprintf("Label org.opencontainers.image.source says %v but versions.json pins source %v. Denying.", [labelled, pinned])}
+}
+
+violations contains v if {
+	track == "native"
+	pinned := native_field("pinned_version", "<pin-absent>")
+	labelled := object.get(input, ["image", "labels", "org.opencontainers.image.version"], "<label-absent>")
+	pinned != labelled
+	v := {"code": "NATIVE_VERSION_LABEL_DISAGREES", "pinned": pinned, "labelled": labelled, "message": sprintf("Label org.opencontainers.image.version says %v but versions.json pins ref %v. Denying.", [labelled, pinned])}
+}
+
+violations contains v if {
+	track == "native"
+	pinned := native_field("pinned_archive_sha256", "<pin-absent>")
+	observed := native_field("archive_sha256", "<observed-absent>")
+	pinned != observed
+	v := {"code": "NATIVE_ARCHIVE_SHA256_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins release archive sha256 %v but the build verified %v. Denying.", [pinned, observed])}
+}
+
+violations contains v if {
+	track == "native"
+	pinned := native_field("pinned_archive_url", "<pin-absent>")
+	observed := native_field("archive_url", "<observed-absent>")
+	pinned != observed
+	v := {"code": "NATIVE_ARCHIVE_URL_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins release archive %v but the build fetched %v. Denying.", [pinned, observed])}
+}
+
+# `!= true`, never `not ... == true` on a helper: an absent value is the
+# sentinel string, which is not true, so absence denies.
+violations contains v if {
+	track == "native"
+	native_field("archive_tree_match", "<observed-absent>") != true
+	v := {"code": "NATIVE_ARCHIVE_TREE_MISMATCH", "value": native_field("archive_tree_match", missing), "message": "The build did not record that the file tree of the pinned commit equals the file tree of the pinned release archive. The archive sha256 is the independent check on the commit; without the comparison it checks nothing. Denying."}
+}
+
+violations contains v if {
+	track == "native"
+	not regex.match(`^[0-9a-f]{64}$`, native_field("from_source_sha256", ""))
+	v := {"code": "NATIVE_BINARY_HASH_MALFORMED", "message": "native.from_source_sha256 is missing or not a 64-hex sha256. A native build records the hash of the binary it built as its change detector (ADR-004). Denying."}
+}
+
+# ===========================================================================
 # THE CVE GATE
 # ===========================================================================
 # One gate. Same thresholds for dhi, internal and none; same for mirror and
@@ -1156,6 +1319,8 @@ remediation_hint := "DHI advertises a near-zero known-CVE baseline, so a finding
 	track == "build"
 } else := "A package image installs its base packages from the signed UBI repositories at build time, so a rebuild picks up every fix UBI has published; a pinned package clears only with a newer NEVRA in the pinned repository (scripts/drift-upstream.sh proposes it). Check both before considering an exception: a fix that RHEL has shipped can take days to reach the UBI repositories." if {
 	track == "package"
+} else := "A native image compiles a pinned source commit on UBI and upgrades its UBI base at build time. A finding in a UBI package clears with a rebuild once UBI publishes the fix (check the UBI repodata first); a finding in the program clears with a source bump inside its track." if {
+	track == "native"
 } else := "Check whether a newer release on the declared track clears this before considering an exception."
 
 # Per finding. On the build track `stdlib` is the Go standard library, and it
@@ -1326,6 +1491,22 @@ observations contains o if {
 		"nevras": sort(pinned_nevras),
 		"gating": false,
 		"message": "Package build: every pinned NEVRA is installed in the live image, `rpm -q` found it at exactly that NEVRA during the build, and its header signature names the pinned key. No other package carries that key. The review actor re-derived the pins from the checked-out versions.json and the repository file, the key and the rpm database from the image on GHCR.",
+	}
+}
+
+# A native image has no vendor binary to compare. Record what it DOES prove.
+observations contains o if {
+	native_mode_valid
+	o := {
+		"code": "NATIVE_BUILD",
+		"language": input.native.language,
+		"source_url": input.native.pinned_source_url,
+		"source_ref": input.native.pinned_source_ref,
+		"archive_sha256": input.native.pinned_archive_sha256,
+		"builder": sprintf("%v@%v", [input.native.pinned_builder_repo, input.native.pinned_builder_digest]),
+		"from_source_sha256": input.native.from_source_sha256,
+		"gating": false,
+		"message": "Native build: compiled from the pinned commit on the pinned UBI builder. The file tree of the commit equals the release archive whose sha256 the vendor publishes separately. No vendor binary was compared: the vendor builds on another distribution, so a mismatch would be certain. The hash of our binary is a change detector over time (ADR-004).",
 	}
 }
 
@@ -1841,6 +2022,90 @@ repo_violations contains v if {
 	ns := versions_package_nevras(img, arch)
 	count(package_names(img, arch)) != count(ns)
 	v := {"code": "VERSIONS_PACKAGE_NAME_DUPLICATE", "image": key, "arch": arch, "message": sprintf("images.%v.packages.%v pins one package name twice, or pins a malformed NEVRA. Denying.", [key, arch])}
+}
+
+# --- native entries (ADR-010) ----------------------------------------------
+# JSON Schema checks the shape. These rules check the meaning: the source,
+# the builder and the base the entry names exist, the source pins a release
+# archive that names the pinned ref, and no field of another kind is present.
+
+native_images := {key: img |
+	some key, img in versions_images
+	object.get(img, "kind", missing) == "native"
+}
+
+repo_violations contains v if {
+	some key, img in native_images
+	some field in [["source"], ["builder"], ["base"], ["containerfile"], ["native", "binary"], ["native", "installPath"]]
+	not is_string(object.get(img, field, null))
+	v := {"code": "VERSIONS_NATIVE_FIELD_MISSING", "image": key, "field": concat(".", field), "message": sprintf("native entry images.%v.%v is missing. Denying.", [key, concat(".", field)])}
+}
+
+repo_violations contains v if {
+	some key, img in native_images
+	not object.get(img, ["native", "language"], missing) in native_languages
+	v := {"code": "VERSIONS_NATIVE_LANGUAGE_INVALID", "image": key, "value": object.get(img, ["native", "language"], missing), "message": sprintf("images.%v.native.language %q is not one of %v. Denying.", [key, object.get(img, ["native", "language"], missing), native_languages])}
+}
+
+repo_violations contains v if {
+	some key, img in native_images
+	object.get(img, "upstreamTrust", missing) != "internal"
+	v := {"code": "VERSIONS_NATIVE_TRUST_CLASS_INVALID", "image": key, "message": sprintf("native entry images.%v must declare upstreamTrust \"internal\": the builder and the base are ours and verify against the sibling repo's release key. Denying.", [key])}
+}
+
+# A native entry that also names a toolchain, a crosscheck or packages is
+# another kind mislabelled, and the leg would skip the checks that kind needs.
+# `firstParty` has no meaning here: a native build makes no vendor comparison.
+repo_violations contains v if {
+	some key, img in native_images
+	some field in ["toolchain", "caSource", "build", "crosscheck", "firstParty", "packages", "variants", "repo"]
+	field in object.keys(img)
+	v := {"code": "VERSIONS_NATIVE_KIND_CONFLICT", "image": key, "field": field, "message": sprintf("native entry images.%v declares `%v`, which belongs to another kind. Denying.", [key, field])}
+}
+
+repo_violations contains v if {
+	some key, img in native_images
+	not object.get(img, "source", missing) in object.keys(versions_sources)
+	v := {"code": "VERSIONS_NATIVE_SOURCE_DANGLING", "image": key, "message": sprintf("images.%v.source %q has no matching entry under sources. Denying.", [key, object.get(img, "source", missing)])}
+}
+
+repo_violations contains v if {
+	some key, img in native_images
+	some field in ["builder", "base"]
+	not object.get(img, field, missing) in object.keys(object.get(input, ["versions", "bases"], {}))
+	v := {"code": "VERSIONS_NATIVE_BASE_DANGLING", "image": key, "field": field, "message": sprintf("images.%v.%v %q has no matching entry under bases. Denying.", [key, field, object.get(img, field, missing)])}
+}
+
+native_source(img) := object.get(versions_sources, object.get(img, "source", missing), {})
+
+native_archive_wellformed(src) if {
+	regex.match(`^https://[^\s]+$`, object.get(src, ["archive", "url"], ""))
+	regex.match(`^[0-9a-f]{64}$`, object.get(src, ["archive", "sha256"], ""))
+}
+
+# The archive must belong to the release being built. A bump that moved the
+# commit and the ref but not the archive URL would compare the new commit
+# with the OLD archive, and fail only at build time.
+native_archive_names_ref(src) if {
+	ref := object.get(src, "ref", missing)
+	is_string(ref)
+	url := object.get(src, ["archive", "url"], "")
+	some sep in [".", "/"]
+	contains(url, concat("", ["/", ref, sep]))
+}
+
+repo_violations contains v if {
+	some key, img in native_images
+	not native_archive_wellformed(native_source(img))
+	v := {"code": "VERSIONS_NATIVE_ARCHIVE_MISSING", "image": key, "source": object.get(img, "source", missing), "message": sprintf("images.%v builds sources.%v, which pins no well-formed `archive` (an https url and a 64-hex sha256). A native build compares the commit with the vendor's release archive; without the pin the commit has no independent check. Denying.", [key, object.get(img, "source", missing)])}
+}
+
+repo_violations contains v if {
+	some key, img in native_images
+	src := native_source(img)
+	native_archive_wellformed(src)
+	not native_archive_names_ref(src)
+	v := {"code": "VERSIONS_NATIVE_ARCHIVE_REF_MISMATCH", "image": key, "source": object.get(img, "source", missing), "message": sprintf("sources.%v.archive.url %q does not name the pinned ref %q. Denying.", [object.get(img, "source", missing), object.get(src, ["archive", "url"], missing), object.get(src, "ref", missing)])}
 }
 
 # --- sources ---------------------------------------------------------------

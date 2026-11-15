@@ -91,7 +91,19 @@ package tsc.pdp
 
 missing := "<missing>"
 
-tracks := {"mirror", "build"}
+tracks := {"mirror", "build", "package"}
+
+# The tracks whose images WE build, and therefore label and base on a pinned
+# base image. `build` compiles a pinned source commit; `package` installs
+# signed RPMs at pinned NEVRAs (ADR-009). Both carry the five required labels
+# and both must land on the base that versions.json pins. Each reads its
+# integrity block from input.<track>, so the shared rules below never confuse
+# the two.
+built_tracks := {"build", "package"}
+
+# input.build.<field> on the build track, input.package.<field> on the package
+# track. Only called where `track in built_tracks` holds.
+built_field(field, fallback) := object.get(input, [track, field], fallback)
 
 trust_classes := {"dhi", "none", "internal", "notation"}
 
@@ -650,14 +662,14 @@ violations contains v if {
 # it is what stops a build silently landing on a stale or substituted base.
 
 violations contains v if {
-	track == "build"
+	track in built_tracks
 	some name in required_build_labels
 	label(name) == missing
 	v := {"code": "BUILD_LABEL_MISSING", "label": name, "message": sprintf("Built image is missing required label %v. Denying.", [name])}
 }
 
 violations contains v if {
-	track == "build"
+	track in built_tracks
 	some name in required_build_labels
 	label(name) != missing
 	trim_space(label(name)) == ""
@@ -665,34 +677,34 @@ violations contains v if {
 }
 
 violations contains v if {
-	track == "build"
-	not is_digest(object.get(input, ["build", "base_image_digest"], null))
-	v := {"code": "INPUT_DIGEST_MALFORMED", "field": "build.base_image_digest", "message": "build.base_image_digest is not a sha256: digest. Denying."}
+	track in built_tracks
+	not is_digest(built_field("base_image_digest", null))
+	v := {"code": "INPUT_DIGEST_MALFORMED", "field": sprintf("%v.base_image_digest", [track]), "message": sprintf("%v.base_image_digest is not a sha256: digest. Denying.", [track])}
 }
 
 # The label and the observed base digest must agree. If they diverge, either the
 # label was hand-written or the build did not use the base it claims.
 violations contains v if {
-	track == "build"
+	track in built_tracks
 	labelled := object.get(input, ["image", "labels", "io.infrashift.image.upstream.digest"], "<label-absent>")
-	observed := object.get(input, ["build", "base_image_digest"], "<observed-absent>")
+	observed := built_field("base_image_digest", "<observed-absent>")
 	labelled != observed
 	v := {"code": "BUILD_LABEL_DIGEST_DISAGREES", "labelled": labelled, "observed": observed, "message": sprintf("Label io.infrashift.image.upstream.digest says %v but the build recorded base digest %v. Denying.", [labelled, observed])}
 }
 
 # ...and both must equal the pin.
 violations contains v if {
-	track == "build"
-	pinned := object.get(input, ["build", "pinned_base_digest"], "<pin-absent>")
-	observed := object.get(input, ["build", "base_image_digest"], "<observed-absent>")
+	track in built_tracks
+	pinned := built_field("pinned_base_digest", "<pin-absent>")
+	observed := built_field("base_image_digest", "<observed-absent>")
 	pinned != observed
 	v := {"code": "BUILD_BASE_DIGEST_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins base digest %v but the image was built on %v. Bump the pin deliberately or rebuild on the pinned base. Denying.", [pinned, observed])}
 }
 
 violations contains v if {
-	track == "build"
-	pinned := object.get(input, ["build", "pinned_base_repo"], "<pin-absent>")
-	actual := object.get(input, ["build", "base_image_repo"], "<actual-absent>")
+	track in built_tracks
+	pinned := built_field("pinned_base_repo", "<pin-absent>")
+	actual := built_field("base_image_repo", "<actual-absent>")
 	pinned != actual
 	v := {"code": "BUILD_BASE_REPO_MISMATCH", "message": sprintf("Built on %v but versions.json pins base repo %v. Denying.", [actual, pinned])}
 }
@@ -872,6 +884,265 @@ violations contains v if {
 }
 
 # ===========================================================================
+# TRACK: package
+# ===========================================================================
+# A package image installs signed RPMs at pinned NEVRAs from one pinned
+# repository onto our base (ADR-009). It answers P-TSC-4 for software that a
+# vendor ships as signed packages: no compiler runs, so there is no binary to
+# cross-check, and the provenance is the package set instead:
+#
+#   the base image      shared rules above (BUILD_BASE_*, BUILD_LABEL_*)
+#   the repository      PACKAGE_REPO_MISMATCH, PACKAGE_GPGCHECK_DISABLED
+#   the key             PACKAGE_KEY_FINGERPRINT_MISMATCH, PACKAGE_KEY_SHA256_MISMATCH
+#   the pinned NEVRAs   PACKAGE_NEVRA_NOT_INSTALLED, PACKAGE_NEVRA_NOT_VERIFIED,
+#                       PACKAGE_SIGNATURE_UNVERIFIED, PACKAGE_UNPINNED_FROM_REPO,
+#                       PACKAGE_SIGNATURE_SET_INCOMPLETE
+#
+# Where each value comes from (scripts/review-leg.sh):
+#
+#   pinned_*          the CHECKED-OUT versions.json, re-read by the review
+#                     actor. Never the evidence bundle.
+#   repo_url, gpgcheck, repo_gpgcheck, key_sha256, key_fingerprint,
+#   installed_nevras  re-derived LIVE from the image on GHCR by the review
+#                     actor: the repository file and the key file it carries,
+#                     and its rpm database through syft.
+#   verified_nevras, signatures, base_image_*
+#                     the build actor's signed evidence: what `rpm -q` said
+#                     inside the image, and the base the build used. The
+#                     review cannot run rpm, so these are observations it
+#                     holds against the pins, as it does build.source_revision.
+#
+# PACKAGE_VERIFICATION_NOT_RECORDED negates the POSITIVE predicate
+# package_mode_valid, which repeats every condition. A deleted or weakened
+# specific rule therefore still denies (contract point 4).
+
+# NAME-VERSION-RELEASE.ARCH. Name may contain '-'; version and release may not.
+nevra_pattern := `^([A-Za-z0-9][A-Za-z0-9._+-]*)-([0-9][A-Za-z0-9._+~^]*)-([A-Za-z0-9._+~^]+)\.(x86_64|aarch64|noarch)$`
+
+nevra_parts(n) := m if {
+	is_string(n)
+	m := regex.find_all_string_submatch_n(nevra_pattern, n, 1)[0]
+}
+
+# VERSION-RELEASE of a NEVRA: what `track` bounds and what the revision label
+# carries.
+nevra_vr(n) := concat("-", [p[2], p[3]]) if p := nevra_parts(n)
+
+# For messages and comparisons that must still fire when the NEVRA is
+# malformed: an undefined value inside a rule body silences the rule.
+nevra_vr_or_absent(n) := vr if {
+	vr := nevra_vr(n)
+} else := "<vr-absent>"
+
+package_field(f, fallback) := object.get(input, ["package", f], fallback)
+
+pinned_nevras := ns if {
+	ns := package_field("pinned_nevras", null)
+	is_array(ns)
+} else := []
+
+pinned_nevra_set := {n | some n in pinned_nevras}
+
+installed_nevra_set := {n | some n in package_field("installed_nevras", [])}
+
+verified_nevra_set := {n | some n in package_field("verified_nevras", [])}
+
+package_signatures := ss if {
+	ss := package_field("signatures", null)
+	is_array(ss)
+} else := []
+
+# The long key ID that every pinned RPM header must name: the last 16 hex
+# characters of the pinned v4 fingerprint, lower-case as rpm prints it.
+# Undefined for a malformed fingerprint, so nothing can match it.
+pinned_key_id := lower(substring(fp, 24, 16)) if {
+	fp := package_field("pinned_key_fingerprint", missing)
+	regex.match(`^[0-9A-F]{40}$`, fp)
+}
+
+reported_key_id := k if {
+	k := pinned_key_id
+} else := missing
+
+package_signed_by_pinned_key(n) if {
+	some s in package_signatures
+	s.nevra == n
+	lower(s.key_id) == pinned_key_id
+}
+
+# A recorded signature is acceptable when it is NOT the pinned key, or when
+# the package it covers is pinned. Written positively, so an undefined key ID
+# makes every package with a signature fail the second clause.
+package_signature_allowed(s) if lower(s.key_id) != pinned_key_id
+
+package_signature_allowed(s) if s.nevra in pinned_nevra_set
+
+package_signature_wellformed(s) if {
+	is_string(s.nevra)
+	is_string(s.key_id)
+}
+
+package_pins_wellformed if {
+	count(pinned_nevras) > 0
+	every n in pinned_nevras {
+		nevra_parts(n)
+	}
+	regex.match(`^[0-9A-F]{40}$`, package_field("pinned_key_fingerprint", ""))
+	regex.match(`^[0-9a-f]{64}$`, package_field("pinned_key_sha256", ""))
+	regex.match(`^https://`, package_field("pinned_repo_url", ""))
+	is_string(package_field("pinned_version", null))
+}
+
+package_evidence_wellformed if {
+	is_array(package_field("installed_nevras", null))
+	is_array(package_field("verified_nevras", null))
+	is_array(package_field("signatures", null))
+	every s in package_signatures {
+		package_signature_wellformed(s)
+	}
+}
+
+# The build's signature list covers exactly the packages the review sees in
+# the live image. Otherwise the build actor could leave a package out of the
+# list and PACKAGE_UNPINNED_FROM_REPO would never see it.
+package_signature_set_complete if {
+	count(installed_nevra_set) > 0
+	{s.nevra | some s in package_signatures} == installed_nevra_set
+}
+
+package_mode_valid if {
+	track == "package"
+	object.get(input, ["package", "verification", "performed"], false) == true
+	package_pins_wellformed
+	package_evidence_wellformed
+	package_field("pinned_repo_url", "<pin-absent>") == package_field("repo_url", "<observed-absent>")
+	package_field("gpgcheck", missing) == "1"
+	package_field("repo_gpgcheck", missing) == "1"
+	package_field("pinned_key_fingerprint", "<pin-absent>") == package_field("key_fingerprint", "<observed-absent>")
+	package_field("pinned_key_sha256", "<pin-absent>") == package_field("key_sha256", "<observed-absent>")
+
+	# "n is installed" is not repeated here: every pinned n must carry a
+	# recorded signature, and the recorded set must equal the installed set
+	# (package_signature_set_complete), so it follows. The deliberate-break run
+	# found the repeated condition was not load-bearing.
+	every n in pinned_nevras {
+		n in verified_nevra_set
+		package_signed_by_pinned_key(n)
+	}
+	every s in package_signatures {
+		package_signature_allowed(s)
+	}
+	package_signature_set_complete
+}
+
+violations contains v if {
+	track == "package"
+	not package_mode_valid
+	v := {"code": "PACKAGE_VERIFICATION_NOT_RECORDED", "message": "The package provenance is not complete: the repository, the key, and every pinned NEVRA (installed, verified with rpm -q, signed by the pinned key) must all agree with the checked-out versions.json. The specific violations say which part failed. Denying."}
+}
+
+violations contains v if {
+	track == "package"
+	not package_pins_wellformed
+	v := {"code": "PACKAGE_PIN_MALFORMED", "message": "The review passed no well-formed package pins: pinned_nevras must be a non-empty list of NAME-VERSION-RELEASE.ARCH, with a 40-hex key fingerprint, a sha256 of the key file, an https repository and a version. Denying."}
+}
+
+violations contains v if {
+	track == "package"
+	not package_evidence_wellformed
+	v := {"code": "PACKAGE_EVIDENCE_MALFORMED", "message": "package.installed_nevras, package.verified_nevras and package.signatures must be lists, and each signature must name a nevra and a key_id. Denying."}
+}
+
+violations contains v if {
+	track == "package"
+	pinned := package_field("pinned_repo_url", "<pin-absent>")
+	observed := package_field("repo_url", "<observed-absent>")
+	pinned != observed
+	v := {"code": "PACKAGE_REPO_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins repository %v but the image's repository file names %v. Denying.", [pinned, observed])}
+}
+
+violations contains v if {
+	track == "package"
+	some f in ["gpgcheck", "repo_gpgcheck"]
+	package_field(f, missing) != "1"
+	v := {"code": "PACKAGE_GPGCHECK_DISABLED", "field": f, "value": package_field(f, missing), "message": sprintf("The image's repository file sets %v=%v. Every package and the repository metadata must verify against the pinned key. Denying.", [f, package_field(f, missing)])}
+}
+
+violations contains v if {
+	track == "package"
+	pinned := package_field("pinned_key_fingerprint", "<pin-absent>")
+	observed := package_field("key_fingerprint", "<observed-absent>")
+	pinned != observed
+	v := {"code": "PACKAGE_KEY_FINGERPRINT_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins key fingerprint %v but the key in the image has %v. Denying.", [pinned, observed])}
+}
+
+violations contains v if {
+	track == "package"
+	pinned := package_field("pinned_key_sha256", "<pin-absent>")
+	observed := package_field("key_sha256", "<observed-absent>")
+	pinned != observed
+	v := {"code": "PACKAGE_KEY_SHA256_MISMATCH", "pinned": pinned, "observed": observed, "message": sprintf("versions.json pins key file sha256 %v but the key file in the image has %v. Denying.", [pinned, observed])}
+}
+
+violations contains v if {
+	track == "package"
+	some n in pinned_nevras
+	not n in installed_nevra_set
+	v := {"code": "PACKAGE_NEVRA_NOT_INSTALLED", "nevra": n, "message": sprintf("versions.json pins %v but the rpm database of the live image does not hold it at that NEVRA. Denying.", [n])}
+}
+
+violations contains v if {
+	track == "package"
+	some n in pinned_nevras
+	not n in verified_nevra_set
+	v := {"code": "PACKAGE_NEVRA_NOT_VERIFIED", "nevra": n, "message": sprintf("The build evidence does not record `rpm -q` finding %v at exactly that NEVRA. Denying.", [n])}
+}
+
+violations contains v if {
+	track == "package"
+	some n in pinned_nevras
+	not package_signed_by_pinned_key(n)
+	v := {"code": "PACKAGE_SIGNATURE_UNVERIFIED", "nevra": n, "expected_key_id": reported_key_id, "message": sprintf("%v has no recorded header signature by the pinned key. Denying.", [n])}
+}
+
+violations contains v if {
+	track == "package"
+	some s in package_signatures
+	not package_signature_allowed(s)
+	v := {"code": "PACKAGE_UNPINNED_FROM_REPO", "nevra": object.get(s, "nevra", missing), "message": sprintf("%v is signed by the pinned repository key but is not pinned. Every package from the repository must be pinned by NEVRA. Denying.", [object.get(s, "nevra", missing)])}
+}
+
+violations contains v if {
+	track == "package"
+	not package_signature_set_complete
+	v := {"code": "PACKAGE_SIGNATURE_SET_INCOMPLETE", "recorded": count(package_signatures), "installed": count(installed_nevra_set), "message": "The build recorded signatures for a different set of packages than the review finds in the live image. Denying."}
+}
+
+violations contains v if {
+	track == "package"
+	pinned := package_field("pinned_version", "<pin-absent>")
+	labelled := object.get(input, ["image", "labels", "org.opencontainers.image.version"], "<label-absent>")
+	pinned != labelled
+	v := {"code": "PACKAGE_VERSION_LABEL_DISAGREES", "pinned": pinned, "labelled": labelled, "message": sprintf("Label org.opencontainers.image.version says %v but versions.json pins version %v. Denying.", [labelled, pinned])}
+}
+
+violations contains v if {
+	track == "package"
+	labelled := object.get(input, ["image", "labels", "org.opencontainers.image.revision"], "<label-absent>")
+	some n in pinned_nevras
+	nevra_vr_or_absent(n) != labelled
+	v := {"code": "PACKAGE_REVISION_LABEL_DISAGREES", "nevra": n, "labelled": labelled, "message": sprintf("Label org.opencontainers.image.revision says %v but the pinned %v has another version-release. Denying.", [labelled, n])}
+}
+
+violations contains v if {
+	track == "package"
+	pinned := package_field("pinned_repo_url", "<pin-absent>")
+	labelled := object.get(input, ["image", "labels", "org.opencontainers.image.source"], "<label-absent>")
+	pinned != labelled
+	v := {"code": "PACKAGE_SOURCE_LABEL_DISAGREES", "pinned": pinned, "labelled": labelled, "message": sprintf("Label org.opencontainers.image.source says %v but versions.json pins repository %v. Denying.", [labelled, pinned])}
+}
+
+# ===========================================================================
 # THE CVE GATE
 # ===========================================================================
 # One gate. Same thresholds for dhi, internal and none; same for mirror and
@@ -883,6 +1154,8 @@ remediation_hint := "DHI advertises a near-zero known-CVE baseline, so a finding
 	trust_class == "dhi"
 } else := "Rebuild on a current base (check the sibling repo for a newer trusted ubi9-micro digest) or bump the pinned upstream source before considering an exception." if {
 	track == "build"
+} else := "A package image installs its base packages from the signed UBI repositories at build time, so a rebuild picks up every fix UBI has published; a pinned package clears only with a newer NEVRA in the pinned repository (scripts/drift-upstream.sh proposes it). Check both before considering an exception: a fix that RHEL has shipped can take days to reach the UBI repositories." if {
+	track == "package"
 } else := "Check whether a newer release on the declared track clears this before considering an exception."
 
 # Per finding. On the build track `stdlib` is the Go standard library, and it
@@ -1038,6 +1311,21 @@ observations contains o if {
 		"reason": input.build.first_party.reason,
 		"gating": false,
 		"message": "First-party build: no vendor binary exists, so no comparison was made. versions.json declares this for a source under https://github.com/infrashift/, and the review actor re-derived the declaration from the checked-out versions.json. The hash of our binary is recorded as a change detector over time.",
+	}
+}
+
+# A package image has no binary to cross-check. Record what it DOES prove, so
+# the signed verdict and the PR comment name the repository, the key and the
+# NEVRAs that the review re-derived.
+observations contains o if {
+	package_mode_valid
+	o := {
+		"code": "PACKAGE_PROVENANCE",
+		"repository": input.package.pinned_repo_url,
+		"key_fingerprint": input.package.pinned_key_fingerprint,
+		"nevras": sort(pinned_nevras),
+		"gating": false,
+		"message": "Package build: every pinned NEVRA is installed in the live image, `rpm -q` found it at exactly that NEVRA during the build, and its header signature names the pinned key. No other package carries that key. The review actor re-derived the pins from the checked-out versions.json and the repository file, the key and the rpm database from the image on GHCR.",
 	}
 }
 
@@ -1406,6 +1694,153 @@ repo_violations contains v if {
 	url := versions_source_url(img)
 	not regex.match(first_party_source_pattern, url)
 	v := {"code": "VERSIONS_FIRST_PARTY_SOURCE_NOT_INFRASHIFT", "image": key, "source_url": url, "message": sprintf("images.%v declares firstParty but builds from %q, which is not a repository under https://github.com/infrashift/. Only our own sources have no vendor binary to compare against. Denying.", [key, url])}
+}
+
+# --- package entries (ADR-009) ---------------------------------------------
+# JSON Schema checks the shape. These rules check the meaning: every NEVRA
+# carries the declared version and a version-release inside the track, every
+# architecture pins the same package names, and the repository and key the
+# entry names exist and are pinned.
+
+versions_package_repos := object.get(input, ["versions", "packageRepos"], {})
+
+rpm_arch := {"amd64": "x86_64", "arm64": "aarch64"}
+
+package_images := {key: img |
+	some key, img in versions_images
+	object.get(img, "kind", missing) == "package"
+}
+
+versions_package_nevras(img, arch) := ns if {
+	ns := object.get(img, ["packages", arch], null)
+	is_array(ns)
+} else := []
+
+nevra_arch_ok(n, arch) if nevra_parts(n)[4] == rpm_arch[arch]
+
+nevra_arch_ok(n, _) if nevra_parts(n)[4] == "noarch"
+
+versions_nevra_valid(n, arch) if {
+	nevra_parts(n)
+	nevra_arch_ok(n, arch)
+}
+
+versions_package_repo_arch_valid(r) if {
+	is_object(r)
+	regex.match(`^https://[^\s$]+$`, object.get(r, "baseurl", ""))
+	regex.match(`^\.github/pdp/keyring/[A-Za-z0-9._-]+\.asc$`, object.get(r, "key", ""))
+	regex.match(`^[0-9A-F]{40}$`, object.get(r, "keyFingerprint", ""))
+	regex.match(`^[0-9a-f]{64}$`, object.get(r, "keySha256", ""))
+}
+
+repo_violations contains v if {
+	some key, img in package_images
+	some field in [["base"], ["containerfile"], ["packages", "repo"], ["packages", "version"], ["packages", "track"]]
+	not is_string(object.get(img, field, null))
+	v := {"code": "VERSIONS_PACKAGE_FIELD_MISSING", "image": key, "field": concat(".", field), "message": sprintf("package entry images.%v.%v is missing. Denying.", [key, concat(".", field)])}
+}
+
+# A package entry builds on OUR base, so its trust class is `internal`, as for
+# a build entry. The RPM signature is checked by the package rules, not by a
+# trust class.
+repo_violations contains v if {
+	some key, img in package_images
+	object.get(img, "upstreamTrust", missing) != "internal"
+	v := {"code": "VERSIONS_PACKAGE_TRUST_CLASS_INVALID", "image": key, "message": sprintf("package entry images.%v must declare upstreamTrust \"internal\": the base image is ours and verifies against the sibling repo's release key. Denying.", [key])}
+}
+
+# The two build kinds exclude each other. A package entry that also names a
+# source, a toolchain or a crosscheck is a build entry mislabelled, and the
+# leg would skip the checks that entry needs.
+repo_violations contains v if {
+	some key, img in package_images
+	some field in ["source", "toolchain", "crosscheck", "build", "variants"]
+	field in object.keys(img)
+	v := {"code": "VERSIONS_PACKAGE_KIND_CONFLICT", "image": key, "field": field, "message": sprintf("package entry images.%v declares `%v`, which belongs to another kind. Denying.", [key, field])}
+}
+
+repo_violations contains v if {
+	some key, img in package_images
+	not object.get(img, "base", missing) in object.keys(object.get(input, ["versions", "bases"], {}))
+	v := {"code": "VERSIONS_PACKAGE_BASE_DANGLING", "image": key, "message": sprintf("images.%v.base %q has no matching entry under bases. Denying.", [key, object.get(img, "base", missing)])}
+}
+
+repo_violations contains v if {
+	some key, img in package_images
+	not object.get(img, ["packages", "repo"], missing) in object.keys(versions_package_repos)
+	v := {"code": "VERSIONS_PACKAGE_REPO_DANGLING", "image": key, "message": sprintf("images.%v.packages.repo %q has no matching entry under packageRepos. Denying.", [key, object.get(img, ["packages", "repo"], missing)])}
+}
+
+# Every repository pins a well-formed base URL and key for BOTH architectures,
+# whether or not an image uses it yet: a malformed pin must not wait for its
+# first user. A dangling repository name is VERSIONS_PACKAGE_REPO_DANGLING.
+repo_violations contains v if {
+	some rkey, repo in versions_package_repos
+	some arch in ["amd64", "arm64"]
+	not versions_package_repo_arch_valid(object.get(repo, arch, null))
+	v := {"code": "VERSIONS_PACKAGE_REPO_INVALID", "repo": rkey, "arch": arch, "message": sprintf("packageRepos.%v.%v is missing or malformed. Denying.", [rkey, arch])}
+}
+
+repo_violations contains v if {
+	some key, img in package_images
+	t := object.get(img, ["packages", "track"], null)
+	is_string(t)
+	not anchored(t)
+	v := {"code": "VERSIONS_TRACK_UNANCHORED", "image": key, "message": sprintf("images.%v.packages.track %q must be anchored with ^ and $. Denying.", [key, t])}
+}
+
+repo_violations contains v if {
+	some key, img in package_images
+	some arch in object.get(img, "arches", [])
+	count(versions_package_nevras(img, arch)) == 0
+	v := {"code": "VERSIONS_PACKAGE_NEVRAS_MISSING", "image": key, "arch": arch, "message": sprintf("images.%v builds %v but packages.%v pins no NEVRA. A package name alone is not a pin. Denying.", [key, arch, arch])}
+}
+
+repo_violations contains v if {
+	some key, img in package_images
+	some arch in object.get(img, "arches", [])
+	some n in versions_package_nevras(img, arch)
+	not versions_nevra_valid(n, arch)
+	v := {"code": "VERSIONS_PACKAGE_NEVRA_INVALID", "image": key, "arch": arch, "nevra": n, "message": sprintf("images.%v.packages.%v holds %q, which is not NAME-VERSION-RELEASE.ARCH for %v (%v or noarch). Denying.", [key, arch, n, arch, object.get(rpm_arch, arch, missing)])}
+}
+
+repo_violations contains v if {
+	some key, img in package_images
+	some arch in object.get(img, "arches", [])
+	some n in versions_package_nevras(img, arch)
+	p := nevra_parts(n)
+	p[2] != object.get(img, ["packages", "version"], "<version-absent>")
+	v := {"code": "VERSIONS_PACKAGE_VERSION_DISAGREES", "image": key, "arch": arch, "nevra": n, "message": sprintf("images.%v pins %v, whose version %v is not packages.version %q. The version is the release tag, so every NEVRA must carry it. Denying.", [key, n, p[2], object.get(img, ["packages", "version"], missing)])}
+}
+
+package_vr_within_track(img, n) if regex.match(img.packages.track, nevra_vr(n))
+
+repo_violations contains v if {
+	some key, img in package_images
+	some arch in object.get(img, "arches", [])
+	some n in versions_package_nevras(img, arch)
+	nevra_parts(n)
+	not package_vr_within_track(img, n)
+	v := {"code": "VERSIONS_PACKAGE_TRACK_MISMATCH", "image": key, "arch": arch, "nevra": n, "message": sprintf("images.%v pins %v, whose version-release %v does not match its own track %q. Denying.", [key, n, nevra_vr(n), object.get(img, ["packages", "track"], missing)])}
+}
+
+package_names(img, arch) := {nevra_parts(n)[1] | some n in versions_package_nevras(img, arch)}
+
+repo_violations contains v if {
+	some key, img in package_images
+	some a in object.get(img, "arches", [])
+	some b in object.get(img, "arches", [])
+	a < b
+	package_names(img, a) != package_names(img, b)
+	v := {"code": "VERSIONS_PACKAGE_ARCH_SKEW", "image": key, "message": sprintf("images.%v pins packages %v on %v but %v on %v. Both architectures ship the same package set. Denying.", [key, sort([x | some x in package_names(img, a)]), a, sort([x | some x in package_names(img, b)]), b])}
+}
+
+repo_violations contains v if {
+	some key, img in package_images
+	some arch in object.get(img, "arches", [])
+	ns := versions_package_nevras(img, arch)
+	count(package_names(img, arch)) != count(ns)
+	v := {"code": "VERSIONS_PACKAGE_NAME_DUPLICATE", "image": key, "arch": arch, "message": sprintf("images.%v.packages.%v pins one package name twice, or pins a malformed NEVRA. Denying.", [key, arch])}
 }
 
 # --- sources ---------------------------------------------------------------

@@ -87,13 +87,13 @@ jobs:
             type == "array" and length > 0 and length <= 64 and
             all(.[];
               type == "object" and
-              (.kind        | IN("mirror","build")) and
+              (.kind        | IN("mirror","build","package")) and
               (.service     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.variant     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.leg         | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,127}$")) and
               (.trust_class | IN("dhi","none","internal","notation")) and
               (.leg == (.service + "-" + .variant)) and
-              (if .kind == "build"
+              (if (.kind | IN("build","package"))
                then ((keys_unsorted|sort) == ["arch","kind","leg","service","trust_class","variant"]
                      and (.arch | IN("amd64","arm64")))
                else ((keys_unsorted|sort) == ["kind","leg","service","trust_class","variant"])
@@ -133,8 +133,10 @@ jobs:
         with:
           ref: ${{ needs.gate-check.outputs.head_sha }}
 
+      # syft re-derives the rpm database of a package image live from GHCR
+      # (scripts/package-observe.sh); the other legs do not call it.
       - name: Install pinned tools
-        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh cosign regctl opa
+        run: sudo BIN=/usr/local/bin ./scripts/install-tools.sh cosign regctl opa syft
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -322,6 +324,25 @@ jobs:
               echo "$FP_ROWS"
               echo
               echo "_versions.json declares \`firstParty\` for these sources under github.com/infrashift/, and the review actor re-derived it from the checkout. The hash is a change detector over time, as for the cross-check._"
+            } >> /tmp/report.md
+          fi
+
+          # Package provenance (ADR-009). What the review re-derived for each
+          # package leg: the pinned repository and key, and the NEVRAs it found
+          # installed in the live image and signed by that key.
+          PKG_ROWS=$(for f in "${FILES[@]}"; do
+            jq -r '.subject.leg as $l | .cve_policy.per_platform | to_entries[] | .key as $p
+                   | .value.observations[]? | select(.code == "PACKAGE_PROVENANCE")
+                   | "| `\($l)` | \($p) | \(.repository) | `\(.key_fingerprint[24:40])` | \(.nevras | map("`" + . + "`") | join("<br>")) |"' "$f"
+          done | sort -u)
+          if [[ -n "$PKG_ROWS" ]]; then
+            {
+              echo
+              echo "### Package provenance"
+              echo
+              echo "| Leg | Platform | Repository | Key ID | Pinned NEVRAs (installed, rpm -q verified, signed by the key) |"
+              echo "|---|---|---|---|---|"
+              echo "$PKG_ROWS"
             } >> /tmp/report.md
           fi
 

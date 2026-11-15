@@ -1308,3 +1308,500 @@ test_dev_major_variant_name_is_accepted if {
 	d := pdp.repo_decision with input as i with data.exceptions as []
 	not "VERSIONS_VARIANT_NAME_INVALID" in repo_codes(d)
 }
+
+# ===========================================================================
+# Package track (ADR-009)
+#
+# Each test below breaks ONE fact of a known-good package leg and expects the
+# specific code AND the catch-all PACKAGE_VERIFICATION_NOT_RECORDED. A deleted
+# specific rule fails the first assertion; a predicate that loses a condition
+# fails the second.
+# ===========================================================================
+
+PG_KEY_FPR := "D4BF08AE67A0B4C7A1DBCCD240BCA2B408B40D20"
+
+PG_KEY_ID := "40bca2b408b40d20"
+
+PG_KEY_SHA := "a70c9527426017d00fa4e6f9d2941d515357a27a7be82e155248ece53bbe5453"
+
+PG_URL := "https://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-x86_64"
+
+PG_N1 := "postgresql17-17.12-1PGDG.rhel9.8.x86_64"
+
+PG_N2 := "postgresql17-libs-17.12-1PGDG.rhel9.8.x86_64"
+
+PG_N3 := "postgresql17-server-17.12-1PGDG.rhel9.8.x86_64"
+
+UBI_N := "krb5-libs-1.21.1-10.el9_8.1.x86_64"
+
+base_package := {
+	"track": "package",
+	"evaluated_at": NOW,
+	"image": {
+		"key": "postgresql17", "variant": "runtime", "enforcement": "enforce",
+		"destination_repo": "ghcr.io/infrashift/trusted-service-containers/development/postgresql17",
+		"destination_digest": D, "config_user": "26",
+		"labels": {
+			"org.opencontainers.image.source": PG_URL,
+			"org.opencontainers.image.revision": "17.12-1PGDG.rhel9.8",
+			"org.opencontainers.image.version": "17.12",
+			"io.infrashift.image.upstream.digest": D2,
+			"io.infrashift.image.upstream.source": "ghcr.io/infrashift/trusted-base-images/trusted/ubi9-minimal",
+		},
+	},
+	"upstream": {
+		"trust_class": "internal", "signature": "verified",
+		"verified_with": ".github/pdp/public-keys/upstream/trusted-base-images-release.pub",
+		"attestations": {"sbom": "present", "provenance": "present", "vex": "absent"},
+	},
+	"package": {
+		"pinned_base_repo": "ghcr.io/infrashift/trusted-base-images/trusted/ubi9-minimal",
+		"base_image_repo": "ghcr.io/infrashift/trusted-base-images/trusted/ubi9-minimal",
+		"pinned_base_digest": D2, "base_image_digest": D2,
+		"pinned_repo_url": PG_URL, "repo_url": PG_URL,
+		"gpgcheck": "1", "repo_gpgcheck": "1",
+		"pinned_key_fingerprint": PG_KEY_FPR, "key_fingerprint": PG_KEY_FPR,
+		"pinned_key_sha256": PG_KEY_SHA, "key_sha256": PG_KEY_SHA,
+		"pinned_version": "17.12",
+		"pinned_nevras": [PG_N1, PG_N2, PG_N3],
+		"installed_nevras": [PG_N1, PG_N2, PG_N3, UBI_N],
+		"verified_nevras": [PG_N1, PG_N2, PG_N3],
+		"signatures": [
+			{"nevra": PG_N1, "key_id": PG_KEY_ID},
+			{"nevra": PG_N2, "key_id": PG_KEY_ID},
+			{"nevra": PG_N3, "key_id": PG_KEY_ID},
+			{"nevra": UBI_N, "key_id": "199e2f91fd431d51"},
+		],
+		"verification": {"performed": true},
+	},
+	"scan_results": {
+		"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0,
+		"fixable_critical_count": 0, "fixable_high_count": 0, "findings": [],
+	},
+	"published_attestation_keys": {},
+}
+
+package_denies(ops, code) if {
+	d := pdp.decision with input as patch(base_package, ops)
+	not d.allow
+	d.namespace == "quarantine"
+	code in codes(d)
+	"PACKAGE_VERIFICATION_NOT_RECORDED" in codes(d)
+}
+
+test_base_package_allows if {
+	d := pdp.decision with input as base_package
+	d.allow
+	d.namespace == "trusted"
+	some o in d.observations
+	o.code == "PACKAGE_PROVENANCE"
+	o.gating == false
+}
+
+# A package leg is not a build leg: no source commit and no cross-check are
+# asked of it, and none of their codes fire.
+test_package_needs_no_source_or_crosscheck if {
+	d := pdp.decision with input as base_package
+	not "BUILD_SOURCE_REF_MISMATCH" in codes(d)
+	not "DUAL_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+# ...and a build leg cannot pass as a package leg by carrying a package block.
+test_build_leg_with_package_block_still_needs_crosscheck if {
+	i := patch(base_build, [
+		{"op": "add", "path": "/package", "value": base_package.package},
+		{"op": "replace", "path": "/build/dual_provenance/performed", "value": false},
+	])
+	d := pdp.decision with input as i
+	"DUAL_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+test_package_absent_block_denies if {
+	d := pdp.decision with input as json.remove(base_package, ["package"])
+	not d.allow
+	"PACKAGE_VERIFICATION_NOT_RECORDED" in codes(d)
+	"PACKAGE_PIN_MALFORMED" in codes(d)
+	"PACKAGE_EVIDENCE_MALFORMED" in codes(d)
+	"BUILD_BASE_DIGEST_MISMATCH" in codes(d)
+}
+
+test_package_verification_not_performed_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "replace", "path": "/package/verification/performed", "value": "true"}])
+	not d.allow
+	"PACKAGE_VERIFICATION_NOT_RECORDED" in codes(d)
+}
+
+test_package_label_missing_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "remove", "path": "/image/labels/org.opencontainers.image.revision"}])
+	not d.allow
+	"BUILD_LABEL_MISSING" in codes(d)
+	"PACKAGE_REVISION_LABEL_DISAGREES" in codes(d)
+}
+
+test_package_label_empty_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "replace", "path": "/image/labels/io.infrashift.image.upstream.source", "value": ""}])
+	not d.allow
+	"BUILD_LABEL_EMPTY" in codes(d)
+}
+
+test_package_base_digest_mismatch_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "replace", "path": "/package/base_image_digest", "value": D}])
+	"BUILD_BASE_DIGEST_MISMATCH" in codes(d)
+	"BUILD_LABEL_DIGEST_DISAGREES" in codes(d)
+}
+
+test_package_base_repo_mismatch_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "replace", "path": "/package/base_image_repo", "value": "ghcr.io/evil/ubi9-minimal"}])
+	"BUILD_BASE_REPO_MISMATCH" in codes(d)
+}
+
+test_package_base_digest_malformed_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "remove", "path": "/package/base_image_digest"}])
+	some v in d.violations
+	v.code == "INPUT_DIGEST_MALFORMED"
+	v.field == "package.base_image_digest"
+}
+
+test_package_pin_malformed_denies if {
+	package_denies([{"op": "replace", "path": "/package/pinned_nevras", "value": ["postgresql17-server"]}], "PACKAGE_PIN_MALFORMED")
+}
+
+test_package_empty_pins_deny if {
+	package_denies([{"op": "replace", "path": "/package/pinned_nevras", "value": []}], "PACKAGE_PIN_MALFORMED")
+}
+
+test_package_pinned_fingerprint_malformed_denies if {
+	package_denies(
+		[
+			{"op": "replace", "path": "/package/pinned_key_fingerprint", "value": "40BCA2B408B40D20"},
+			{"op": "replace", "path": "/package/key_fingerprint", "value": "40BCA2B408B40D20"},
+		],
+		"PACKAGE_PIN_MALFORMED",
+	)
+}
+
+test_package_evidence_malformed_denies if {
+	package_denies([{"op": "replace", "path": "/package/signatures", "value": [{"nevra": PG_N1}]}], "PACKAGE_EVIDENCE_MALFORMED")
+}
+
+# Every other fact holds: one extra signature record has a numeric key_id.
+# Only the shape check sees it.
+test_package_signature_record_malformed_denies if {
+	package_denies([{"op": "add", "path": "/package/signatures/-", "value": {"nevra": PG_N1, "key_id": 40}}], "PACKAGE_EVIDENCE_MALFORMED")
+}
+
+test_package_verified_list_not_a_list_denies if {
+	package_denies([{"op": "replace", "path": "/package/verified_nevras", "value": PG_N1}], "PACKAGE_EVIDENCE_MALFORMED")
+}
+
+# The pinned and the observed sha256 agree, but neither is a sha256. Only the
+# shape check of the pins sees it.
+test_package_key_sha_not_a_sha_denies if {
+	package_denies(
+		[
+			{"op": "replace", "path": "/package/pinned_key_sha256", "value": "unknown"},
+			{"op": "replace", "path": "/package/key_sha256", "value": "unknown"},
+		],
+		"PACKAGE_PIN_MALFORMED",
+	)
+}
+
+test_package_pinned_version_absent_denies if {
+	package_denies([{"op": "remove", "path": "/package/pinned_version"}], "PACKAGE_PIN_MALFORMED")
+}
+
+test_package_repo_mismatch_denies if {
+	package_denies([{"op": "replace", "path": "/package/repo_url", "value": "https://evil.example/rhel-9-x86_64"}], "PACKAGE_REPO_MISMATCH")
+}
+
+test_package_repo_both_absent_denies if {
+	package_denies(
+		[
+			{"op": "remove", "path": "/package/repo_url"},
+			{"op": "remove", "path": "/package/pinned_repo_url"},
+		],
+		"PACKAGE_REPO_MISMATCH",
+	)
+}
+
+test_package_gpgcheck_off_denies if {
+	package_denies([{"op": "replace", "path": "/package/gpgcheck", "value": "0"}], "PACKAGE_GPGCHECK_DISABLED")
+}
+
+test_package_repo_gpgcheck_absent_denies if {
+	package_denies([{"op": "remove", "path": "/package/repo_gpgcheck"}], "PACKAGE_GPGCHECK_DISABLED")
+}
+
+test_package_key_fingerprint_mismatch_denies if {
+	package_denies([{"op": "replace", "path": "/package/key_fingerprint", "value": "B031F89FC983E98262906B6E177B343BB9738825"}], "PACKAGE_KEY_FINGERPRINT_MISMATCH")
+}
+
+test_package_key_sha256_mismatch_denies if {
+	package_denies([{"op": "replace", "path": "/package/key_sha256", "value": "cc506fa92aa97e8e58f88551a2ec99a61d9d603f7f2c1ae0c06191f58c29979f"}], "PACKAGE_KEY_SHA256_MISMATCH")
+}
+
+test_package_key_sha256_both_absent_denies if {
+	package_denies(
+		[
+			{"op": "remove", "path": "/package/key_sha256"},
+			{"op": "remove", "path": "/package/pinned_key_sha256"},
+		],
+		"PACKAGE_KEY_SHA256_MISMATCH",
+	)
+}
+
+# The pinned server is missing from the live image: the review saw a
+# different package set than versions.json pins.
+test_package_nevra_not_installed_denies if {
+	package_denies([{"op": "replace", "path": "/package/installed_nevras", "value": [PG_N1, PG_N2, UBI_N]}], "PACKAGE_NEVRA_NOT_INSTALLED")
+}
+
+# A newer release in the repository is not the pinned NEVRA.
+test_package_other_release_installed_denies if {
+	package_denies([{"op": "replace", "path": "/package/installed_nevras/2", "value": "postgresql17-server-17.12-2PGDG.rhel9.8.x86_64"}], "PACKAGE_NEVRA_NOT_INSTALLED")
+}
+
+test_package_nevra_not_verified_denies if {
+	package_denies([{"op": "replace", "path": "/package/verified_nevras", "value": [PG_N1, PG_N2]}], "PACKAGE_NEVRA_NOT_VERIFIED")
+}
+
+test_package_signature_by_other_key_denies if {
+	package_denies([{"op": "replace", "path": "/package/signatures/2/key_id", "value": "177b343bb9738825"}], "PACKAGE_SIGNATURE_UNVERIFIED")
+}
+
+test_package_unsigned_denies if {
+	package_denies([{"op": "replace", "path": "/package/signatures/2/key_id", "value": "(none)"}], "PACKAGE_SIGNATURE_UNVERIFIED")
+}
+
+# rpm prints the key ID in lower case; a fingerprint pin in upper case must
+# still match it, and an upper-case recording must too.
+test_package_signature_key_id_case_insensitive if {
+	d := pdp.decision with input as patch(base_package, [{"op": "replace", "path": "/package/signatures/0/key_id", "value": "40BCA2B408B40D20"}])
+	d.allow
+}
+
+test_package_unpinned_package_from_repo_denies if {
+	extra := "postgresql17-contrib-17.12-1PGDG.rhel9.8.x86_64"
+	package_denies(
+		[
+			{"op": "add", "path": "/package/installed_nevras/-", "value": extra},
+			{"op": "add", "path": "/package/signatures/-", "value": {"nevra": extra, "key_id": PG_KEY_ID}},
+		],
+		"PACKAGE_UNPINNED_FROM_REPO",
+	)
+}
+
+# The build leaves the extra package out of its signature list. The review
+# sees it in the live image, so the list is incomplete.
+test_package_signature_list_omits_a_package_denies if {
+	package_denies([{"op": "add", "path": "/package/installed_nevras/-", "value": "postgresql17-contrib-17.12-1PGDG.rhel9.8.x86_64"}], "PACKAGE_SIGNATURE_SET_INCOMPLETE")
+}
+
+test_package_both_sets_empty_denies if {
+	package_denies(
+		[
+			{"op": "replace", "path": "/package/installed_nevras", "value": []},
+			{"op": "replace", "path": "/package/signatures", "value": []},
+		],
+		"PACKAGE_SIGNATURE_SET_INCOMPLETE",
+	)
+}
+
+test_package_version_label_disagrees_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "replace", "path": "/image/labels/org.opencontainers.image.version", "value": "17.11"}])
+	not d.allow
+	"PACKAGE_VERSION_LABEL_DISAGREES" in codes(d)
+}
+
+test_package_revision_label_disagrees_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "replace", "path": "/image/labels/org.opencontainers.image.revision", "value": "17.12-2PGDG.rhel9.8"}])
+	not d.allow
+	"PACKAGE_REVISION_LABEL_DISAGREES" in codes(d)
+}
+
+test_package_source_label_disagrees_denies if {
+	d := pdp.decision with input as patch(base_package, [{"op": "replace", "path": "/image/labels/org.opencontainers.image.source", "value": "https://github.com/postgres/postgres"}])
+	not d.allow
+	"PACKAGE_SOURCE_LABEL_DISAGREES" in codes(d)
+}
+
+# One CVE gate: the package track gets no relief, and a waiver still applies
+# only through the register.
+test_package_track_has_the_same_cve_gate if {
+	i := with_findings(base_package, [crit], 1, 0)
+	d := pdp.decision with input as i
+	not d.allow
+	"CVE_CRITICAL" in codes(d)
+	some v in d.violations
+	v.code == "CVE_CRITICAL"
+	contains(v.remediation_hint, "UBI repositories")
+}
+
+test_package_observe_still_quarantines if {
+	i := patch(base_package, [
+		{"op": "replace", "path": "/image/enforcement", "value": "observe"},
+		{"op": "replace", "path": "/package/gpgcheck", "value": "0"},
+	])
+	d := pdp.decision with input as i
+	d.allow
+	d.namespace == "quarantine"
+}
+
+# --- Repo gate: package entries --------------------------------------------
+
+base_repo_package := patch(base_repo, [
+	{"op": "add", "path": "/versions/bases/ubi9-minimal", "value": {}},
+	{"op": "add", "path": "/versions/packageRepos", "value": {"pgdg17-el9": {
+		"amd64": {"baseurl": PG_URL, "key": ".github/pdp/keyring/pgdg-rpm-gpg-key-rhel.asc", "keyFingerprint": PG_KEY_FPR, "keySha256": PG_KEY_SHA},
+		"arm64": {"baseurl": "https://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-aarch64", "key": ".github/pdp/keyring/pgdg-rpm-gpg-key-aarch64-rhel.asc", "keyFingerprint": "B031F89FC983E98262906B6E177B343BB9738825", "keySha256": "cc506fa92aa97e8e58f88551a2ec99a61d9d603f7f2c1ae0c06191f58c29979f"},
+	}}},
+	{"op": "add", "path": "/versions/images/postgresql17", "value": {
+		"kind": "package", "upstreamTrust": "internal", "base": "ubi9-minimal",
+		"containerfile": "Containerfiles/postgresql17.Containerfile", "arches": ["amd64", "arm64"],
+		"packages": {
+			"repo": "pgdg17-el9", "version": "17.12",
+			"track": "^17\\.[0-9]+-[0-9]+PGDG\\.rhel9(\\.[0-9]+)?$",
+			"amd64": [PG_N1, PG_N2, PG_N3],
+			"arm64": ["postgresql17-17.12-1PGDG.rhel9.8.aarch64", "postgresql17-libs-17.12-1PGDG.rhel9.8.aarch64", "postgresql17-server-17.12-1PGDG.rhel9.8.aarch64"],
+		},
+	}},
+])
+
+repo_package_denies(ops, code) if {
+	d := pdp.repo_decision with input as patch(base_repo_package, ops) with data.exceptions as []
+	not d.allow
+	code in repo_codes(d)
+}
+
+test_base_repo_package_allows if {
+	d := pdp.repo_decision with input as base_repo_package with data.exceptions as []
+	d.allow
+}
+
+test_repo_package_field_missing_denies if {
+	repo_package_denies([{"op": "remove", "path": "/versions/images/postgresql17/packages/version"}], "VERSIONS_PACKAGE_FIELD_MISSING")
+}
+
+test_repo_package_trust_class_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/upstreamTrust", "value": "none"}], "VERSIONS_PACKAGE_TRUST_CLASS_INVALID")
+}
+
+test_repo_package_with_crosscheck_denies if {
+	repo_package_denies([{"op": "add", "path": "/versions/images/postgresql17/crosscheck", "value": {"amd64": {"digest": D}}}], "VERSIONS_PACKAGE_KIND_CONFLICT")
+}
+
+test_repo_package_base_dangling_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/base", "value": "ubi9-standard"}], "VERSIONS_PACKAGE_BASE_DANGLING")
+}
+
+test_repo_package_repo_dangling_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/packages/repo", "value": "pgdg18-el9"}], "VERSIONS_PACKAGE_REPO_DANGLING")
+}
+
+test_repo_package_repo_basearch_url_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/packageRepos/pgdg17-el9/amd64/baseurl", "value": "https://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-$basearch"}], "VERSIONS_PACKAGE_REPO_INVALID")
+}
+
+test_repo_package_repo_http_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/packageRepos/pgdg17-el9/arm64/baseurl", "value": "http://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-aarch64"}], "VERSIONS_PACKAGE_REPO_INVALID")
+}
+
+test_repo_package_key_outside_keyring_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/packageRepos/pgdg17-el9/amd64/key", "value": "/tmp/key.asc"}], "VERSIONS_PACKAGE_REPO_INVALID")
+}
+
+test_repo_package_short_key_id_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/packageRepos/pgdg17-el9/amd64/keyFingerprint", "value": "40BCA2B408B40D20"}], "VERSIONS_PACKAGE_REPO_INVALID")
+}
+
+test_repo_package_key_sha_missing_denies if {
+	repo_package_denies([{"op": "remove", "path": "/versions/packageRepos/pgdg17-el9/arm64/keySha256"}], "VERSIONS_PACKAGE_REPO_INVALID")
+}
+
+test_repo_package_repo_arch_missing_denies if {
+	repo_package_denies([{"op": "remove", "path": "/versions/packageRepos/pgdg17-el9/arm64"}], "VERSIONS_PACKAGE_REPO_INVALID")
+}
+
+test_repo_package_track_unanchored_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/packages/track", "value": "17\\.[0-9]+-"}], "VERSIONS_TRACK_UNANCHORED")
+}
+
+test_repo_package_nevras_missing_denies if {
+	repo_package_denies([{"op": "remove", "path": "/versions/images/postgresql17/packages/arm64"}], "VERSIONS_PACKAGE_NEVRAS_MISSING")
+}
+
+test_repo_package_bare_name_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/packages/amd64/2", "value": "postgresql17-server"}], "VERSIONS_PACKAGE_NEVRA_INVALID")
+}
+
+test_repo_package_wrong_arch_suffix_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/packages/arm64/2", "value": "postgresql17-server-17.12-1PGDG.rhel9.8.x86_64"}], "VERSIONS_PACKAGE_NEVRA_INVALID")
+}
+
+test_repo_package_version_disagrees_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/packages/amd64/0", "value": "postgresql17-17.11-1PGDG.rhel9.8.x86_64"}], "VERSIONS_PACKAGE_VERSION_DISAGREES")
+}
+
+# 18 is a new major: a dump and restore, never a drift bump.
+test_repo_package_off_track_denies if {
+	repo_package_denies(
+		[
+			{"op": "replace", "path": "/versions/images/postgresql17/packages/version", "value": "18.1"},
+			{"op": "replace", "path": "/versions/images/postgresql17/packages/amd64", "value": ["postgresql17-18.1-1PGDG.rhel9.8.x86_64", "postgresql17-libs-18.1-1PGDG.rhel9.8.x86_64", "postgresql17-server-18.1-1PGDG.rhel9.8.x86_64"]},
+			{"op": "replace", "path": "/versions/images/postgresql17/packages/arm64", "value": ["postgresql17-18.1-1PGDG.rhel9.8.aarch64", "postgresql17-libs-18.1-1PGDG.rhel9.8.aarch64", "postgresql17-server-18.1-1PGDG.rhel9.8.aarch64"]},
+		],
+		"VERSIONS_PACKAGE_TRACK_MISMATCH",
+	)
+}
+
+test_repo_package_el8_build_off_track_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/packages/amd64/1", "value": "postgresql17-libs-17.12-1PGDG.rhel8.x86_64"}], "VERSIONS_PACKAGE_TRACK_MISMATCH")
+}
+
+test_repo_package_arch_skew_denies if {
+	repo_package_denies([{"op": "remove", "path": "/versions/images/postgresql17/packages/arm64/0"}], "VERSIONS_PACKAGE_ARCH_SKEW")
+}
+
+test_repo_package_duplicate_name_denies if {
+	repo_package_denies([{"op": "add", "path": "/versions/images/postgresql17/packages/amd64/-", "value": "postgresql17-17.12-2PGDG.rhel9.8.x86_64"}], "VERSIONS_PACKAGE_NAME_DUPLICATE")
+}
+
+test_repo_unknown_kind_still_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/kind", "value": "rpm"}], "VERSIONS_KIND_INVALID")
+}
+
+# Pin and observation agree, and the label agrees too, but the repository is
+# plain http. Only the shape check of the pins sees it.
+test_package_http_repository_denies if {
+	u := "http://download.postgresql.org/pub/repos/yum/17/redhat/rhel-9-x86_64"
+	package_denies(
+		[
+			{"op": "replace", "path": "/package/pinned_repo_url", "value": u},
+			{"op": "replace", "path": "/package/repo_url", "value": u},
+			{"op": "replace", "path": "/image/labels/org.opencontainers.image.source", "value": u},
+		],
+		"PACKAGE_PIN_MALFORMED",
+	)
+}
+
+test_package_signatures_not_a_list_denies if {
+	package_denies([{"op": "replace", "path": "/package/signatures", "value": {"nevra": PG_N1, "key_id": PG_KEY_ID}}], "PACKAGE_EVIDENCE_MALFORMED")
+}
+
+test_repo_package_nevra_trailing_text_denies if {
+	repo_package_denies([{"op": "replace", "path": "/versions/images/postgresql17/packages/amd64/2", "value": "postgresql17-server-17.12-1PGDG.rhel9.8.x86_64.evil"}], "VERSIONS_PACKAGE_NEVRA_INVALID")
+}
+
+# 117.12 contains the 17 line as a substring. Only an anchored match refuses
+# it, which is the whole reason anchors are mandatory.
+test_repo_package_track_is_matched_anchored if {
+	n := ["postgresql17-117.12-1PGDG.rhel9.8", "postgresql17-libs-117.12-1PGDG.rhel9.8", "postgresql17-server-117.12-1PGDG.rhel9.8"]
+	repo_package_denies(
+		[
+			{"op": "replace", "path": "/versions/images/postgresql17/packages/version", "value": "117.12"},
+			{"op": "replace", "path": "/versions/images/postgresql17/packages/amd64", "value": [concat("", [x, ".x86_64"]) | some x in n]},
+			{"op": "replace", "path": "/versions/images/postgresql17/packages/arm64", "value": [concat("", [x, ".aarch64"]) | some x in n]},
+		],
+		"VERSIONS_PACKAGE_TRACK_MISMATCH",
+	)
+}

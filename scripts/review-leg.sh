@@ -103,6 +103,11 @@ record build_attestations PASS "provenance, upstream-verification and per-platfo
 # 4. Anti-downgrade: trust class comes from the REPO, never the evidence.
 # ===========================================================================
 IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
+# So does the kind. A matrix (or an evidence bundle) that calls a package
+# entry a build entry, or the reverse, would pick the wrong policy track.
+REPO_KIND=$(jq -r '.kind' <<<"$IMG")
+[[ "$REPO_KIND" == "$KIND" ]] \
+  || fail "the matrix says kind ${KIND} but versions.json declares ${REPO_KIND} for ${SERVICE}"
 REPO_TRUST=$(jq -r '.upstreamTrust' <<<"$IMG")
 EV_TRUST=$(jq -r '.trust_class' "$EV/upstream-verification.json")
 [[ "$EV_TRUST" == "$REPO_TRUST" ]] \
@@ -142,9 +147,10 @@ record upstream_verification "$(tr '[:lower:]' '[:upper:]' <<<"${SIG_STATE:0:1}"
 # 5. Kind-specific integrity blocks for the policy input.
 # ===========================================================================
 PROV="$EV/provenance.json"
-MIRROR_BLOCK='{}'; BUILD_BLOCK='{}'
+MIRROR_BLOCK='{}'; BUILD_BLOCK='{}'; PACKAGE_BLOCK='{}'
 # Mirror legs have no build provenance mode; build legs set it below from
-# versions.json, never from the evidence.
+# versions.json, never from the evidence, and a package leg's mode is
+# `package` (ADR-009), also read from versions.json.
 DECLARED_MODE=""
 
 if [[ "$KIND" == "mirror" ]]; then
@@ -177,7 +183,48 @@ if [[ "$KIND" == "mirror" ]]; then
   check "digest pin (live from GHCR)" "$( [[ "$LIVE_DIGEST" == "$PIN" ]] && echo OK || echo MISMATCH )"
   record digest_pin_match "$( [[ "$LIVE_DIGEST" == "$PIN" ]] && echo PASS || echo FAIL )" \
     "expected ${PIN}, GHCR serves ${LIVE_DIGEST}"
-else
+elif [[ "$KIND" == package ]]; then
+  # Every pinned_* value comes from the CHECKED-OUT versions.json. The
+  # repository file, the key and the installed package set come LIVE from the
+  # image on GHCR (scripts/package-observe.sh). Only what `rpm -q` printed
+  # during the build -- verified_nevras and signatures -- and the base the
+  # build used come from the signed evidence; the policy holds each of them
+  # against the pins.
+  verify_att https://infrashift.io/attestation/package-verification/v1 "${DEST_REPO}@${LIVE_DIGEST}" \
+    || fail "package-verification attestation does not verify against build.pub"
+  PV="$EV/package-verification.json"
+  [[ -f "$PV" ]] || fail "a package leg must carry package-verification.json"
+  BASE_KEY=$(jq -r '.base' <<<"$IMG")
+  PKG_REPO_ID=$(jq -r '.packages.repo' <<<"$IMG")
+  PKG_REPO=$(jq -c --arg r "$PKG_REPO_ID" --arg a "$ARCH" '.packageRepos[$r][$a] // {}' versions.json)
+  OBSERVED=$(scripts/package-observe.sh "${DEST_REPO}@${LIVE_DIGEST}" "$PKG_REPO_ID") \
+    || fail "could not re-derive the package set of ${DEST_REPO}@${LIVE_DIGEST} from GHCR"
+  PACKAGE_BLOCK=$(jq -n \
+    --arg pinbaserepo "$(jq -r --arg k "$BASE_KEY" '.bases[$k].image' versions.json)" \
+    --arg baserepo "$(jq -r '.buildDefinition.resolvedDependencies[0].uri' "$PROV")" \
+    --arg pinbasedig "$(jq -r --arg k "$BASE_KEY" --arg a "$ARCH" '.bases[$k][$a].digest' versions.json)" \
+    --arg basedig "sha256:$(jq -r '.buildDefinition.resolvedDependencies[0].digest.sha256' "$PROV")" \
+    --argjson repo "$PKG_REPO" \
+    --arg pinver "$(jq -r '.packages.version // ""' <<<"$IMG")" \
+    --argjson pinned "$(jq -c --arg a "$ARCH" '.packages[$a] // []' <<<"$IMG")" \
+    --argjson obs "$OBSERVED" \
+    --argjson verified "$(jq -c '.packages.verified_nevras // null' "$PV")" \
+    --argjson sigs "$(jq -c '.packages.signatures // null' "$PV")" \
+    --argjson performed "$(jq -c '.verification.performed // false' "$PV")" \
+    '{ pinned_base_repo:$pinbaserepo, base_image_repo:$baserepo,
+       pinned_base_digest:$pinbasedig, base_image_digest:$basedig,
+       pinned_repo_url:($repo.baseurl // ""), pinned_key_fingerprint:($repo.keyFingerprint // ""),
+       pinned_key_sha256:($repo.keySha256 // ""), pinned_version:$pinver, pinned_nevras:$pinned,
+       repo_url:$obs.repo_url, gpgcheck:$obs.gpgcheck, repo_gpgcheck:$obs.repo_gpgcheck,
+       key_sha256:$obs.key_sha256, key_fingerprint:$obs.key_fingerprint,
+       installed_nevras:$obs.installed_nevras,
+       verified_nevras:$verified, signatures:$sigs, verification:{performed:$performed} }')
+  PKG_OK=$(jq -r '[.pinned_nevras[] as $n | .installed_nevras | index($n) != null] | all | if . then "PASS" else "FAIL" end' <<<"$PACKAGE_BLOCK")
+  check "pinned NEVRAs installed (live)" "$PKG_OK"
+  record package_pins_installed "$PKG_OK" "$(jq -r '.pinned_nevras | join(" ")' <<<"$PACKAGE_BLOCK")"
+  DECLARED_MODE=package
+  check "provenance mode (versions.json)" "$DECLARED_MODE"
+elif [[ "$KIND" == build ]]; then
   SRC_KEY=$(jq -r '.source' <<<"$IMG")
   REPO_KEY=$(jq -r '.repo // empty' <<<"$IMG")
   if [[ -n "$REPO_KEY" ]]; then
@@ -228,6 +275,8 @@ else
   check "source commit == versions.json pin" "$SRC_OK"
   record source_pin_match "$SRC_OK" "pinned ${PINNED_REF}"
   check "provenance mode (versions.json)" "$DECLARED_MODE"
+else
+  fail "unknown kind ${KIND}"
 fi
 
 # Credential-shaped keys in anything we publish.
@@ -270,7 +319,7 @@ while read -r slug cve_file; do
     --arg tc "$REPO_TRUST" --arg sig "$SIG_STATE" --arg vw "$VERIFIED_WITH" \
     --arg kp "$KEYRING_PINNED" --arg kf "$KEYRING_FETCHED" \
     --arg asbom "$ATT_SBOM" --arg aprov "$ATT_PROV" --arg avex "$ATT_VEX" \
-    --argjson mirror "$MIRROR_BLOCK" --argjson build "$BUILD_BLOCK" \
+    --argjson mirror "$MIRROR_BLOCK" --argjson build "$BUILD_BLOCK" --argjson package "$PACKAGE_BLOCK" \
     --argjson findings "$FINDINGS" \
     --argjson c "$(counts Critical)" --argjson h "$(counts High)" \
     --argjson m "$(counts Medium)" --argjson l "$(counts Low)" \
@@ -285,7 +334,7 @@ while read -r slug cve_file; do
                     keyring_pinned_sha256:$kp, keyring_fetched_sha256:$kf }
                   | with_entries(select(.value != ""))
                   | . + { attestations: { sbom:$asbom, provenance:$aprov, vex:$avex } }),
-       mirror: $mirror, build: $build,
+       mirror: $mirror, build: $build, package: $package,
        scan_results: { critical_count:$c, high_count:$h, medium_count:$m, low_count:$l,
                        fixable_critical_count:$fc, fixable_high_count:$fh,
                        findings:$findings },

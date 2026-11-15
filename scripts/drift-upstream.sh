@@ -15,6 +15,7 @@ REPORT="${DRIFT_REPORT:-/tmp/drift-upstream.md}"
 CHANGED=0
 MIRROR_ROWS=""
 BUILD_ROWS=""
+PACKAGE_ROWS=""
 TOOLCHAIN_ROWS=""
 TC_MOVED=""
 ALARMS=""
@@ -247,6 +248,139 @@ while read -r key; do
 done < <(jq -r '.sources | keys[]' "$VERSIONS")
 
 # ===========================================================================
+# Package track (ADR-009)
+# ===========================================================================
+# A package image pins exact NEVRAs from one signed repository. The proposal is
+# the newest VERSION-RELEASE in that repository that (a) matches the entry's
+# anchored track, (b) every pinned package name has, and (c) exists on EVERY
+# architecture the image builds, with one version for all of them: the version
+# is the release tag. Each architecture then takes its own newest release of
+# that version, because PGDG can publish different releases per architecture.
+#
+# Nothing here verifies a signature. The proposal only names NEVRAs; the build
+# installs them with gpgcheck=1 and repo_gpgcheck=1 against the committed key
+# and fails on anything else. What this does check is the key itself: a key
+# at keyUrl that differs from the committed copy is a rotation, and is
+# reported for a reviewed PR rather than followed.
+
+# repo_vrs <baseurl> <rpm-arch> <name>...: every VERSION-RELEASE that ALL the
+# names have in the repository for that arch (or noarch), one per line.
+repo_vrs() {
+  local url="$1" rarch="$2"; shift 2
+  local tmp href
+  tmp=$(mktemp -d)
+  if ! curl -fsSL --retry 3 "${url}/repodata/repomd.xml" -o "$tmp/repomd.xml"; then
+    rm -rf "$tmp"; return 1
+  fi
+  href=$(grep -oE 'href="repodata/[^"]*primary\.xml[^"]*"' "$tmp/repomd.xml" | head -1 | sed -E 's/^href="//; s/"$//')
+  if [[ -z "$href" ]] || ! curl -fsSL --retry 3 "${url}/${href}" -o "$tmp/primary"; then
+    rm -rf "$tmp"; return 1
+  fi
+  case "$href" in
+    *.gz)  gzip -dc "$tmp/primary" ;;
+    *.xz)  xz -dc "$tmp/primary" ;;
+    *.zst) zstd -dcq "$tmp/primary" ;;
+    *)     cat "$tmp/primary" ;;
+  esac > "$tmp/primary.xml" || { rm -rf "$tmp"; return 1; }
+  python3 -I - "$tmp/primary.xml" "$rarch" "$@" <<'PYX'
+import sys, xml.etree.ElementTree as ET
+path, rarch, names = sys.argv[1], sys.argv[2], sys.argv[3:]
+ns = {"c": "http://linux.duke.edu/metadata/common"}
+have = {n: set() for n in names}
+for pkg in ET.parse(path).getroot().findall("c:package", ns):
+    n = pkg.find("c:name", ns).text
+    a = pkg.find("c:arch", ns).text
+    if n in have and a in (rarch, "noarch"):
+        v = pkg.find("c:version", ns).attrib
+        if v.get("epoch", "0") == "0":
+            have[n].add(f'{v["ver"]}-{v["rel"]}')
+common = set.intersection(*have.values()) if have else set()
+print("\n".join(sorted(common)))
+PYX
+  local rc=$?
+  rm -rf "$tmp"
+  return $rc
+}
+
+while read -r svc; do
+  repo=$(jq -r --arg s "$svc" '.images[$s].packages.repo' "$VERSIONS")
+  track=$(jq -r --arg s "$svc" '.images[$s].packages.track' "$VERSIONS")
+  ver=$(jq -r --arg s "$svc" '.images[$s].packages.version' "$VERSIONS")
+  mapfile -t ARCHES < <(jq -r --arg s "$svc" '.images[$s].arches[]' "$VERSIONS")
+  declare -A VRS=()
+  ok=1
+  for arch in "${ARCHES[@]}"; do
+    url=$(jq -r --arg r "$repo" --arg a "$arch" '.packageRepos[$r][$a].baseurl // ""' "$VERSIONS")
+    case "$arch" in amd64) rarch=x86_64 ;; arm64) rarch=aarch64 ;; *) rarch="$arch" ;; esac
+    mapfile -t NAMES < <(jq -r --arg s "$svc" --arg a "$arch" '.images[$s].packages[$a][]?' "$VERSIONS" \
+                          | sed -E 's/-[^-]+-[^-]+\.[^.]+$//')
+    if [[ -z "$url" || ${#NAMES[@]} -eq 0 ]]; then
+      ALARMS+="- package \`${svc}\` ${arch}: no repository URL or no pinned NEVRA to look up."$'\n'; ok=0; continue
+    fi
+    if ! list=$(repo_vrs "$url" "$rarch" "${NAMES[@]}"); then
+      ALARMS+="- package \`${svc}\` ${arch}: could not read the repository metadata at ${url}."$'\n'; ok=0; continue
+    fi
+    # The re-grep after the sort is what guarantees an out-of-track
+    # version-release can never be proposed, as for tags above.
+    VRS[$arch]=$(grep -E "$track" <<<"$list" | sort -V || true)
+    if [[ -z "${VRS[$arch]}" ]]; then
+      ALARMS+="- package \`${svc}\` ${arch}: no version-release in ${url} matches its own track \`${track}\` for every pinned package."$'\n'; ok=0
+    fi
+  done
+  if [[ "$ok" -ne 1 ]]; then unset VRS; continue; fi
+
+  # The newest VERSION that every arch has inside the track.
+  CANDV=""
+  while read -r v; do
+    [[ -n "$v" ]] || continue
+    all=1
+    for arch in "${ARCHES[@]}"; do
+      grep -q "^${v//./\\.}-" <<<"${VRS[$arch]}" || { all=0; break; }
+    done
+    [[ "$all" -eq 1 ]] && CANDV="$v"
+  done < <(for arch in "${ARCHES[@]}"; do sed -E 's/-[^-]+$//' <<<"${VRS[$arch]}"; done | sort -u -V)
+  if [[ -z "$CANDV" ]]; then
+    ALARMS+="- package \`${svc}\`: no version inside the track is published for every architecture (${ARCHES[*]})."$'\n'
+    unset VRS; continue
+  fi
+
+  moved=0
+  for arch in "${ARCHES[@]}"; do
+    NEWVR=$(grep "^${CANDV//./\\.}-" <<<"${VRS[$arch]}" | sort -V | tail -1)
+    grep -qE "$track" <<<"$NEWVR" || { ALARMS+="- package \`${svc}\` ${arch}: candidate \`${NEWVR}\` is outside the track; not proposed."$'\n'; continue; }
+    OLD=$(jq -c --arg s "$svc" --arg a "$arch" '.images[$s].packages[$a]' "$VERSIONS")
+    NEW=$(jq -c --arg vr "$NEWVR" 'map(capture("^(?<n>.+)-[^-]+-[^-]+\\.(?<a>[^.]+)$") | "\(.n)-\($vr).\(.a)")' <<<"$OLD")
+    if [[ "$NEW" != "$OLD" ]]; then
+      jq --arg s "$svc" --arg a "$arch" --argjson n "$NEW" '.images[$s].packages[$a] = $n' \
+        "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
+      OLDVR=$(jq -r '.[0] | capture("-(?<vr>[^-]+-[^-]+)\\.[^.]+$").vr' <<<"$OLD")
+      PACKAGE_ROWS+="| \`${svc}\` | ${arch} | \`${OLDVR}\` → \`${NEWVR}\` | $(jq -r 'length' <<<"$NEW") NEVRA(s) |"$'\n'
+      printf '  %-22s new release within track: %s -> %s\n' "package/${svc}/${arch}" "$OLDVR" "$NEWVR"
+      moved=1
+    fi
+  done
+  if [[ "$moved" -eq 1 ]]; then
+    jq --arg s "$svc" --arg v "$CANDV" '.images[$s].packages.version = $v' \
+      "$VERSIONS" > "${VERSIONS}.tmp" && mv "${VERSIONS}.tmp" "$VERSIONS"
+    CHANGED=1
+  else
+    printf '  %-22s current (%s)\n' "package/${svc}" "$ver"
+  fi
+  unset VRS
+done < <(jq -r '.images | to_entries[] | select(.value.kind == "package") | .key' "$VERSIONS")
+
+# A key rotation is a reviewed change to the committed key, never a follow.
+while IFS=$'\t' read -r repo arch kurl pinned; do
+  [[ -n "$kurl" ]] || continue
+  live=$(curl -fsSL --retry 3 "$kurl" 2>/dev/null | sha256sum | cut -d' ' -f1 || true)
+  if [[ "$live" != "$pinned" ]]; then
+    ALARMS+="- package repository \`${repo}\` ${arch}: the key at ${kurl} has sha256 \`${live:0:16}…\`, the committed copy \`${pinned:0:16}…\`. The vendor may have rotated its key. Review it and update the key, keySha256 and keyFingerprint in a PR; nothing was changed."$'\n'
+  fi
+done < <(jq -r '.packageRepos // {} | to_entries[] | .key as $r | .value | to_entries[]
+                | select(.key == "amd64" or .key == "arm64")
+                | [$r, .key, (.value.keyUrl // ""), .value.keySha256] | @tsv' "$VERSIONS")
+
+# ===========================================================================
 # Toolchains
 # ===========================================================================
 # The builder images every build-track leg compiles with. Their tag is a
@@ -325,6 +459,8 @@ if [[ "$CHANGED" -eq 1 || -n "$ALARMS" ]]; then
     echo
     [[ -n "$MIRROR_ROWS" ]] && { echo "### Mirror track"; echo; echo "| Image | Kind | Tag | Pinned | Current | |"; echo "|---|---|---|---|---|---|"; printf '%s' "$MIRROR_ROWS"; echo; }
     [[ -n "$BUILD_ROWS" ]]  && { echo "### Build track"; echo; echo "| Entry | Ref | New value |"; echo "|---|---|---|"; printf '%s' "$BUILD_ROWS"; echo; }
+    [[ -n "$PACKAGE_ROWS" ]] && { echo "### Package track"; echo; echo "| Image | Arch | Version-release | Pins |"; echo "|---|---|---|---|"; printf '%s' "$PACKAGE_ROWS"; echo
+      echo "A package bump changes the PostgreSQL (or other) minor release inside the image. Read the vendor's release notes."; echo; }
     [[ -n "$TOOLCHAIN_ROWS" ]] && { echo "### Toolchains"; echo; echo "| Toolchain | Arch | Compiler | Pinned | Current |"; echo "|---|---|---|---|---|"; printf '%s' "$TOOLCHAIN_ROWS"; echo
       echo "A toolchain bump rebuilds **every build-track image that compiles with it**. Go patch releases are"
       echo "usually security releases; check https://go.dev/doc/devel/release for what this one fixes."; echo; }

@@ -84,7 +84,66 @@ case "\$*" in
   *"refs/tags/"*) printf '%s\trefs/tags/x\n' "$SHA40" ;;
 esac
 EOF
-chmod +x "$TMP/bin/regctl" "$TMP/bin/git"
+# --- A package repository (ADR-009), served by a stub curl ----------------
+# x86_64 has the 17.12 line twice (1PGDG and 2PGDG), a 17.13 server WITHOUT its
+# client (so 17.13 is not complete), and an off-track 18.1. aarch64 has the
+# same 17.13 and 18.1, and only 17.12-1PGDG. The proposal must be 17.12, with
+# 2PGDG on amd64 and 1PGDG on arm64, and never 17.13 or 18.1. A complete
+# 17.14 exists on x86_64 only: one version serves both arches, so it waits.
+mkdir -p "$TMP/repo/x86_64/repodata" "$TMP/repo/aarch64/repodata"
+primary() { # <arch> <name:ver-rel>...
+  local arch="$1"; shift
+  printf '<?xml version="1.0"?>\n<metadata xmlns="http://linux.duke.edu/metadata/common" packages="%d">\n' "$#"
+  local e n vr
+  for e in "$@"; do
+    n="${e%%:*}"; vr="${e#*:}"
+    printf '<package type="rpm"><name>%s</name><arch>%s</arch><version epoch="0" ver="%s" rel="%s"/></package>\n' "$n" "$arch" "${vr%%-*}" "${vr#*-}"
+  done
+  printf '</metadata>\n'
+}
+primary x86_64 \
+  postgresql17:17.11-1PGDG.rhel9.8 postgresql17-server:17.11-1PGDG.rhel9.8 \
+  postgresql17:17.12-1PGDG.rhel9.8 postgresql17-server:17.12-1PGDG.rhel9.8 \
+  postgresql17:17.12-2PGDG.rhel9.8 postgresql17-server:17.12-2PGDG.rhel9.8 \
+  postgresql17-server:17.13-1PGDG.rhel9.8 \
+  postgresql17:17.14-1PGDG.rhel9.8 postgresql17-server:17.14-1PGDG.rhel9.8 \
+  postgresql17:18.1-1PGDG.rhel9.8 postgresql17-server:18.1-1PGDG.rhel9.8 \
+  | gzip -c > "$TMP/repo/x86_64/repodata/abc-primary.xml.gz"
+primary aarch64 \
+  postgresql17:17.11-1PGDG.rhel9.8 postgresql17-server:17.11-1PGDG.rhel9.8 \
+  postgresql17:17.12-1PGDG.rhel9.8 postgresql17-server:17.12-1PGDG.rhel9.8 \
+  postgresql17-server:17.13-1PGDG.rhel9.8 \
+  postgresql17:18.1-1PGDG.rhel9.8 postgresql17-server:18.1-1PGDG.rhel9.8 \
+  | gzip -c > "$TMP/repo/aarch64/repodata/def-primary.xml.gz"
+printf '<repomd><data type="primary"><location href="repodata/abc-primary.xml.gz"/></data></repomd>\n' > "$TMP/repo/x86_64/repodata/repomd.xml"
+printf '<repomd><data type="primary"><location href="repodata/def-primary.xml.gz"/></data></repomd>\n' > "$TMP/repo/aarch64/repodata/repomd.xml"
+printf 'a rotated key\n' > "$TMP/repo/live.key"
+printf 'the committed key\n' > "$TMP/repo/pinned.key"
+PINNED_KEY_SHA=$(sha256sum "$TMP/repo/pinned.key" | cut -d' ' -f1)
+
+# curl: -o FILE and a URL under https://example.invalid/pgdg/; anything else fails.
+cat > "$TMP/bin/curl" <<EOF
+#!/usr/bin/env bash
+out="" url=""
+while [[ \$# -gt 0 ]]; do
+  case "\$1" in
+    -o) out="\$2"; shift 2 ;;
+    --retry) shift 2 ;;
+    -*) shift ;;
+    *) url="\$1"; shift ;;
+  esac
+done
+case "\$url" in
+  https://example.invalid/pgdg/rhel-9-x86_64/*)  f="$TMP/repo/x86_64/\${url#https://example.invalid/pgdg/rhel-9-x86_64/}" ;;
+  https://example.invalid/pgdg/rhel-9-aarch64/*) f="$TMP/repo/aarch64/\${url#https://example.invalid/pgdg/rhel-9-aarch64/}" ;;
+  https://example.invalid/keys/live)             f="$TMP/repo/live.key" ;;
+  https://example.invalid/keys/same)             f="$TMP/repo/pinned.key" ;;
+  *) exit 22 ;;
+esac
+[[ -f "\$f" ]] || exit 22
+if [[ -n "\$out" ]]; then cp "\$f" "\$out"; else cat "\$f"; fi
+EOF
+chmod +x "$TMP/bin/regctl" "$TMP/bin/git" "$TMP/bin/curl"
 
 cat > "$TMP/work/versions.json" <<EOF
 {
@@ -99,9 +158,19 @@ cat > "$TMP/work/versions.json" <<EOF
     "go1.27": { "image": "docker.io/library/golang-skew", "tag": "1.27-trixie", "goVersion": "1.27.0",
       "amd64": { "digest": "$OLD" }, "arm64": { "digest": "$OLD" } }
   },
+  "packageRepos": {
+    "pgdg": {
+      "amd64": { "baseurl": "https://example.invalid/pgdg/rhel-9-x86_64", "keyUrl": "https://example.invalid/keys/live", "keySha256": "$PINNED_KEY_SHA" },
+      "arm64": { "baseurl": "https://example.invalid/pgdg/rhel-9-aarch64", "keyUrl": "https://example.invalid/keys/same", "keySha256": "$PINNED_KEY_SHA" }
+    }
+  },
   "images": {
     "nats-firstparty": { "kind": "build", "source": "nats",
       "firstParty": { "noVendorBinary": true, "reason": "fixture: a first-party image on a source that moves, ahead of nats" } },
+    "pg": { "kind": "package", "arches": ["amd64", "arm64"], "packages": {
+      "repo": "pgdg", "version": "17.11", "track": "^17\\\\.[0-9]+-[0-9]+PGDG\\\\.rhel9(\\\\.[0-9]+)?\$",
+      "amd64": ["postgresql17-17.11-1PGDG.rhel9.8.x86_64", "postgresql17-server-17.11-1PGDG.rhel9.8.x86_64"],
+      "arm64": ["postgresql17-17.11-1PGDG.rhel9.8.aarch64", "postgresql17-server-17.11-1PGDG.rhel9.8.aarch64"] } },
     "nats": { "kind": "build", "source": "nats", "crosscheck": {
       "image": "docker.io/library/nats",
       "amd64": { "tag": "2.14.5-alpine3.22", "digest": "$OLD" },
@@ -182,4 +251,22 @@ grep -q 'go1.26`.*out of step' "$TMP/report.md" \
 grep -qE 'toolchain `go1\.27` (amd64|arm64): pinned digest ships go1\.27\.[12], but goVersion records go1\.27\.[12]\. The arches are out of step' "$TMP/report.md" \
   || fail "no out-of-step alarm for go1.27, whose two arches ship different patches"
 
+# --- Package track: the newest complete in-track version, per-arch release --
+pk() { jq -r --arg a "$1" '.images.pg.packages[$a] | join(" ")' "$V"; }
+[[ "$(jq -r '.images.pg.packages.track' "$V")" == '^17\.[0-9]+-[0-9]+PGDG\.rhel9(\.[0-9]+)?$' ]] \
+  || fail "fixture track was mangled: $(jq -r '.images.pg.packages.track' "$V")"
+[[ "$(jq -r '.images.pg.packages.version' "$V")" == "17.12" ]] \
+  || fail "package version is $(jq -r '.images.pg.packages.version' "$V"); want 17.12 (17.13 is incomplete, 17.14 is amd64-only, 18.1 is off-track)"
+[[ "$(pk amd64)" == "postgresql17-17.12-2PGDG.rhel9.8.x86_64 postgresql17-server-17.12-2PGDG.rhel9.8.x86_64" ]] \
+  || fail "amd64 NEVRAs are '$(pk amd64)'; want the 17.12-2PGDG release for both packages"
+[[ "$(pk arm64)" == "postgresql17-17.12-1PGDG.rhel9.8.aarch64 postgresql17-server-17.12-1PGDG.rhel9.8.aarch64" ]] \
+  || fail "arm64 NEVRAs are '$(pk arm64)'; want 17.12-1PGDG, the only 17.12 release on aarch64"
+grep -q '| `pg` | amd64 | `17.11-1PGDG.rhel9.8` → `17.12-2PGDG.rhel9.8` |' "$TMP/report.md" \
+  || fail "the report does not show the amd64 package bump"
+grep -q 'package repository `pgdg` amd64: the key at https://example.invalid/keys/live' "$TMP/report.md" \
+  || fail "no alarm for the rotated amd64 package key"
+grep -q 'package repository `pgdg` arm64' "$TMP/report.md" \
+  && fail "an alarm for the arm64 key, which matches the committed copy"
+
+echo "OK: drift-upstream.sh proposes the newest complete in-track package release per arch and flags a rotated package key"
 echo "OK: drift-upstream.sh pins crosschecks and toolchains per platform, records the toolchain's compiler patch, abbreviates in a full clone, moves asset URLs, and flags what it cannot move"

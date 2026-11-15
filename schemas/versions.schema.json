@@ -29,6 +29,27 @@
         "amd64": { "type": "object", "required": ["digest"], "properties": { "digest": { "$ref": "#/$defs/digest" } } },
         "arm64": { "type": "object", "required": ["digest"], "properties": { "digest": { "$ref": "#/$defs/digest" } } }
       }
+    },
+    "nevra": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*-[0-9][A-Za-z0-9._+~^]*-[A-Za-z0-9._+~^]+\\.(x86_64|aarch64|noarch)$",
+      "description": "An exact RPM NAME-VERSION-RELEASE.ARCH, as `rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}'` prints it. A package name alone is not a pin: the repository moves under it."
+    },
+    "packageRepoArch": {
+      "type": "object",
+      "required": ["baseurl", "key", "keyFingerprint", "keySha256"],
+      "additionalProperties": false,
+      "properties": {
+        "baseurl": { "type": "string", "pattern": "^https://[^\\s$]+$",
+                     "description": "The repository for this architecture, with no $basearch: the label org.opencontainers.image.source and the review compare it literally." },
+        "key": { "type": "string", "pattern": "^\\.github/pdp/keyring/[A-Za-z0-9._-]+\\.asc$",
+                 "description": "The committed copy of the signing key. Ops.mk check-keyring holds it to its .sha256 sidecar, to keySha256 and to keyFingerprint." },
+        "keyUrl": { "type": "string", "pattern": "^https://",
+                    "description": "Where the vendor publishes the key. verify-package-pins compares it with the committed copy, so a rotation becomes a reviewed PR." },
+        "keyFingerprint": { "type": "string", "pattern": "^[0-9A-F]{40}$",
+                            "description": "The v4 fingerprint of the one primary key in the file. Its last 16 hex characters are the key ID that every pinned RPM header signature must name." },
+        "keySha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
     }
   },
 
@@ -120,6 +141,22 @@
       }
     },
 
+    "packageRepos": {
+      "type": "object",
+      "description": "Signed RPM repositories for the package track (ADR-009). A package image names one by key. Each architecture pins its own base URL and key, because a vendor can sign each architecture with a different key (PGDG does).",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["amd64", "arm64"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "amd64": { "$ref": "#/$defs/packageRepoArch" },
+          "arm64": { "$ref": "#/$defs/packageRepoArch" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+
     "images": {
       "type": "object",
       "minProperties": 1,
@@ -127,7 +164,7 @@
         "type": "object",
         "required": ["kind", "upstreamTrust", "enforcement", "updated", "reason"],
         "properties": {
-          "kind": { "enum": ["mirror", "build"] },
+          "kind": { "enum": ["mirror", "build", "package"] },
           "upstreamTrust": { "enum": ["dhi", "none", "internal", "notation"] },
           "enforcement": { "enum": ["enforce", "observe"] },
           "updated": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
@@ -270,6 +307,50 @@
                     "cmd": { "type": "array", "items": { "type": "string" } },
                     "user": { "const": 1001 },
                     "tzdata": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "package" } }, "required": ["kind"] },
+            "then": {
+              "required": ["base", "arches", "containerfile", "packages", "runtime"],
+              "not": { "anyOf": [
+                { "required": ["source"] }, { "required": ["toolchain"] }, { "required": ["build"] },
+                { "required": ["crosscheck"] }, { "required": ["variants"] } ] },
+              "properties": {
+                "upstreamTrust": { "const": "internal" },
+                "base": { "type": "string" },
+                "arches": { "type": "array", "items": { "enum": ["amd64", "arm64"] }, "minItems": 1, "uniqueItems": true },
+                "containerfile": { "type": "string", "pattern": "^Containerfiles/.+\\.Containerfile$" },
+                "packages": {
+                  "type": "object",
+                  "required": ["repo", "version", "track"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "repo": { "type": "string", "description": "A key of packageRepos." },
+                    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$",
+                                 "description": "The upstream version that every pinned NEVRA carries. It is the release tag (<version>-<shortsha>), so it must satisfy the registry tag grammar." },
+                    "track": { "$ref": "#/$defs/anchoredRegex",
+                               "description": "Bounds the VERSION-RELEASE of every pinned NEVRA. drift-upstream.sh proposes only a version-release inside it." },
+                    "amd64": { "type": "array", "items": { "$ref": "#/$defs/nevra" }, "minItems": 1, "uniqueItems": true },
+                    "arm64": { "type": "array", "items": { "$ref": "#/$defs/nevra" }, "minItems": 1, "uniqueItems": true },
+                    "note": { "type": "string" }
+                  }
+                },
+                "runtime": {
+                  "type": "object",
+                  "required": ["ports", "entrypoint", "user"],
+                  "properties": {
+                    "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+                    "volumes": { "type": "array", "items": { "type": "string", "pattern": "^/" } },
+                    "entrypoint": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                    "cmd": { "type": "array", "items": { "type": "string" } },
+                    "user": { "type": "integer", "minimum": 1, "description": "Never 0: the package's own system user (26 is the RHEL postgres user)." },
+                    "dataDirectory": { "type": "string", "pattern": "^/" },
+                    "env": { "type": "array", "items": { "type": "string" } },
+                    "note": { "type": "string" }
                   }
                 }
               }

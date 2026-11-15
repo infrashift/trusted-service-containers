@@ -173,6 +173,13 @@ jobs:
         # Runs the step extracted from release.yml against a stubbed gh.
         run: ./scripts/test-release-gate.sh
 
+      - name: Test the review and release summaries
+        # download-artifact unpacks one matching artifact straight into its
+        # path, so review.yml's verdicts/*/ glob failed #63's signed PASS.
+        # Runs the summary steps extracted from review.yml and release.yml
+        # against zero, one and many downloaded artifacts.
+        run: ./scripts/test-artifact-summaries.sh
+
       - name: Policy self-test
         run: |
           set -euo pipefail

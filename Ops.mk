@@ -63,7 +63,7 @@ help:
 	echo "  lint-skills           every documented file path resolves"
 	echo "  check-locks           native python locks against their sha256 pins and hash-only format"
 	echo "  check-wiki            okfw schema + OKF format + no dangling links in .okfw/"
-	echo "  test-scripts          drift-upstream.sh, propose-drift.sh, provenance-mode.sh and the release Gate step against fixtures and stubs"
+	echo "  test-scripts          drift-upstream.sh, propose-drift.sh, provenance-mode.sh, the release Gate step and the review/release summaries against fixtures and stubs"
 	echo "  policy-test           opa check --strict, opa fmt, opa test --threshold 85"
 	echo "  repo-gate             evaluate data.tsc.pdp.repo_decision against this tree"
 	echo "  verify-pins           re-resolve every upstream, base, crosscheck and package pin"
@@ -190,6 +190,7 @@ test-scripts:
 	./scripts/test-drift-upstream.sh
 	./scripts/test-provenance-mode.sh
 	./scripts/test-release-gate.sh
+	./scripts/test-artifact-summaries.sh
 
 .PHONY: policy-test
 policy-test:

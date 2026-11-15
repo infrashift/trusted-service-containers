@@ -409,11 +409,14 @@ jobs:
       - name: Report
         run: |
           set -euo pipefail
-          shopt -s nullglob
+          # download-artifact unpacks ONE matching artifact straight into the
+          # path, and several into <path>/<artifact-name>/. A results/*/ glob
+          # missed the single-leg case, so search both depths.
+          mapfile -t FILES < <(find results -maxdepth 2 -type f -name release-result.json 2>/dev/null | LC_ALL=C sort)
+          mapfile -t MFILES < <(find manifests -maxdepth 2 -type f -name manifest-result.json 2>/dev/null | LC_ALL=C sort)
           {
             echo "## Release"
             echo
-            FILES=(results/*/release-result.json)
             if [[ ${#FILES[@]} -eq 0 ]]; then
               echo "No images were promoted."
             else
@@ -423,7 +426,6 @@ jobs:
                 jq -r '"| `\(.leg)` | \(.arch // "-") | **\(.verdict)** | `\(.namespace)` | \(.tags | map("`" + . + "`") | join(", ")) |"' "$f"
               done
             fi
-            MFILES=(manifests/*/manifest-result.json)
             if [[ ${#MFILES[@]} -gt 0 ]]; then
               echo
               echo "### Multi-arch manifest lists"

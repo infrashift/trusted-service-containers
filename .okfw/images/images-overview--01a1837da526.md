@@ -44,6 +44,7 @@ The enforcement column shows a state that can change. See `versions.json` for th
 | [nexus3](/images/nexus3--01a183832d26.md) | mirror | `none` | `observe` | |
 | [mssql](/images/mssql--01a183832d44.md) | mirror | `notation` | `observe` | |
 | [whoami](/images/whoami--01a183832d61.md) | mirror | `none` | `observe` | |
+| [ollama](/images/ollama--01a1dfaa6878.md) | mirror (ADR-011) | `dhi` | `observe` (2026-11-15) | Model server (NVIDIA GPU) |
 | [kratos](/images/kratos--01a183832d7f.md) | build | `internal` | `enforce` | Ory |
 | [hydra](/images/hydra--01a183832d9f.md) | build | `internal` | `enforce` | Ory |
 | [keto](/images/keto--01a183832dc0.md) | build | `internal` | `enforce` | Ory |

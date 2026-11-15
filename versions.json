@@ -314,6 +314,30 @@
       "updated": "2026-11-14",
       "reason": "Traefik's whoami echo server, the test backend infrashift/ansible-collection-infrashift-hashistack's sm-ingress runs behind the edge; it ran docker.io/traefik/whoami:latest. Pinned to v1.12.0, the release :latest resolves to on 2026-09-30 (same index digest). Track is the v1 release line: whoami is a stateless test fixture with no data or config contract, so a minor bump carries nothing a patch-only track would protect, and the regex excludes the per-arch (-amd64/-arm64/-armv7) and two-part rolling (v1.12) tags. Three platforms, not two: the upstream index carries linux/arm/v7, and a mirror copies the whole index, so the declared set must include it or PLATFORM_SET_MISMATCH denies. Trust class none: no cosign signature and no OCI referrers, only unsigned BuildKit attestation manifests inside the index. A scratch image holding one static Go binary with no USER, so it reports root (RUNTIME_RUNS_AS_ROOT, a warning); the binary needs no privilege except a port below 1024, so consumers run it as a non-root uid on an unprivileged port (--user 65532:65532 --port=8080, proven 2026-09-30). Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml; expect Go standard-library findings from the toolchain it was built with."
     },
+    "ollama": {
+      "kind": "mirror",
+      "upstreamTrust": "dhi",
+      "upstreamRepo": "dhi.io/ollama",
+      "keyring": ".github/pdp/keyring/dhi-latest.pub",
+      "requiredPredicates": [
+        "https://cyclonedx.org/bom/v1.6",
+        "https://slsa.dev/provenance/v1"
+      ],
+      "enforcement": "observe",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "variants": {
+        "runtime": {
+          "tag": "0.40.13-debian13-cuda",
+          "track": "^0\\.40\\.[0-9]+-debian13-cuda$",
+          "digest": "sha256:25047db279f059d87c62607f351e7f2d4dec77c581adad34556b4ee13f4ffb7a"
+        }
+      },
+      "updated": "2026-11-15",
+      "reason": "Initial pin for HALO's NVIDIA GPU nodes (ADR-011, accepted 2026-11-15): the DHI Debian 13 CUDA variant, verified with the DHI key, UID 65532, CUDA 13.2 or later on the host driver. The owner accepted the Debian base, the lag behind upstream (DHI 0.40.13, Ollama 0.40.16 on 2026-11-15) and NVIDIA only; AMD (ROCm) needs a new decision. The track allows only 0.40 patch releases of the debian13-cuda variant (not -dev, -fips or the Alpine CPU variant); a new Ollama minor is a reviewed track change. Onboarded in observe."
+    },
     "kratos": {
       "kind": "build",
       "source": "ory",

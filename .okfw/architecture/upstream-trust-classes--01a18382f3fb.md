@@ -28,7 +28,7 @@ The field `upstreamTrust` in `versions.json` sets the trust class.
 
 | Class | Verified against | Used by |
 |---|---|---|
-| `dhi` | `.github/pdp/keyring/dhi-latest.pub`, a TOFU-pinned copy of the Docker keyring | [traefik](/images/traefik--01a183832cbc.md), [postgres](/images/postgres--01a183832d06.md) |
+| `dhi` | `.github/pdp/keyring/dhi-latest.pub`, a TOFU-pinned copy of the Docker keyring | [traefik](/images/traefik--01a183832cbc.md), [postgres](/images/postgres--01a183832d06.md), [ollama](/images/ollama--01a1dfaa6878.md) |
 | `internal` | `.github/pdp/public-keys/upstream/trusted-base-images-release.pub`, the release key of the sibling repository | our `ubi9-micro` base, and thus each built image |
 | `notation` | `.github/pdp/keyring/microsoft-supply-chain-rsa-root-ca-2022.crt` (TOFU-pinned), plus the leaf subject in `notation.trustedIdentity` | [mssql](/images/mssql--01a183832d44.md) |
 | `none` | Nothing. The evidence records "not applicable". | [nexus3](/images/nexus3--01a183832d26.md), [whoami](/images/whoami--01a183832d61.md), and the vendor images of the binary cross-check |

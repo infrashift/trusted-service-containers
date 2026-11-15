@@ -45,7 +45,7 @@ The pipeline:
 * [ADR-008: A first-party build declares that no vendor binary exists](/decisions/adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md): our own infrashift services declare `firstParty` with a reason in place of `crosscheck`.
 * [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md): the kind `package` for software that a vendor ships as signed RPMs. It answers P-TSC-4 for that software.
 * [ADR-010: Valkey and LiteLLM build on UBI as the kind native](/decisions/adr-010-valkey-and-litellm-build-on-ubi-as-the-kind-native--01a1dee688b9.md): the kind `native` builds on UBI from a pinned commit (Valkey, C) or a hash-locked wheel set (LiteLLM, Python). Accepted 2026-11-15.
-* [ADR-011: Ollama mirrors the DHI CUDA image in observe](/decisions/adr-011-ollama-mirrors-the-dhi-cuda-image-in-observe--01a1df4d8a41.md): proposed, not decided. The DHI CUDA image for the HALO GPU nodes, with a `native` CPU build as the exit path.
+* [ADR-011: Ollama mirrors the DHI CUDA image in observe](/decisions/adr-011-ollama-mirrors-the-dhi-cuda-image-in-observe--01a1df4d8a41.md): the DHI CUDA image for the HALO NVIDIA GPU nodes, with its lag behind upstream, and a `native` CPU build as the exit path. Accepted 2026-11-15.
 
 Tools and signing:
 

@@ -62,8 +62,9 @@ COPY src/chit/ /src/
 # GOTOOLCHAIN=local: build with the pinned toolchain image's compiler, never a
 # downloaded one. Chit's go.mod asks for go 1.26.10 and names toolchain
 # go1.26.11 (GO-2026-6859). GOTOOLCHAIN=local ignores the toolchain line, so
-# the pinned go1.26 compiler builds it; re-pin that toolchain to clear the
-# net/http finding.
+# the pinned go1.26 compiler builds it; that pin must stay at or above 1.26.11
+# (versions.json `goVersion`) to keep the net/http fix. The attachment and
+# membership-hook code is pure Go, so CGO_ENABLED=0 still holds.
 ENV CGO_ENABLED=0 \
     GOOS=linux \
     GOWORK=off \

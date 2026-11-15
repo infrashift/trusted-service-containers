@@ -78,7 +78,7 @@ The entrypoint keeps the contract of the Docker official and DHI postgres images
 
 ## What each consumer changes
 
-Both consumers use the DHI image `postgres:17-debian` today.
+Both consumers used the DHI image `postgres:17-debian`. Both moved to this image on 2026-11-14: Chit in Chit PR #8, and HALO in its local tree. PR #56 then removed the DHI PostgreSQL 17 variants. The steps below record what each consumer changed.
 
 WARNING: A data directory from the DHI image cannot be mounted in this image. The DHI image runs as UID 70 and uses a glibc `en_US.UTF-8` collation. Do a dump and a restore into a new volume, or start from an empty volume.
 

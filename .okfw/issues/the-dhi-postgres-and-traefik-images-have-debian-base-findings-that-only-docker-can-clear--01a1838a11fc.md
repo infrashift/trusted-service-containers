@@ -57,11 +57,13 @@ The DHI images of postgres and traefik have Critical findings in their Debian ba
 * **Decision, 2026-11-14:** the owner chose to build PostgreSQL 17 on UBI in this repository, in place of the DHI mirror. Until this repository trusts that image, the DHI postgres mirror runs in `observe` mode. Its images stay in `quarantine/` and never reach `trusted/`, as before. When HALO and Chit move to the UBI image, a change removes the DHI postgres entries and `EXC-2026-0034`.
 * On 2026-11-14, the drift re-pin (PR #52) cleared every traefik finding. The postgres legs still had 8 (16) and 144 (17) blocking findings at the newest DHI digest.
 * **Replacement ready, 2026-11-14 (PR #55):** [postgresql17](/images/postgresql17--01a1dd2247ba.md) builds PostgreSQL 17 from signed PGDG RPMs at pinned NEVRAs on our `ubi9-minimal`. See [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md). It keeps the `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` contract, has `psql` and `pg_isready`, and passed the HALO and Chit integration tests. Its first scan had 0 Critical and 14 fixable Highs, all in `krb5-libs`, against 144 blocking findings on each DHI 17 leg.
-* The DHI postgres mirror and its waivers stay until both consumers move. The remaining steps are:
-  1. HALO moves to postgresql17: `scripts/tsc-image.sh` (the kind `package`), `scripts/test-integration.sh` and `deploy/dev/halo-dev-db.kube.yml` (the mount path `/var/lib/pgsql/data`). See "What each consumer changes" in [postgresql17](/images/postgresql17--01a1dd2247ba.md).
-  2. Chit moves to postgresql17: `deploy/chit.kube.yml`, `deploy/chit-uat.kube.yml` and `PG_IMAGE` in its `Makefile`, with the same mount path change.
-  3. Each consumer moves its data with a dump and a restore. The DHI image runs as UID 70 with a glibc collation, so its data directory cannot be mounted unchanged.
-  4. After both moves, a separate change removes the DHI `postgres` entry from `versions.json` and removes `EXC-2026-0034` (and the other postgres waivers) from `.github/pdp/exceptions.yaml`. The traefik part of this issue stays open.
+* **HALO and Chit moved, 2026-11-14:** Chit uses postgresql17 since Chit PR #8. HALO uses postgresql17 in its local tree. HALO does not push to GitHub before its v0.1.0 release.
+* **The PostgreSQL 17 variants are removed, 2026-11-14 (PR #56):** the change removed `runtime17` and `dev17` from the DHI `postgres` entry in `versions.json`. No workflow builds, reviews, releases or drifts them now. The change did not delete the images on GHCR.
+* **The PostgreSQL 16 variants stay.** `ansible-collection-infrashift-hashistack` pins the `trusted/postgres` 16 image by digest. Thus `runtime` and `dev` stay in `versions.json`.
+* **`EXC-2026-0034` stays until the hashistack collection moves.** Its variant is `"*"`, so it covers the two 16 legs. The removal of the 17 variants does not make it narrower, and no policy rule requires that. On 2026-11-14, `make -f Ops.mk verify-mirror-pins` reported the two 16 pins current. Before 2026-12-14, read a scan of the newest 16 digests, then renew or remove the waiver.
+* The remaining steps are:
+  1. `ansible-collection-infrashift-hashistack` moves off the DHI postgres 16 image, with a dump and a restore of its data.
+  2. Then a separate change removes the DHI `postgres` entry from `versions.json` and removes `EXC-2026-0034` (and the other postgres waivers) from `.github/pdp/exceptions.yaml`. The traefik part of this issue stays open.
 
 ## Acceptance criteria
 
@@ -69,10 +71,12 @@ The DHI images of postgres and traefik have Critical findings in their Debian ba
 - [ ] A decision records whether the scan reads the DHI OpenVEX attestation.
 - [ ] A new pin clears each blocking finding, or a waiver with a current justification covers it.
 - [x] Before 2026-11-22, a new review renews `EXC-2026-0002` and `EXC-2026-0003`, or a change removes them. (2026-11-14: `EXC-2026-0034` renews 7 of the 15 postgres CVEs until 2026-12-14. `EXC-2026-0003` is not renewed: none of its 6 CVEs match. See [Six waivers renew the 2026-11-22 expiries; traefik needs none](/findings/six-waivers-renew-the-2026-11-22-expiries-traefik-needs-none--01a1dc27b857.md).)
-- [ ] Before 2026-12-14, re-pin the four stale postgres DHI digests, and read the scan. Then renew or remove `EXC-2026-0034`.
+- [ ] Before 2026-12-14, re-pin the postgres 16 DHI digests if they are stale, and read the scan. Then renew or remove `EXC-2026-0034`. (2026-11-14: the two 17 digests are removed, see PR #56. `verify-mirror-pins` reported the two 16 pins current.)
 - [x] A trusted PostgreSQL 17 image on UBI exists in this repository: postgresql17 (2026-11-14).
-- [ ] HALO uses postgresql17.
-- [ ] Chit uses postgresql17.
+- [x] HALO uses postgresql17 (2026-11-14, in the local HALO tree).
+- [x] Chit uses postgresql17 (2026-11-14, Chit PR #8).
+- [x] A change removes the DHI postgres 17 variants `runtime17` and `dev17` (2026-11-14, PR #56).
+- [ ] `ansible-collection-infrashift-hashistack` moves off the DHI postgres 16 image.
 - [ ] A change removes the DHI `postgres` entry and `EXC-2026-0034`.
 
 ## Related

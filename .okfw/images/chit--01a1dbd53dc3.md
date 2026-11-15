@@ -8,17 +8,17 @@ tags:
   - "build"
   - "first-party"
 created: "2026-11-14T14:52:27-06:00"
-timestamp: "2026-11-15T04:57:55-06:00"
+timestamp: "2026-11-15T10:26:28-06:00"
 description: "The infrashift chat service: chitd and chit-reconcile with their CUE and SQL migrations, built first-party from a pinned infrashift commit onto ubi9-micro."
 status: "draft"
 generated:
   by: "claude-code/opus-5-5"
-  at: "2026-11-15T04:57:55-06:00"
+  at: "2026-11-15T10:26:28-06:00"
 resource: "https://github.com/infrashift/trusted-service-containers/blob/main/versions.json"
 sources:
   - resource: "https://github.com/infrashift/trusted-service-containers/blob/main/Containerfiles/chit.Containerfile"
     title: "chit.Containerfile"
-  - resource: "https://github.com/infrashift/chit/blob/1af19e66764dbe985f497d1e1997e057a1738595/deploy/Containerfile"
+  - resource: "https://github.com/infrashift/chit/blob/5b026fa9da967b70b9dca05cf3a4498be25e67b0/deploy/Containerfile"
     title: "chit deploy/Containerfile"
 ---
 
@@ -74,6 +74,17 @@ The pin `1af19e66` (2026-11-15) adds two features that HALO needs:
 
 Both features are pure Go. They need no cgo, no file in the image and no new directory. Both features are off when their URL is empty. The deployment sets `CHIT_S3_ENDPOINT` with the bucket, region and keys, and `CHIT_MEMBERSHIP_HOOK_URL` with the token URL, client ID and client secret.
 
+## Rate limits
+
+The pin `5b026fa9` (2026-11-15, P-CHIT-8) adds rate limits for HALO:
+
+* Each user has a token bucket. A request on behalf of a person counts against the bucket of that person.
+* Each client in `CHIT_ON_BEHALF_OF_CLIENTS` has one aggregate bucket. It counts all requests of the client, as itself and on behalf of a person.
+* The deployment can set `CHIT_RATE_LIMIT_USER_PER_SECOND` (default 10), `CHIT_RATE_LIMIT_USER_BURST` (default 50), `CHIT_RATE_LIMIT_CLIENT_PER_SECOND` (default 1500) and `CHIT_RATE_LIMIT_CLIENT_BURST` (default 3000). `chitd` does not start if a value is 0 or too large.
+* A 429 response has a `Retry-After` header.
+
+The change is pure Go (`golang.org/x/time/rate`, which go.mod already had). It needs no go.mod change, no migration, no new port and no file in the image.
+
 ## Smoke tests on 2026-11-14
 
 We ran these tests on the local amd64 image:
@@ -90,6 +101,17 @@ We built the pin `1af19e66` for amd64 on the local machine:
 1. In the builder stage, `chitd` stopped with "CHIT_DATABASE_URL is required", and `chit-reconcile` loaded the CUE (5 commands, 3 roles).
 2. The image has 18 files in `/usr/share/chit/migrations`: 9 up and 9 down migrations.
 3. `grype --fail-on critical` and `grype --only-fixed --fail-on high` both passed. The grype database was built on 2026-11-15. The image has no Critical and no High finding.
+
+## Smoke tests and scan for the pin 5b026fa9
+
+We built the pin `5b026fa9` for amd64 on the local machine on 2026-11-15:
+
+1. `chitd` without `CHIT_DATABASE_URL` stopped with "CHIT_DATABASE_URL is required".
+2. `chitd` with `CHIT_RATE_LIMIT_USER_PER_SECOND=0` and `CHIT_RATE_LIMIT_CLIENT_BURST=0` stopped with an error for each of the two values.
+3. `chitd` with the default limits passed the configuration check and stopped on the closed database port, as expected.
+4. `chit-reconcile` loaded the CUE (5 commands, 3 roles). Then it failed on a closed Keto port, as expected.
+5. The image has user 1001, port 8065, and 18 files in `/usr/share/chit/migrations`.
+6. `grype --fail-on critical` and `grype --only-fixed --fail-on high` both passed. The grype database was built on 2026-11-15. The image has no Critical and no High finding.
 
 ## Issues
 

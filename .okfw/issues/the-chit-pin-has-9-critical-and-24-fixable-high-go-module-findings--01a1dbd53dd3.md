@@ -9,12 +9,12 @@ tags:
   - "chit"
   - "cve"
 created: "2026-11-14T14:52:27-06:00"
-timestamp: "2026-11-15T04:57:55-06:00"
+timestamp: "2026-11-15T10:26:28-06:00"
 description: "On 2026-11-14, the pinned Chit commit failed both local grype gates; Chit dependency bumps in x/crypto, x/net, kin-openapi and compress clear them."
 status: "draft"
 generated:
   by: "claude-code/opus-5-5"
-  at: "2026-11-15T04:57:55-06:00"
+  at: "2026-11-15T10:26:28-06:00"
 ---
 
 # The Chit pin has 9 Critical and 24 fixable High Go module findings
@@ -64,3 +64,6 @@ Chit PR #1 updated the vulnerable modules and set `toolchain go1.26.11`. The pin
 
 ## Update 2026-11-15
 The pin moved to Chit main `1af19e66` (`v0.0.0-20261115061050-1af19e66764d`), which adds attachments and the membership hook. A local amd64 image of that source passed both grype gates, with no Critical and no High finding. The grype database was built on 2026-11-15. The CI review scans the image again. Close this issue when the review shows zero blocking findings.
+
+## Update 2026-11-15, pin 5b026fa9
+The pin moved to Chit main `5b026fa9` (`v0.0.0-20261115153646-5b026fa9da96`), which adds rate limits for on-behalf-of requests (P-CHIT-8). The go.mod file did not change. A local amd64 image of that source passed both grype gates, with no Critical and no High finding. The grype database was built on 2026-11-15. The CI review scans the image again. Close this issue when the review shows zero blocking findings.

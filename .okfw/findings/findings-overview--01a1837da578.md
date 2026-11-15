@@ -52,9 +52,11 @@ The date after each link is the expiry. `.github/pdp/exceptions.yaml` is the sou
 ### Measurements
 
 * [The first litellm scan found no Python finding and 14 krb5-libs Highs on 2026-11-15](/findings/the-first-litellm-scan-found-no-python-finding-and-14-krb5-libs-highs-on-2026-11-15--01a1df7103a8.md): no finding in the 117 wheels; the 14 `krb5-libs` Highs of the base, with no waiver.
+* [The first pgbouncer scan found no Critical and 14 krb5-libs Highs on 2026-11-15](/findings/the-first-pgbouncer-scan-found-no-critical-and-14-krb5-libs-highs-on-2026-11-15--01a1e0a478c1.md): the same 14 `krb5-libs` Highs, with no waiver; no finding in PgBouncer.
 * [The first valkey scan found no Critical and 14 krb5-libs Highs on 2026-11-15](/findings/the-first-valkey-scan-found-no-critical-and-14-krb5-libs-highs-on-2026-11-15--01a1df6016ea.md): the 14 `krb5-libs` Highs of postgresql17 again, with no waiver.
 * [On 2026-10-28 every build leg was trusted and every mirror leg was quarantined](/findings/on-2026-10-28-every-build-leg-was-trusted-and-every-mirror-leg-was-quarantined--01a1838a6fc5.md): the newest full review of all legs.
 * [dapr v1.18.9 cleared the grpc, x/net and amqp091-go findings on 2026-10-28](/findings/dapr-v1-18-9-cleared-the-grpc-x-net-and-amqp091-go-findings-on-2026-10-28--01a1838a6f77.md)
+* [No UBI 9 or PGDG repository shipped c-ares for the PGDG PgBouncer RPM on 2026-11-15](/findings/no-ubi-9-or-pgdg-repository-shipped-c-ares-for-the-pgdg-pgbouncer-rpm-on-2026-11-15--01a1e09bffa6.md): why pgbouncer is kind `native`, not `package`.
 * [UBI 9 and EPEL 9 shipped no Valkey package on 2026-11-15](/findings/ubi-9-and-epel-9-shipped-no-valkey-package-on-2026-11-15--01a1dee755a1.md): the input to ADR-010 for Valkey.
 * [On 2026-11-15 DHI Valkey had 2 unfixed Criticals, DHI LiteLLM 4 Node findings and DHI Ollama none](/findings/on-2026-11-15-dhi-valkey-had-2-unfixed-criticals-dhi-litellm-4-node-findings-and-dhi-ollama-none--01a1dee755b1.md): the signature checks and scans behind ADR-010 and ADR-011.
 * [UBI 9 AppStream shipped Python 3.12.15 and the LiteLLM 1.109.1 wheel carried its admin UI on 2026-11-15](/findings/ubi-9-appstream-shipped-python-3-12-15-and-the-litellm-1-109-1-wheel-carried-its-admin-ui-on-2026-11-15--01a1df4d8a53.md): the input to ADR-010 for LiteLLM. No Node.js is needed without a database.

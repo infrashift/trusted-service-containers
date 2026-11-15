@@ -662,6 +662,42 @@ exceptions:
       HTML. Kratos is the identity provider for HALO and Chit. Expires with the October x/net waivers so the whole Ory
       register is decided together; re-decide at expiry rather than renew.
 
+  - id: EXC-2026-0039
+    image: daprd
+    variant: "*"
+    package: "*"
+    cves:
+      - GO-2026-6888
+      - GO-2026-6865
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2026-12-14T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/daprd-and-prometheus-carry-brotli-and-compress-findings-until-upstream-releases-a-fix--01a1dce6a75b.md"
+    justification: >-
+      brotli (GO-2026-6888, Critical) and klauspost/compress (GO-2026-6865,
+      High) are pinned by dapr v1.18.10, the newest release in the track on
+      2026-11-14 (PR #52 moved the pin from v1.18.9, which did not clear
+      them). We build upstream source unchanged, so only a dapr release with
+      the fixed modules clears them. 30 days, because the module fixes exist;
+      re-pin and delete this entry when dapr ships them.
+
+  - id: EXC-2026-0040
+    image: prometheus
+    variant: "*"
+    package: "github.com/klauspost/compress"
+    cves:
+      - GO-2026-6865
+    issued:  "2026-11-14T00:00:00Z"
+    expires: "2026-12-14T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/daprd-and-prometheus-carry-brotli-and-compress-findings-until-upstream-releases-a-fix--01a1dce6a75b.md"
+    justification: >-
+      klauspost/compress (GO-2026-6865, High) is pinned by prometheus
+      v3.15.1, the newest release in the track on 2026-11-14. We build
+      upstream source unchanged, so only a prometheus release with the fixed
+      module clears it. 30 days, because the module fix exists; re-pin and
+      delete this entry when prometheus ships it.
+
 # --- Example. Delete before the first real entry. --------------------------
 #
 # - id: EXC-2026-0001

@@ -349,18 +349,20 @@ jobs:
           NATIVE_ROWS=$(for f in "${FILES[@]}"; do
             jq -r '.subject.leg as $l | .cve_policy.per_platform | to_entries[] | .key as $p
                    | .value.observations[]? | select(.code == "NATIVE_BUILD")
-                   | "| `\($l)` | \($p) | \(.source_url) | `\(.source_ref[0:12])` | `\(.archive_sha256[0:12])` | `\(.from_source_sha256[0:12])` |"' "$f"
+                   | if .language == "python"
+                     then "| `\($l)` | \($p) | \(.source_url) | `\(.requirement)` | lock `\(.lock_sha256[0:12])`, \(.distributions) wheels | — |"
+                     else "| `\($l)` | \($p) | \(.source_url) | `\(.source_ref[0:12])` | `\(.archive_sha256[0:12])` | `\(.from_source_sha256[0:12])` |" end' "$f"
           done | sort -u)
           if [[ -n "$NATIVE_ROWS" ]]; then
             {
               echo
               echo "### Native builds (ADR-010, no vendor binary comparison)"
               echo
-              echo "| Leg | Platform | Source | Commit | Release archive (tree = commit) | Built by us |"
+              echo "| Leg | Platform | Source | Commit or release | Release archive (tree = commit), or the lock | Built by us |"
               echo "|---|---|---|---|---|---|"
               echo "$NATIVE_ROWS"
               echo
-              echo "_Compiled from the pinned commit on the pinned UBI builder. The release archive sha256 comes from the vendor, separately from the source; the build required its file tree to equal the commit's. The binary hash is a change detector over time._"
+              echo "_c: compiled from the pinned commit on the pinned UBI builder; the release archive sha256 comes from the vendor, separately from the source, and its file tree equals the commit's. python: the venv holds exactly the hash-locked wheels, re-derived from the image on GHCR. The binary or lock hash is a change detector over time._"
             } >> /tmp/report.md
           fi
 

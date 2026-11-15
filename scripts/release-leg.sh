@@ -36,7 +36,11 @@ if [[ "$KIND" == "mirror" ]]; then
 elif [[ "$KIND" == "build" || "$KIND" == "package" || "$KIND" == "native" ]]; then
   # A build or native image is versioned by its source ref, a package image by
   # the upstream version that every pinned NEVRA carries (packages.version).
-  if [[ "$KIND" == "build" || "$KIND" == "native" ]]; then
+  if [[ "$KIND" == "native" && "$(jq -r '.native.language' <<<"$IMG")" == "python" ]]; then
+    # A native python image (ADR-010) has no source; its version is the
+    # locked release of native.distribution.
+    VERSION=$(jq -r '.native.version' <<<"$IMG")
+  elif [[ "$KIND" == "build" || "$KIND" == "native" ]]; then
     SRC_KEY=$(jq -r '.source' <<<"$IMG")
     VERSION=$(jq -r --arg s "$SRC_KEY" '.sources[$s].ref' versions.json)
   else

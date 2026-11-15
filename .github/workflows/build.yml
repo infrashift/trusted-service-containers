@@ -17,6 +17,8 @@ on:
       - 'versions.json'
       - 'Containerfiles/**'
       - 'rootfs/**'
+      # The python locks of native images (ADR-010).
+      - 'locks/**'
       - 'scripts/**'
       - 'tools.lock'
       - '.github/pdp/**'
@@ -115,7 +117,7 @@ jobs:
                                ($base.bases[$v.base]                           // null) != ($head.bases[$v.base]                           // null)
                             or ($base.packageRepos[$v.packages.repo // ""]     // null) != ($head.packageRepos[$v.packages.repo // ""]     // null) ) )
                         or ( $v.kind == "native" and (
-                               ($base.sources[$v.source]       // null) != ($head.sources[$v.source]       // null)
+                               ($base.sources[$v.source // ""] // null) != ($head.sources[$v.source // ""] // null)
                             or ($base.bases[$v.builder]        // null) != ($head.bases[$v.builder]        // null)
                             or ($base.bases[$v.base]           // null) != ($head.bases[$v.base]           // null) ) ) )
               | if $v.kind == "mirror"

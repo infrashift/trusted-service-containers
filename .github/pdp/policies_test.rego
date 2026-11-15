@@ -2237,3 +2237,311 @@ test_native_builder_repo_both_absent_denies if {
 		"NATIVE_PIN_MALFORMED",
 	)
 }
+
+# ===========================================================================
+# Native track, language python (ADR-010, LiteLLM)
+# ===========================================================================
+
+LL_LOCK_SHA := "2972e946f5bc76c72ea639f430b2882e9ee36f28257b8ec427dc1291a367ab50"
+
+LL_URL := "https://pypi.org/project/litellm/"
+
+LL_DISTS := ["litellm==1.109.1", "redis==8.1.0", "pyyaml==6.0.3"]
+
+base_native_python := {
+	"track": "native",
+	"evaluated_at": NOW,
+	"image": {
+		"key": "litellm", "variant": "runtime", "enforcement": "enforce",
+		"destination_repo": "ghcr.io/infrashift/trusted-service-containers/development/litellm",
+		"destination_digest": D, "config_user": "1001",
+		"labels": {
+			"org.opencontainers.image.source": LL_URL,
+			"org.opencontainers.image.revision": LL_LOCK_SHA,
+			"org.opencontainers.image.version": "1.109.1",
+			"io.infrashift.image.upstream.digest": D2,
+			"io.infrashift.image.upstream.source": UBI_MINIMAL,
+		},
+	},
+	"upstream": {
+		"trust_class": "internal", "signature": "verified",
+		"verified_with": ".github/pdp/public-keys/upstream/trusted-base-images-release.pub",
+		"attestations": {"sbom": "present", "provenance": "present", "vex": "absent"},
+	},
+	"native": {
+		"pinned_base_repo": UBI_MINIMAL, "base_image_repo": UBI_MINIMAL,
+		"pinned_base_digest": D2, "base_image_digest": D2,
+		"pinned_builder_repo": UBI_MINIMAL, "builder_image_repo": UBI_MINIMAL,
+		"pinned_builder_digest": D3, "builder_image_digest": D3,
+		"language": "python",
+		"pinned_source_url": LL_URL,
+		"pinned_version": "1.109.1",
+		"pinned_distribution": "litellm",
+		"pinned_lock_sha256": LL_LOCK_SHA, "checkout_lock_sha256": LL_LOCK_SHA, "lock_sha256": LL_LOCK_SHA,
+		"locked_distributions": LL_DISTS,
+		"installed_distributions": LL_DISTS,
+		"verified_distributions": LL_DISTS,
+		"verification": {"performed": true},
+	},
+	"scan_results": {
+		"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0,
+		"fixable_critical_count": 0, "fixable_high_count": 0, "findings": [],
+	},
+	"published_attestation_keys": {},
+}
+
+python_denies(ops, code) if {
+	d := pdp.decision with input as patch(base_native_python, ops)
+	not d.allow
+	d.namespace == "quarantine"
+	code in codes(d)
+	"NATIVE_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+test_base_native_python_allows if {
+	d := pdp.decision with input as base_native_python
+	d.allow
+	d.namespace == "trusted"
+	some o in d.observations
+	o.code == "NATIVE_BUILD"
+	o.language == "python"
+	o.requirement == "litellm==1.109.1"
+	o.distributions == 3
+	o.gating == false
+}
+
+# A python leg has no commit: the source and archive rules of language c do
+# not apply, and must not deny it.
+test_native_python_needs_no_commit_or_archive if {
+	d := pdp.decision with input as base_native_python
+	every c in ["BUILD_SOURCE_REF_NOT_PINNED", "BUILD_SOURCE_REF_MISMATCH", "BUILD_REVISION_LABEL_DISAGREES", "NATIVE_ARCHIVE_TREE_MISMATCH", "NATIVE_BINARY_HASH_MALFORMED", "NATIVE_SOURCE_URL_MISMATCH"] {
+		not c in codes(d)
+	}
+}
+
+# ...and a c leg cannot pass on the python facts alone.
+test_native_c_leg_with_python_facts_denies if {
+	i := patch(base_native_python, [{"op": "replace", "path": "/native/language", "value": "c"}])
+	d := pdp.decision with input as i
+	not d.allow
+	"NATIVE_PROVENANCE_NOT_RECORDED" in codes(d)
+	"BUILD_SOURCE_REF_NOT_PINNED" in codes(d)
+	"NATIVE_ARCHIVE_TREE_MISMATCH" in codes(d)
+}
+
+# ...and a python leg cannot pass on the c facts alone.
+test_native_python_leg_with_c_facts_denies if {
+	i := patch(base_native, [
+		{"op": "replace", "path": "/native/language", "value": "python"},
+		{"op": "add", "path": "/native/pinned_distribution", "value": "valkey"},
+	])
+	d := pdp.decision with input as i
+	not d.allow
+	"NATIVE_PROVENANCE_NOT_RECORDED" in codes(d)
+	"NATIVE_LOCK_SHA256_MISMATCH" in codes(d)
+}
+
+test_native_python_lock_sha_mismatch_denies if {
+	python_denies([{"op": "replace", "path": "/native/lock_sha256", "value": VK_ARCHIVE_SHA}], "NATIVE_LOCK_SHA256_MISMATCH")
+}
+
+test_native_python_lock_sha_both_absent_denies if {
+	python_denies(
+		[
+			{"op": "remove", "path": "/native/lock_sha256"},
+			{"op": "remove", "path": "/native/pinned_lock_sha256"},
+		],
+		"NATIVE_LOCK_SHA256_MISMATCH",
+	)
+}
+
+test_native_python_checkout_lock_mismatch_denies if {
+	python_denies([{"op": "replace", "path": "/native/checkout_lock_sha256", "value": VK_ARCHIVE_SHA}], "NATIVE_LOCK_CHECKOUT_MISMATCH")
+}
+
+test_native_python_checkout_lock_absent_denies if {
+	python_denies([{"op": "remove", "path": "/native/checkout_lock_sha256"}], "NATIVE_LOCK_CHECKOUT_MISMATCH")
+}
+
+test_native_python_revision_label_denies if {
+	python_denies([{"op": "replace", "path": "/image/labels/org.opencontainers.image.revision", "value": VK_ARCHIVE_SHA}], "NATIVE_REVISION_LABEL_DISAGREES")
+}
+
+test_native_python_source_label_denies if {
+	native_python_label_denies("org.opencontainers.image.source", "https://pypi.org/project/evil/", "NATIVE_SOURCE_LABEL_DISAGREES")
+}
+
+test_native_python_version_label_denies if {
+	native_python_label_denies("org.opencontainers.image.version", "1.108.9", "NATIVE_VERSION_LABEL_DISAGREES")
+}
+
+native_python_label_denies(label, value, code) if {
+	d := pdp.decision with input as patch(base_native_python, [{"op": "replace", "path": concat("", ["/image/labels/", label]), "value": value}])
+	not d.allow
+	code in codes(d)
+}
+
+test_native_python_dist_not_installed_denies if {
+	python_denies([{"op": "replace", "path": "/native/installed_distributions", "value": ["litellm==1.109.1", "pyyaml==6.0.3"]}], "NATIVE_DISTRIBUTION_NOT_INSTALLED")
+}
+
+test_native_python_other_version_installed_denies if {
+	python_denies([{"op": "replace", "path": "/native/installed_distributions/1", "value": "redis==7.0.0"}], "NATIVE_DISTRIBUTION_NOT_INSTALLED")
+}
+
+test_native_python_unlocked_dist_denies if {
+	python_denies([{"op": "add", "path": "/native/installed_distributions/-", "value": "pip==23.2.1"}], "NATIVE_DISTRIBUTION_UNLOCKED")
+}
+
+test_native_python_dist_not_verified_denies if {
+	python_denies([{"op": "replace", "path": "/native/verified_distributions", "value": ["litellm==1.109.1", "redis==8.1.0"]}], "NATIVE_DISTRIBUTION_NOT_VERIFIED")
+}
+
+test_native_python_version_not_locked_denies if {
+	python_denies(
+		[
+			{"op": "replace", "path": "/native/pinned_version", "value": "1.110.0"},
+			{"op": "replace", "path": "/image/labels/org.opencontainers.image.version", "value": "1.110.0"},
+		],
+		"NATIVE_VERSION_NOT_LOCKED",
+	)
+}
+
+test_native_python_distribution_not_locked_denies if {
+	python_denies([{"op": "replace", "path": "/native/pinned_distribution", "value": "openai"}], "NATIVE_VERSION_NOT_LOCKED")
+}
+
+test_native_python_locked_malformed_denies if {
+	python_denies([{"op": "replace", "path": "/native/locked_distributions/0", "value": "LiteLLM==1.109.1"}], "NATIVE_DISTRIBUTIONS_MALFORMED")
+}
+
+test_native_python_locked_empty_denies if {
+	python_denies(
+		[
+			{"op": "replace", "path": "/native/locked_distributions", "value": []},
+			{"op": "replace", "path": "/native/installed_distributions", "value": []},
+			{"op": "replace", "path": "/native/verified_distributions", "value": []},
+		],
+		"NATIVE_DISTRIBUTIONS_MALFORMED",
+	)
+}
+
+test_native_python_installed_not_a_list_denies if {
+	python_denies([{"op": "replace", "path": "/native/installed_distributions", "value": "litellm==1.109.1"}], "NATIVE_DISTRIBUTIONS_MALFORMED")
+}
+
+test_native_python_verified_absent_denies if {
+	python_denies([{"op": "remove", "path": "/native/verified_distributions"}], "NATIVE_DISTRIBUTIONS_MALFORMED")
+}
+
+test_native_python_pinned_distribution_absent_denies if {
+	python_denies([{"op": "remove", "path": "/native/pinned_distribution"}], "NATIVE_PIN_MALFORMED")
+}
+
+test_native_python_builder_mismatch_denies if {
+	python_denies([{"op": "replace", "path": "/native/builder_image_digest", "value": D}], "NATIVE_BUILDER_DIGEST_MISMATCH")
+}
+
+test_native_python_not_performed_denies if {
+	d := pdp.decision with input as patch(base_native_python, [{"op": "replace", "path": "/native/verification/performed", "value": false}])
+	not d.allow
+	"NATIVE_PROVENANCE_NOT_RECORDED" in codes(d)
+}
+
+test_native_python_remediation_hint if {
+	i := patch(base_native_python, [
+		{"op": "replace", "path": "/scan_results/high_count", "value": 1},
+		{"op": "replace", "path": "/scan_results/fixable_high_count", "value": 1},
+		{"op": "replace", "path": "/scan_results/findings", "value": [{"id": "GHSA-xxxx", "severity": "High", "fix_state": "fixed", "package": "aiohttp"}]},
+	])
+	d := pdp.decision with input as i
+	some v in d.violations
+	v.code == "CVE_HIGH_FIXABLE"
+	contains(v.remediation_hint, "new lock")
+}
+
+# --- Repo gate: native python entries --------------------------------------
+
+base_repo_native_python := patch(base_repo_native, [{"op": "add", "path": "/versions/images/litellm", "value": {
+	"kind": "native", "upstreamTrust": "internal",
+	"builder": "ubi9-minimal", "base": "ubi9-minimal",
+	"containerfile": "Containerfiles/litellm.Containerfile", "arches": ["amd64", "arm64"],
+	"native": {
+		"language": "python", "buildPackages": ["python3.12", "python3.12-pip"], "runtimePackages": ["python3.12"],
+		"distribution": "litellm", "version": "1.109.1", "projectUrl": LL_URL,
+		"lock": {"path": "locks/litellm/requirements.txt", "sha256": LL_LOCK_SHA},
+		"venv": "/opt/litellm", "binary": "litellm", "installPath": "/opt/litellm/bin/litellm",
+	},
+}}])
+
+repo_python_denies(ops, code) if {
+	d := pdp.repo_decision with input as patch(base_repo_native_python, ops) with data.exceptions as []
+	not d.allow
+	code in repo_codes(d)
+}
+
+test_base_repo_native_python_allows if {
+	d := pdp.repo_decision with input as base_repo_native_python with data.exceptions as []
+	d.allow
+}
+
+test_repo_python_lock_missing_denies if {
+	repo_python_denies([{"op": "remove", "path": "/versions/images/litellm/native/lock"}], "VERSIONS_NATIVE_FIELD_MISSING")
+}
+
+test_repo_python_version_missing_denies if {
+	repo_python_denies([{"op": "remove", "path": "/versions/images/litellm/native/version"}], "VERSIONS_NATIVE_FIELD_MISSING")
+}
+
+test_repo_python_with_source_denies if {
+	repo_python_denies([{"op": "add", "path": "/versions/images/litellm/source", "value": "valkey"}], "VERSIONS_NATIVE_KIND_CONFLICT")
+}
+
+test_repo_python_lock_of_other_image_denies if {
+	repo_python_denies([{"op": "replace", "path": "/versions/images/litellm/native/lock/path", "value": "locks/other/requirements.txt"}], "VERSIONS_NATIVE_LOCK_INVALID")
+}
+
+test_repo_python_lock_short_sha_denies if {
+	repo_python_denies([{"op": "replace", "path": "/versions/images/litellm/native/lock/sha256", "value": "2972e946"}], "VERSIONS_NATIVE_LOCK_INVALID")
+}
+
+test_repo_python_install_path_outside_venv_denies if {
+	repo_python_denies([{"op": "replace", "path": "/versions/images/litellm/native/installPath", "value": "/usr/bin/litellm"}], "VERSIONS_NATIVE_INSTALL_PATH_OUTSIDE_VENV")
+}
+
+# A python entry needs no source and no archive.
+test_repo_python_needs_no_source if {
+	d := pdp.repo_decision with input as base_repo_native_python with data.exceptions as []
+	not "VERSIONS_NATIVE_SOURCE_DANGLING" in repo_codes(d)
+	not "VERSIONS_NATIVE_ARCHIVE_MISSING" in repo_codes(d)
+}
+
+# ...but a c entry still does.
+test_repo_c_still_needs_source if {
+	repo_native_denies([{"op": "remove", "path": "/versions/images/valkey/source"}], "VERSIONS_NATIVE_FIELD_MISSING")
+}
+
+# A malformed pin that is the same everywhere still denies.
+test_native_python_malformed_lock_pin_everywhere_denies if {
+	python_denies(
+		[
+			{"op": "replace", "path": "/native/pinned_lock_sha256", "value": "abc"},
+			{"op": "replace", "path": "/native/checkout_lock_sha256", "value": "abc"},
+			{"op": "replace", "path": "/native/lock_sha256", "value": "abc"},
+			{"op": "replace", "path": "/image/labels/org.opencontainers.image.revision", "value": "abc"},
+		],
+		"NATIVE_PIN_MALFORMED",
+	)
+}
+
+# A malformed distribution that is the same in all three sets still denies.
+test_native_python_malformed_dist_everywhere_denies if {
+	python_denies(
+		[
+			{"op": "add", "path": "/native/locked_distributions/-", "value": "Bad Name==1"},
+			{"op": "add", "path": "/native/installed_distributions/-", "value": "Bad Name==1"},
+			{"op": "add", "path": "/native/verified_distributions/-", "value": "Bad Name==1"},
+		],
+		"NATIVE_DISTRIBUTIONS_MALFORMED",
+	)
+}

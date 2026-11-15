@@ -731,6 +731,73 @@ exceptions:
       because UBI already carries other el9_9 builds; rebuild and delete this
       entry when it does.
 
+  - id: EXC-2026-0042
+    image: valkey
+    variant: "*"
+    package: krb5-libs
+    cves:
+      - CVE-2026-71199
+      - CVE-2026-71200
+      - CVE-2026-107364
+      - CVE-2026-112315
+      - CVE-2026-112316
+      - CVE-2026-112317
+      - CVE-2026-112318
+      - CVE-2026-112319
+      - CVE-2026-112320
+      - CVE-2026-112321
+      - CVE-2026-112322
+      - CVE-2026-112323
+      - CVE-2026-118380
+      - CVE-2026-119079
+    issued:  "2026-11-15T00:00:00Z"
+    expires: "2026-12-15T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/the-ubi-repositories-do-not-yet-carry-the-krb5-libs-fix-for-14-highs-in-postgresql17--01a1dd21edb8.md"
+    justification: >-
+      The owner decided on 2026-11-15 to waive krb5-libs for Valkey. The same
+      14 Highs as EXC-2026-0041: the image has krb5-libs-1.21.1-10.el9_8.1
+      from the ubi9-minimal base, and RHEL fixed them in 1.21.1-10.el9_9.2.
+      On 2026-11-15 ubi-9-baseos still had only el9_8.1 (x86_64 revision
+      1794413174, aarch64 1794416385), and the runtime stage already upgrades
+      the base from UBI. valkey-server does not link krb5-libs; it is a base
+      package. No rebuild or re-pin clears it until UBI publishes the build.
+      30 days, as EXC-2026-0041; rebuild and delete this entry when it does.
+
+  - id: EXC-2026-0043
+    image: litellm
+    variant: "*"
+    package: krb5-libs
+    cves:
+      - CVE-2026-71199
+      - CVE-2026-71200
+      - CVE-2026-107364
+      - CVE-2026-112315
+      - CVE-2026-112316
+      - CVE-2026-112317
+      - CVE-2026-112318
+      - CVE-2026-112319
+      - CVE-2026-112320
+      - CVE-2026-112321
+      - CVE-2026-112322
+      - CVE-2026-112323
+      - CVE-2026-118380
+      - CVE-2026-119079
+    issued:  "2026-11-15T00:00:00Z"
+    expires: "2026-12-15T00:00:00Z"
+    owner:   "@ryancraig"
+    ticket:  "https://github.com/infrashift/trusted-service-containers/blob/main/.okfw/issues/the-ubi-repositories-do-not-yet-carry-the-krb5-libs-fix-for-14-highs-in-postgresql17--01a1dd21edb8.md"
+    justification: >-
+      The owner decided on 2026-11-15 to waive krb5-libs for LiteLLM. The same
+      14 Highs as EXC-2026-0041: the image has krb5-libs-1.21.1-10.el9_8.1
+      from the ubi9-minimal base, and RHEL fixed them in 1.21.1-10.el9_9.2.
+      On 2026-11-15 ubi-9-baseos still had only el9_8.1 (x86_64 revision
+      1794413174, aarch64 1794416385), and the runtime stage already upgrades
+      the base from UBI. It is a base package of the UBI Python runtime, not a
+      locked wheel. No rebuild or re-pin clears it until UBI publishes the
+      build. 30 days, as EXC-2026-0041; rebuild and delete this entry when it
+      does.
+
 # --- Example. Delete before the first real entry. --------------------------
 #
 # - id: EXC-2026-0001

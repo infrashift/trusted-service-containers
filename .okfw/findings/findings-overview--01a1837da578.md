@@ -53,6 +53,9 @@ The date after each link is the expiry. `.github/pdp/exceptions.yaml` is the sou
 
 * [On 2026-10-28 every build leg was trusted and every mirror leg was quarantined](/findings/on-2026-10-28-every-build-leg-was-trusted-and-every-mirror-leg-was-quarantined--01a1838a6fc5.md): the newest full review of all legs.
 * [dapr v1.18.9 cleared the grpc, x/net and amqp091-go findings on 2026-10-28](/findings/dapr-v1-18-9-cleared-the-grpc-x-net-and-amqp091-go-findings-on-2026-10-28--01a1838a6f77.md)
+* [UBI 9 and EPEL 9 shipped no Valkey package on 2026-11-15](/findings/ubi-9-and-epel-9-shipped-no-valkey-package-on-2026-11-15--01a1dee755a1.md): the input to ADR-010 for Valkey.
+* [On 2026-11-15 DHI Valkey had 2 unfixed Criticals, DHI LiteLLM 4 Node findings and DHI Ollama none](/findings/on-2026-11-15-dhi-valkey-had-2-unfixed-criticals-dhi-litellm-4-node-findings-and-dhi-ollama-none--01a1dee755b1.md): the signature checks and scans behind ADR-010 and ADR-011.
+* [UBI 9 AppStream shipped Python 3.12.15 and the LiteLLM 1.109.1 wheel carried its admin UI on 2026-11-15](/findings/ubi-9-appstream-shipped-python-3-12-15-and-the-litellm-1-109-1-wheel-carried-its-admin-ui-on-2026-11-15--01a1df4d8a53.md): the input to ADR-010 for LiteLLM. No Node.js is needed without a database.
 * [Go 1.26.6 put 8 stdlib findings into prometheus-nats-exporter on 2026-10-13](/findings/go-1-26-6-put-8-stdlib-findings-into-prometheus-nats-exporter-on-2026-10-13--01a1838a6f27.md)
 * [On 2026-09-30 the new postgres 16 digest had fewer findings and postgres did not link libcurl](/findings/on-2026-09-30-the-new-postgres-16-digest-had-fewer-findings-and-postgres-did-not-link-libcurl--01a1838a6ec1.md)
 * [The first nexus3 scan found 32 blocking findings on 2026-08-24](/findings/the-first-nexus3-scan-found-32-blocking-findings-on-2026-08-24--01a1838a6d6d.md)

@@ -4,8 +4,9 @@
 # master key from the environment. Mount your own file over
 # /etc/litellm/config.yaml to add models, or pass `--config <path>`.
 #
-# WARNING: Set LITELLM_MASTER_KEY. Without a master key, the proxy accepts
-# every request without authentication.
+# Set LITELLM_MASTER_KEY. Without a master key, the proxy accepts every
+# request without authentication, so the image entrypoint refuses to start
+# when LITELLM_MASTER_KEY is unset or empty, also with a mounted config.
 #
 # This image has no Prisma and no Node.js, so it runs without a database:
 # do not set DATABASE_URL. For the router and the rate limits shared between

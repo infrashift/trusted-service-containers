@@ -68,8 +68,10 @@ The digests are the first 12 hex digits of the index digest.
 
 ## Related
 
-* [ADR-010: Valkey builds from source on UBI, LiteLLM and Ollama mirror DHI](/decisions/adr-010-valkey-builds-from-source-on-ubi-litellm-and-ollama-mirror-dhi--01a1dee688b9.md)
+* [ADR-010: Valkey and LiteLLM build on UBI as the kind native](/decisions/adr-010-valkey-and-litellm-build-on-ubi-as-the-kind-native--01a1dee688b9.md)
 * [UBI 9 and EPEL 9 shipped no Valkey package on 2026-11-15](/findings/ubi-9-and-epel-9-shipped-no-valkey-package-on-2026-11-15--01a1dee755a1.md)
 * [The DHI postgres and traefik images have Debian base findings that only Docker can clear](/issues/the-dhi-postgres-and-traefik-images-have-debian-base-findings-that-only-docker-can-clear--01a1838a11fc.md)
+* [ADR-011: Ollama mirrors the DHI CUDA image in observe](/decisions/adr-011-ollama-mirrors-the-dhi-cuda-image-in-observe--01a1df4d8a41.md)
+* [UBI 9 AppStream shipped Python 3.12.15 and the LiteLLM 1.109.1 wheel carried its admin UI on 2026-11-15](/findings/ubi-9-appstream-shipped-python-3-12-15-and-the-litellm-1-109-1-wheel-carried-its-admin-ui-on-2026-11-15--01a1df4d8a53.md)
 * [Upstream trust classes](/architecture/upstream-trust-classes--01a18382f3fb.md)
 * [Findings overview](/findings/findings-overview--01a1837da578.md)

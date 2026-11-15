@@ -53,10 +53,10 @@ The Fedora dist-git repository `rpms/valkey` has an `epel9` branch. On that bran
 
 ## Consequence
 
-The package kind of [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md) cannot install Valkey from a free, signed EL9 repository. The RHEL 9.7 package is not UBI content. It needs a subscription in CI, and only UBI content is freely redistributable. See [ADR-010: Valkey builds from source on UBI, LiteLLM and Ollama mirror DHI](/decisions/adr-010-valkey-builds-from-source-on-ubi-litellm-and-ollama-mirror-dhi--01a1dee688b9.md).
+The package kind of [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md) cannot install Valkey from a free, signed EL9 repository. The RHEL 9.7 package is not UBI content. It needs a subscription in CI, and only UBI content is freely redistributable. See [ADR-010: Valkey and LiteLLM build on UBI as the kind native](/decisions/adr-010-valkey-and-litellm-build-on-ubi-as-the-kind-native--01a1dee688b9.md).
 
 ## Related
 
-* [ADR-010: Valkey builds from source on UBI, LiteLLM and Ollama mirror DHI](/decisions/adr-010-valkey-builds-from-source-on-ubi-litellm-and-ollama-mirror-dhi--01a1dee688b9.md)
+* [ADR-010: Valkey and LiteLLM build on UBI as the kind native](/decisions/adr-010-valkey-and-litellm-build-on-ubi-as-the-kind-native--01a1dee688b9.md)
 * [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md): the same check for PostgreSQL on 2026-11-14.
 * [Findings overview](/findings/findings-overview--01a1837da578.md)

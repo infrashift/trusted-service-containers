@@ -42,6 +42,8 @@ Native track (kind `native`, language `c`). See [ADR-010: Valkey and LiteLLM bui
 
 See `versions.json` for the current value. The image starts in `observe`, as step 5 of [Add an upstream image](/operations/add-an-upstream-image--01a18383d9be.md) requires. For the first scan, see [The first valkey scan found no Critical and 14 krb5-libs Highs on 2026-11-15](/findings/the-first-valkey-scan-found-no-critical-and-14-krb5-libs-highs-on-2026-11-15--01a1df6016ea.md).
 
+The 14 fixable `krb5-libs` Highs of the `ubi9-minimal` base are waived by `EXC-2026-0042` until 2026-12-15, by the owner's decision of 2026-11-15. UBI did not carry the fix (`1.21.1-10.el9_9.2`) on that date. With the waiver, a leg with no other blocking finding goes to `trusted/`. See [Two waivers accept the krb5-libs Highs in valkey and litellm until 2026-12-15](/findings/two-waivers-accept-the-krb5-libs-highs-in-valkey-and-litellm-until-2026-12-15--01a1df9f1d8d.md).
+
 ## Interface
 
 | Item | Value |

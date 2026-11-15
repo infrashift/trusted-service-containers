@@ -130,7 +130,9 @@ The repo gate adds `VERSIONS_PACKAGE_FIELD_MISSING`, `VERSIONS_PACKAGE_TRUST_CLA
 * `make -f Ops.mk verify-package-pins` checks that each pinned NEVRA is still in its repository and that each live key equals the committed copy. `verify-pins` runs it.
 * `make -f Ops.mk check-keyring` holds each package key to its sidecar, to `signerFileSha256` and to `signerFingerprint`. The Repo Gate runs it.
 * `scripts/lint-containerfiles.sh` checks the shape of a package Containerfile: one stage on the pinned base, the five labels from the correct build arguments, no way to disable a signature check, an upgrade before the third-party key exists, `rpm -q` verification, a non-root `USER` in GID 0, and runtime fields that agree with `versions.json`.
-* The matrix guard in `build.yml`, `review.yml` and `release.yml` accepts the kind `package` and stays byte-identical. A package leg runs in the build job. `build.yml` rebuilds a package image when its base or its repository entry changes.
+* The `kind` of a matrix leg is the job family, not the image kind. A package image is a `build` leg in the matrix and runs in the build job. `scripts/build-leg.sh`, `scripts/review-leg.sh` and `scripts/release-leg.sh` read the image kind from the checked-out `versions.json` and refuse a family that does not fit it. The matrix guard does not change. `review.yml` runs on `workflow_run`, from the default branch, so a guard that learned a new kind in a PR rejects the matrix of that PR. We found this on the first review of this change.
+* For the same reason, `scripts/review-leg.sh` installs the pinned `syft` itself when the review job did not.
+* `build.yml` rebuilds a package image when its base or its repository entry changes.
 * The release tags are those of the build track: `<version>-<shortsha>-<arch>`, then the manifest lists `<version>`, `<version>-<shortsha>` and `<version>-<YYYYMMDD>`.
 
 ## The proof

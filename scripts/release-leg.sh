@@ -21,8 +21,12 @@ DEV_REPO="ghcr.io/${GITHUB_REPOSITORY}/development/${SERVICE}"
 
 # The kind comes from versions.json and must agree with the matrix: it decides
 # which tag the development image carries.
+# The matrix kind is the job family; a package image (ADR-009) is a "build" leg.
 REPO_KIND=$(jq -r '.kind' <<<"$IMG")
-[[ "$REPO_KIND" == "$KIND" ]] || fail "the matrix says kind ${KIND} but versions.json declares ${REPO_KIND} for ${SERVICE}"
+case "${KIND}/${REPO_KIND}" in
+  mirror/mirror|build/build|build/package) KIND="$REPO_KIND" ;;
+  *) fail "the matrix runs a ${KIND} leg but versions.json declares kind ${REPO_KIND} for ${SERVICE}" ;;
+esac
 
 if [[ "$KIND" == "mirror" ]]; then
   UPSTREAM_TAG=$(jq -r --arg v "$VARIANT" '.variants[$v].tag' <<<"$IMG")

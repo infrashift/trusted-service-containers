@@ -262,13 +262,13 @@ jobs:
             type == "array" and length > 0 and length <= 64 and
             all(.[];
               type == "object" and
-              (.kind        | IN("mirror","build","package")) and
+              (.kind        | IN("mirror","build")) and
               (.service     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.variant     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.leg         | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,127}$")) and
               (.trust_class | IN("dhi","none","internal","notation")) and
               (.leg == (.service + "-" + .variant)) and
-              (if (.kind | IN("build","package"))
+              (if .kind == "build"
                then ((keys_unsorted|sort) == ["arch","kind","leg","service","trust_class","variant"]
                      and (.arch | IN("amd64","arm64")))
                else ((keys_unsorted|sort) == ["kind","leg","service","trust_class","variant"])
@@ -281,7 +281,7 @@ jobs:
             echo "matrix=$(jq -c '.' build-matrix.json)"
             # Mirror legs are excluded STRUCTURALLY, not by an if: inside the
             # job. A mirrored index must never be taken apart and reassembled.
-            echo "manifest_matrix=$(jq -c '[.[] | select(.kind == "build" or .kind == "package") | {service, leg}] | unique' build-matrix.json)"
+            echo "manifest_matrix=$(jq -c '[.[] | select(.kind == "build") | {service, leg}] | unique' build-matrix.json)"
           } >> "$GITHUB_OUTPUT"
 
   # =========================================================================

@@ -34,8 +34,9 @@ mkdir -p "$EVIDENCE"
 IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
 KIND=$(jq -r '.kind' <<<"$IMG")
 [[ "$KIND" == build || "$KIND" == package ]] || fail "images.${SERVICE}.kind is '${KIND}'; build-leg.sh builds only kind build or package"
-if [[ -n "${MATRIX_KIND:-}" && "$MATRIX_KIND" != "$KIND" ]]; then
-  fail "the matrix says kind ${MATRIX_KIND} but versions.json says ${KIND} for ${SERVICE}"
+# The matrix kind is the job family: both image kinds are "build" legs there.
+if [[ -n "${MATRIX_KIND:-}" && "$MATRIX_KIND" != build ]]; then
+  fail "the matrix runs ${SERVICE} as a ${MATRIX_KIND} leg, but versions.json kind ${KIND} is built by the build job"
 fi
 
 BASE_KEY=$(jq -r '.base'     <<<"$IMG")
@@ -405,7 +406,7 @@ jq -n --arg leg "$LEG" --arg svc "$SERVICE" --arg var "$VARIANT" --arg tc "$TRUS
       --arg enf "$ENFORCEMENT" --arg arch "$ARCH" --arg slug "$SLUG" --arg cu "$CONFIG_USER" \
       --argjson labels "$LABELS" \
   --arg kind "$KIND" \
-  '{ kind: $kind, leg: $leg, service: $svc, variant: $var, trust_class: $tc,
+  '{ kind: "build", image_kind: $kind, leg: $leg, service: $svc, variant: $var, trust_class: $tc,
      enforcement: $enf, config_user: $cu, labels: $labels,
      subject: { repository: $repo, tag: $tag, digest: $dig,
                 media_type: "application/vnd.oci.image.manifest.v1+json", is_index: false },

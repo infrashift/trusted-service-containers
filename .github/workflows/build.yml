@@ -60,12 +60,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Every leg of every kind. leg == service + "-" + variant for ALL
-          # tracks; build and package entries carry an implicit "runtime"
-          # variant so the invariant holds uniformly and the schema guard can
-          # assert it. A package entry (ADR-009) is built per arch exactly like
-          # a build entry; its kind travels in the matrix so every later step
-          # can hold it against versions.json.
+          # Every leg of either kind. leg == service + "-" + variant for BOTH
+          # tracks; build entries carry an implicit "runtime" variant so the
+          # invariant holds uniformly and the schema guard can assert it.
+          #
+          # The matrix `kind` is the JOB FAMILY, not the image kind: a package
+          # entry (ADR-009) is built per arch on the build runners, so it is a
+          # "build" leg here. build-leg.sh, review-leg.sh and release-leg.sh
+          # read the image kind from the checked-out versions.json. The guard
+          # below stays as it was: review.yml runs on workflow_run, from the
+          # DEFAULT branch, so a guard that learned a new kind on a PR would
+          # reject that PR's own matrix at the review boundary.
           ALL=$(jq -c '
             [ .images | to_entries[]
               | .key as $svc | .value as $v
@@ -76,7 +81,7 @@ jobs:
                            trust_class: $v.upstreamTrust } )
                 else ( $v.arches[] as $a
                        | { service: $svc, variant: "runtime",
-                           leg: ($svc + "-runtime"), kind: $v.kind,
+                           leg: ($svc + "-runtime"), kind: "build",
                            trust_class: $v.upstreamTrust, arch: $a } )
                 end
             ]' versions.json)
@@ -150,13 +155,13 @@ jobs:
             type == "array" and length > 0 and length <= 64 and
             all(.[];
               type == "object" and
-              (.kind        | IN("mirror","build","package")) and
+              (.kind        | IN("mirror","build")) and
               (.service     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.variant     | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,63}$")) and
               (.leg         | type == "string" and test("^[a-z0-9][a-z0-9._-]{0,127}$")) and
               (.trust_class | IN("dhi","none","internal","notation")) and
               (.leg == (.service + "-" + .variant)) and
-              (if (.kind | IN("build","package"))
+              (if .kind == "build"
                then ((keys_unsorted|sort) == ["arch","kind","leg","service","trust_class","variant"]
                      and (.arch | IN("amd64","arm64")))
                else ((keys_unsorted|sort) == ["kind","leg","service","trust_class","variant"])
@@ -168,12 +173,12 @@ jobs:
           fi
 
           MIRROR=$(jq -c '[.[] | select(.kind == "mirror")]' build-matrix.json)
-          BUILD=$(jq  -c '[.[] | select(.kind == "build" or .kind == "package")]'  build-matrix.json)
+          BUILD=$(jq  -c '[.[] | select(.kind == "build")]'  build-matrix.json)
           # Manifest lists are reconstructed ONLY for build legs, and only in
           # release.yml after a verdict exists. Mirror legs must never appear
           # here: rebuilding a manifest list over a mirrored index would replace
           # the vendor's signed index with one they never signed.
-          MANIFEST=$(jq -c '[.[] | select(.kind == "build" or .kind == "package") | {service, variant, leg}] | unique' build-matrix.json)
+          MANIFEST=$(jq -c '[.[] | select(.kind == "build") | {service, variant, leg}] | unique' build-matrix.json)
 
           {
             echo "mirror_matrix=$MIRROR"
@@ -294,7 +299,8 @@ jobs:
     name: Build ${{ matrix.leg }} (${{ matrix.arch }})
     needs: matrix-setup
     if: needs.matrix-setup.outputs.build_matrix != '[]'
-    # Build AND package legs (ADR-009): both run buildah on a pinned base.
+    # Build AND package images (ADR-009): both are "build" legs in the matrix
+    # and run buildah on a pinned base.
     # Native arm64 runners here, unlike the mirror job: buildah EXECUTES the RUN
     # steps in the Containerfile, so the builder architecture must match.
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}

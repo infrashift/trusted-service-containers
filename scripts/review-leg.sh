@@ -103,11 +103,15 @@ record build_attestations PASS "provenance, upstream-verification and per-platfo
 # 4. Anti-downgrade: trust class comes from the REPO, never the evidence.
 # ===========================================================================
 IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
-# So does the kind. A matrix (or an evidence bundle) that calls a package
-# entry a build entry, or the reverse, would pick the wrong policy track.
+# So does the image kind, which picks the policy track. The matrix kind is the
+# job family: build and package images (ADR-009) are both "build" legs there,
+# so it only has to be consistent with versions.json, never decisive.
 REPO_KIND=$(jq -r '.kind' <<<"$IMG")
-[[ "$REPO_KIND" == "$KIND" ]] \
-  || fail "the matrix says kind ${KIND} but versions.json declares ${REPO_KIND} for ${SERVICE}"
+case "${KIND}/${REPO_KIND}" in
+  mirror/mirror|build/build|build/package) ;;
+  *) fail "the matrix runs a ${KIND} leg but versions.json declares kind ${REPO_KIND} for ${SERVICE}" ;;
+esac
+KIND="$REPO_KIND"
 REPO_TRUST=$(jq -r '.upstreamTrust' <<<"$IMG")
 EV_TRUST=$(jq -r '.trust_class' "$EV/upstream-verification.json")
 [[ "$EV_TRUST" == "$REPO_TRUST" ]] \
@@ -197,6 +201,16 @@ elif [[ "$KIND" == package ]]; then
   BASE_KEY=$(jq -r '.base' <<<"$IMG")
   PKG_REPO_ID=$(jq -r '.packages.repo' <<<"$IMG")
   PKG_REPO=$(jq -c --arg r "$PKG_REPO_ID" --arg a "$ARCH" '.packageRepos[$r][$a] // {}' versions.json)
+  # review.yml installs syft. It runs from the default branch (workflow_run),
+  # so until the version that does is on main, install the tools.lock pin here
+  # with the same installer and version pin the build job uses, into a
+  # directory of this job.
+  if ! command -v syft >/dev/null 2>&1; then
+    TOOLS_BIN="${RUNNER_TEMP:-/tmp}/tsc-review-bin"
+    mkdir -p "$TOOLS_BIN"
+    BIN="$TOOLS_BIN" ./scripts/install-tools.sh syft >/dev/null || fail "could not install the pinned syft"
+    PATH="${TOOLS_BIN}:${PATH}"
+  fi
   OBSERVED=$(scripts/package-observe.sh "${DEST_REPO}@${LIVE_DIGEST}" "$PKG_REPO_ID") \
     || fail "could not re-derive the package set of ${DEST_REPO}@${LIVE_DIGEST} from GHCR"
   PACKAGE_BLOCK=$(jq -n \

@@ -96,9 +96,12 @@ Some software is C, and no free signed repository ships it. Valkey is an example
 * There is no vendor binary comparison. The build records the sha256 of our binary as a change detector, and the review holds the builder, the base, the commit and the archive against `versions.json`.
 * The matrix emits a native image as a `build` leg. A native leg rebuilds when its source, its builder or its base changes.
 
-| Image | Language | Source | Builder and base |
+Language `python` has no git source. Its pinned input is a hash lock in `locks/<image>/requirements.txt`, pinned by sha256 in `native.lock`. The builder installs it with `pip --require-hashes --no-deps --only-binary=:all:` into a venv that has no pip. The review requires that the lock in the checkout, the copy of the lock in the image and the Python distributions in the venv agree. `scripts/check-locks.sh` holds each lock to its pin.
+
+| Image | Language | Pinned input | Builder and base |
 |---|---|---|---|
-| [valkey](/images/valkey--01a1df5f8878.md) | `c` | `sources.valkey` | `ubi9-minimal` |
+| [valkey](/images/valkey--01a1df5f8878.md) | `c` | `sources.valkey` (commit and release archive) | `ubi9-minimal` |
+| [litellm](/images/litellm--01a1df710394.md) | `python` | `locks/litellm/requirements.txt` | `ubi9-minimal` |
 
 ## Source fetch
 

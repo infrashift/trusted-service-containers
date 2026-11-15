@@ -60,6 +60,7 @@ The enforcement column shows a state that can change. See `versions.json` for th
 | [chit](/images/chit--01a1dbd53dc3.md) | build, first-party | `internal` | `observe` (2026-11-14) | infrashift |
 | [postgresql17](/images/postgresql17--01a1dd2247ba.md) | package (ADR-009) | `internal` | `enforce` (2026-11-14) | Database |
 | [valkey](/images/valkey--01a1df5f8878.md) | native, `c` (ADR-010) | `internal` | `observe` (2026-11-15) | Cache and state store |
+| [litellm](/images/litellm--01a1df710394.md) | native, `python` (ADR-010) | `internal` | `observe` (2026-11-15) | Model gateway |
 
 The trust class of a built image is `internal`, because the upstream signature that we verify is the signature of our `ubi9-micro` base. The vendor image of the binary cross-check has its own trust class, given in each concept.
 

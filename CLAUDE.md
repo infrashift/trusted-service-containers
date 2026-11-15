@@ -128,6 +128,13 @@ lint rejects a signature bypass, any extra repository and a compiler in the
 runtime stage. There is no vendor comparison -- do not add a `crosscheck` or
 `firstParty` to a native entry; the repo gate denies both.
 
+Language `python` (`litellm`) pins a hash lock instead of a commit. Never edit
+`locks/<image>/requirements.txt` by hand: regenerate it from
+`requirements.in` with the command in its header, then update
+`native.lock.sha256` (`make -f Ops.mk check-locks` fails until you do). The
+venv is created `--without-pip`, so any distribution outside the lock --
+including pip itself -- fails the review.
+
 ## Workflow conventions
 
 - Every `uses:` pinned to a 40-char SHA; every tool version pinned in `tools.lock`.

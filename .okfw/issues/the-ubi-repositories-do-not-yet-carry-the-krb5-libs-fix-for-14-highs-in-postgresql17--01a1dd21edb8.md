@@ -8,6 +8,7 @@ tags:
   - "open"
   - "postgresql17"
   - "valkey"
+  - "litellm"
   - "cve"
   - "waiver"
 created: "2026-11-14T20:55:50-06:00"
@@ -44,12 +45,14 @@ The [postgresql17](/images/postgresql17--01a1dd2247ba.md) image has 14 High find
 - [ ] `ubi-9-baseos` carries `krb5-libs-1.21.1-10.el9_9.2` or later.
 - [ ] A rebuild of postgresql17 shows 0 `krb5-libs` findings.
 - [ ] A rebuild of valkey shows 0 `krb5-libs` findings.
+- [ ] A rebuild of litellm shows 0 `krb5-libs` findings.
 - [ ] A change removes `EXC-2026-0041` from `.github/pdp/exceptions.yaml`.
 
 ## Related
 
 * [postgresql17](/images/postgresql17--01a1dd2247ba.md)
 * [valkey](/images/valkey--01a1df5f8878.md)
+* [litellm](/images/litellm--01a1df710394.md): the same 14 findings on 2026-11-15, no waiver. See [The first litellm scan found no Python finding and 14 krb5-libs Highs on 2026-11-15](/findings/the-first-litellm-scan-found-no-python-finding-and-14-krb5-libs-highs-on-2026-11-15--01a1df7103a8.md).
 * [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md)
 * [Waive a CVE](/operations/waive-a-cve--01a18383da9f.md)
 * [Waivers](/supply-chain/waivers--01a18383d898.md)

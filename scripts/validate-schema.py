@@ -29,4 +29,5 @@ if errors:
 
 n = len(data.get("images", {}))
 mirror = sum(1 for v in data["images"].values() if v["kind"] == "mirror")
-print(f"OK: versions.json matches schema ({n} images: {mirror} mirror, {n - mirror} build)")
+package = sum(1 for v in data["images"].values() if v["kind"] == "package")
+print(f"OK: versions.json matches schema ({n} images: {mirror} mirror, {n - mirror - package} build, {package} package)")

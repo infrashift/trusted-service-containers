@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Assemble multi-arch manifest lists for ONE built service.
 #
-# Build-track only. Mirror legs are excluded structurally, via manifest_matrix,
+# Build and package images only. Mirror legs are excluded structurally, via manifest_matrix,
 # not by a condition inside this script: running `buildah manifest create` over
 # a mirrored index would replace the vendor's signed index with one they never
 # signed, which is the single thing the mirror track exists to prevent.
@@ -17,8 +17,14 @@ set -euo pipefail
 : "${SERVICE:?}" "${LEG:?}" "${SHORT_SHA:?}" "${DATE_TAG:?}" "${GITHUB_REPOSITORY:?}"
 
 IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
-SRC_KEY=$(jq -r '.source' <<<"$IMG")
-VERSION=$(jq -r --arg s "$SRC_KEY" '.sources[$s].ref' versions.json)
+# A build image is versioned by its source ref, a package image (ADR-009) by
+# packages.version. The two kinds publish the same tag shapes.
+case "$(jq -r '.kind' <<<"$IMG")" in
+  build)   VERSION=$(jq -r --arg s "$(jq -r '.source' <<<"$IMG")" '.sources[$s].ref' versions.json) ;;
+  package) VERSION=$(jq -r '.packages.version' <<<"$IMG") ;;
+  *) echo "::error::${SERVICE} is not a build or package image; manifest lists are never rebuilt over a mirror" >&2; exit 1 ;;
+esac
+[[ "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || { echo "::error::version '${VERSION}' of ${SERVICE} is not a valid tag" >&2; exit 1; }
 mapfile -t ARCHES < <(jq -r '.arches[]' <<<"$IMG")
 
 TRUSTED="ghcr.io/${GITHUB_REPOSITORY}/trusted/${SERVICE}"

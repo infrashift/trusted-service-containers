@@ -112,6 +112,12 @@ jobs:
       - name: Validate versions.json against the JSON Schema
         run: python3 scripts/validate-schema.py
 
+      - name: Check the vendored keys against their pins
+        # Every key under .github/pdp/keyring/ against its .sha256 sidecar, and
+        # each package repository key (ADR-009) against the signerFileSha256 and
+        # signerFingerprint that versions.json pins for it.
+        run: make -f Ops.mk check-keyring
+
       - name: Assert a single authoritative policy
         run: ./scripts/check-no-orphan-rego.sh
 

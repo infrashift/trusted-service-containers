@@ -26,9 +26,10 @@ REQUIRED_LABELS = [
 ]
 
 build_imgs = {k: v for k, v in V['images'].items() if v['kind'] == 'build'}
+package_imgs = {k: v for k, v in V['images'].items() if v['kind'] == 'package'}
 
 # --- Every declared Containerfile exists, and none is orphaned -------------
-declared = {v['containerfile'] for v in build_imgs.values()}
+declared = {v['containerfile'] for v in build_imgs.values()} | {v['containerfile'] for v in package_imgs.values()}
 on_disk = {os.path.join('Containerfiles', f) for f in os.listdir('Containerfiles')
            if f.endswith('.Containerfile')}
 for p in sorted(declared - on_disk):
@@ -224,11 +225,122 @@ for svc, img in sorted(build_imgs.items()):
     if V['sources'].get(img['source'], {}).get('assets') and f"src/.assets/{svc}/" not in code:
         err(p, f"sources.{img['source']} declares assets but the build never copies src/.assets/{svc}/")
 
+# ===========================================================================
+# Package-track Containerfiles (ADR-009): signed RPMs at pinned NEVRAs on our
+# base. No compiler, so none of the Go checks above apply; these do instead.
+# ===========================================================================
+def runtime_checks(p, ins, rt):
+    exp = next((i for i in ins if i.upper().startswith('EXPOSE ')), None)
+    got_ports = sorted(int(x) for x in exp.split()[1:]) if exp else []
+    if got_ports != sorted(rt['ports']):
+        err(p, f"EXPOSE {got_ports} disagrees with versions.json runtime.ports {sorted(rt['ports'])}")
+    vols = sorted(v for i in ins if i.upper().startswith('VOLUME ') for v in i.split()[1:])
+    if vols != sorted(rt.get('volumes', [])):
+        err(p, f"VOLUME {vols} disagrees with versions.json runtime.volumes {sorted(rt.get('volumes', []))}")
+    for kw, want in (('ENTRYPOINT', rt['entrypoint']), ('CMD', rt.get('cmd', []))):
+        line = next((i for i in ins if i.upper().startswith(kw + ' ')), None)
+        if line is None:
+            if want:
+                err(p, f"no {kw}")
+            continue
+        try:
+            got = json.loads(line[len(kw) + 1:])
+        except Exception:
+            err(p, f"{kw} must be exec form (a JSON array)")
+            continue
+        if got != want:
+            err(p, f"{kw} {got} disagrees with versions.json runtime.{kw.lower()} {want}")
+
+for svc, img in sorted(package_imgs.items()):
+    p = img['containerfile']
+    if p not in on_disk:
+        continue
+    ins = instructions(open(p).read())
+    code = "\n".join(ins)
+    heads = [i.split(None, 1)[0].upper() for i in ins]
+    rt = img['runtime']
+
+    froms = [i for i in ins if i.upper().startswith('FROM ')]
+    if len(froms) != 1:
+        err(p, f"a package image has exactly 1 stage, on the pinned base; found {len(froms)}")
+    for f in froms:
+        if f != 'FROM ${UPSTREAM_BASE}@${UPSTREAM_DIGEST}':
+            err(p, f"FROM must be the pinned base via build args, `FROM ${{UPSTREAM_BASE}}@${{UPSTREAM_DIGEST}}`: {f!r}")
+    if not froms:
+        continue
+    first_from = heads.index('FROM')
+    pre = {i.split()[1] for i in ins[:first_from] if i.upper().startswith('ARG ')}
+    post = {i.split()[1] for i in ins[first_from:] if i.upper().startswith('ARG ')}
+    for need in ("UPSTREAM_BASE", "UPSTREAM_DIGEST"):
+        if need not in pre:
+            err(p, f"missing pre-FROM `ARG {need}`")
+    for need in ("UPSTREAM_BASE", "UPSTREAM_DIGEST", "PACKAGE_REPO_ID", "PACKAGE_BASEURL", "PACKAGE_KEY",
+                 "PACKAGE_KEY_SHA256", "PACKAGE_KEY_ID", "PACKAGE_NEVRAS", "PACKAGE_VERSION", "PACKAGE_EVR"):
+        if need not in post:
+            err(p, f"`ARG {need}` is not declared after FROM; anything that references it expands to an empty string")
+
+    for m in re.finditer(r'sha256:[a-f0-9]{7,}', code):
+        err(p, f"hardcoded digest {m.group(0)[:20]}...; digests belong in versions.json only")
+
+    # The five labels, each from the build arg the policy holds it against:
+    # PACKAGE_SOURCE/REVISION/VERSION_LABEL_DISAGREES and BUILD_LABEL_DIGEST_DISAGREES.
+    labels = [i for i in ins if i.upper().startswith('LABEL ')]
+    if len(labels) != 1:
+        err(p, f"expected exactly 1 LABEL instruction, found {len(labels)}")
+    else:
+        for name, arg in (("org.opencontainers.image.source", "PACKAGE_BASEURL"),
+                          ("org.opencontainers.image.revision", "PACKAGE_EVR"),
+                          ("org.opencontainers.image.version", "PACKAGE_VERSION"),
+                          ("io.infrashift.image.upstream.digest", "UPSTREAM_DIGEST"),
+                          ("io.infrashift.image.upstream.source", "UPSTREAM_BASE")):
+            if f'{name}="${{{arg}}}"' not in labels[0]:
+                err(p, f'LABEL block must set {name}="${{{arg}}}"')
+
+    # Signature checking is never turned off, by any spelling.
+    for bad in (r'--nogpgcheck', r'gpgcheck\s*=\s*0', r'--setopt=\S*gpgcheck=(0|False|false)', r'--no-gpg', r'rpm\s+(-i|-U|--install|--upgrade)\b.*--nosignature'):
+        if re.search(bad, code):
+            err(p, f"disables signature checking ({bad}); every RPM and the repository metadata must verify")
+    if not re.search(r'\\ngpgcheck=1\\n', code) or not re.search(r'\\nrepo_gpgcheck=1\\n', code):
+        err(p, "the repository file must set gpgcheck=1 and repo_gpgcheck=1")
+    if 'gpgkey=file://' not in code:
+        err(p, "the repository file must name the committed key (gpgkey=file://...)")
+    if 'sha256sum --check --strict' not in code or '${PACKAGE_KEY_SHA256}' not in code:
+        err(p, "the key file is not checked against PACKAGE_KEY_SHA256 before it is imported")
+    if not re.search(r'COPY \$\{PACKAGE_KEY\} /etc/pki/rpm-gpg/RPM-GPG-KEY-\$\{PACKAGE_REPO_ID\}', code):
+        err(p, "the committed key must be copied to /etc/pki/rpm-gpg/RPM-GPG-KEY-${PACKAGE_REPO_ID}; scripts/package-observe.sh reads it there")
+    if '/etc/yum.repos.d/tsc-${PACKAGE_REPO_ID}.repo' not in code:
+        err(p, "the repository file must be /etc/yum.repos.d/tsc-${PACKAGE_REPO_ID}.repo; scripts/package-observe.sh reads it there")
+    inst = re.search(r'\b(microdnf|dnf)\b[^;]*\binstall\b[^;]*\$\{PACKAGE_NEVRAS\}', code)
+    if not inst:
+        err(p, "does not install exactly ${PACKAGE_NEVRAS}; a package name alone is not a pin")
+    imp = code.find('rpm --import')
+    upg = re.search(r'\bmicrodnf\b[^;]*\bupgrade\b', code)
+    if imp < 0:
+        err(p, "does not `rpm --import` the pinned key")
+    elif upg is None or upg.start() > imp:
+        err(p, "must upgrade the base from the UBI repositories BEFORE the third-party key and repository exist, so no third-party package can replace a base package")
+    if "rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\\n' \"$nevra\"" not in code:
+        err(p, "does not verify every pinned NEVRA with `rpm -q` after the install")
+    if 'Key ID ${PACKAGE_KEY_ID}' not in code:
+        err(p, "does not check that each pinned NEVRA is signed by ${PACKAGE_KEY_ID}")
+
+    # Non-root, group 0, no root at runtime.
+    if 'chmod -R g=u' not in code:
+        err(p, "does not `chmod g=u`; the image would break under OpenShift's arbitrary-UID SCC")
+    if not re.search(r'usermod -g 0\b', code):
+        err(p, "the runtime user's primary group must be GID 0 (usermod -g 0)")
+    want_user = f"USER {rt['user']}"
+    if not ins or ins[-1].upper() != want_user:
+        err(p, f"last instruction must be `{want_user}`, found {ins[-1]!r}" if ins else "empty file")
+    if f"COPY rootfs/{svc}/ /" not in code:
+        err(p, f"does not copy rootfs/{svc}/")
+    runtime_checks(p, ins, rt)
+
 if fail:
     for m in fail:
         print(f"error: {m}", file=sys.stderr)
     print(f"\n{len(fail)} Containerfile issue(s)", file=sys.stderr)
     sys.exit(1)
 
-print(f"OK: {len(build_imgs)} Containerfiles pass shape and versions.json agreement")
+print(f"OK: {len(build_imgs) + len(package_imgs)} Containerfiles ({len(build_imgs)} build, {len(package_imgs)} package) pass shape and versions.json agreement")
 PY

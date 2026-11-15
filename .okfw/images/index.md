@@ -19,6 +19,7 @@
 * [nexus3](nexus3--01a183832d26.md) - The Sonatype Nexus 3 repository manager, mirrored from Docker Hub on the 3.90 patch line with no verifiable signature; trust class none.
 * [oathkeeper](oathkeeper--01a183832de0.md) - Ory Oathkeeper, the identity and access proxy, built from the pinned Ory source onto ubi9-micro in lockstep with the Ory images.
 * [postgres](postgres--01a183832d06.md) - The PostgreSQL database, mirrored from Docker Hardened Images in four variants for majors 16 and 17; trust class dhi.
+* [postgresql17](postgresql17--01a1dd2247ba.md) - PostgreSQL 17 from signed PGDG RPMs at pinned NEVRAs on our ubi9-minimal; package track, UID 26, the postgres env contract of the DHI image.
 * [prometheus](prometheus--01a183832e94.md) - The Prometheus monitoring server with promtool and the prebuilt web UI of the vendor, built from source onto ubi9-micro.
 * [prometheus-nats-exporter](prometheus-nats-exporter--01a183832f0f.md) - The Prometheus exporter for NATS monitoring endpoints, built from source onto ubi9-micro; PR #29 is the reason for the observe-is-not-a-pass rule.
 * [seaweedfs](seaweedfs--01a183832ee2.md) - The SeaweedFS object store with an S3 gateway, the replacement for MinIO, built from source onto ubi9-micro; it joined in observe mode.

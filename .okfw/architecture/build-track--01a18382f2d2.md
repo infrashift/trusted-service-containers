@@ -79,6 +79,14 @@ A program without a version variable cannot get an `-X` stamp. The Go linker ign
 
 Each builder stage runs the new binary once, for example with `--version` or `--help`. This test finds a binary that links but does not run. For example, `daprd` without its component tag compiles, but it panics at its first start. Some smoke tests also compare the version output with the expected value. They capture the output and do not pipe it into `grep -q`, because SIGPIPE under `pipefail` fails the build.
 
+## The package kind
+
+Some software is not Go, and its vendor ships signed RPMs for RHEL. PostgreSQL is an example. For this software, a build entry has the kind `package`. It installs exact NEVRAs from one pinned repository onto our base, and runs no compiler. It has no toolchain, no source commit and no binary cross-check. Its provenance is the package set: the base, the repository, the key and the NEVRAs. The review actor re-derives each one from `versions.json` and from the image on GHCR. See [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md).
+
+| Image | Repository | Base |
+|---|---|---|
+| [postgresql17](/images/postgresql17--01a1dd2247ba.md) | `packageRepos.pgdg17-el9` | `ubi9-minimal` |
+
 ## Source fetch
 
 `scripts/fetch-source.sh` fetches the pinned commit, not the tag, and asserts that the tag resolves to that commit. Some upstreams stamp a short commit whose length git chooses dynamically. A shallow clone gives a shorter value, so `versions.json` pins `shortCommit` as data.
@@ -93,3 +101,4 @@ Each builder stage runs the new binary once, for example with `--version` or `--
 * [Mirror track](/architecture/mirror-track--01a18382f29c.md)
 * [Architecture overview](/architecture/architecture-overview--01a1837da50c.md)
 * [Eight build Containerfiles say that fetch-source.sh removes .git](/issues/eight-build-containerfiles-say-that-fetch-source-sh-removes-git--01a18395b4ba.md)
+* [ADR-009: A package build installs signed RPMs at pinned NEVRAs](/decisions/adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md)

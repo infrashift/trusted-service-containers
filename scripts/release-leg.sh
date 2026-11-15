@@ -19,15 +19,33 @@ fail() { echo "::error::$*"; exit 1; }
 IMG=$(jq -ce --arg s "$SERVICE" '.images[$s]' versions.json)
 DEV_REPO="ghcr.io/${GITHUB_REPOSITORY}/development/${SERVICE}"
 
+# The kind comes from versions.json and must agree with the matrix: it decides
+# which tag the development image carries.
+# The matrix kind is the job family; a package image (ADR-009) is a "build" leg.
+REPO_KIND=$(jq -r '.kind' <<<"$IMG")
+case "${KIND}/${REPO_KIND}" in
+  mirror/mirror|build/build|build/package) KIND="$REPO_KIND" ;;
+  *) fail "the matrix runs a ${KIND} leg but versions.json declares kind ${REPO_KIND} for ${SERVICE}" ;;
+esac
+
 if [[ "$KIND" == "mirror" ]]; then
   UPSTREAM_TAG=$(jq -r --arg v "$VARIANT" '.variants[$v].tag' <<<"$IMG")
   DEV_TAG="pr-${PR_NUM}-${UPSTREAM_TAG}"
   BASE_TAG="$UPSTREAM_TAG"
-else
-  SRC_KEY=$(jq -r '.source' <<<"$IMG")
-  VERSION=$(jq -r --arg s "$SRC_KEY" '.sources[$s].ref' versions.json)
+elif [[ "$KIND" == "build" || "$KIND" == "package" ]]; then
+  # A build image is versioned by its source ref, a package image by the
+  # upstream version that every pinned NEVRA carries (packages.version).
+  if [[ "$KIND" == "build" ]]; then
+    SRC_KEY=$(jq -r '.source' <<<"$IMG")
+    VERSION=$(jq -r --arg s "$SRC_KEY" '.sources[$s].ref' versions.json)
+  else
+    VERSION=$(jq -r '.packages.version' <<<"$IMG")
+  fi
+  [[ "$VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || fail "version '${VERSION}' of ${SERVICE} is not a valid tag"
   DEV_TAG="pr-${PR_NUM}-${VERSION}-${ARCH}"
   BASE_TAG="$VERSION"
+else
+  fail "unknown kind ${KIND}"
 fi
 
 DEV_DIGEST=$(regctl manifest head --format '{{.GetDescriptor.Digest}}' "${DEV_REPO}:${DEV_TAG}") \

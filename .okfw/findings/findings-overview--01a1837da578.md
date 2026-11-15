@@ -47,6 +47,7 @@ The date after each link is the expiry. `.github/pdp/exceptions.yaml` is the sou
 * [Waiver EXC-2026-0008 accepts two libcurl Criticals in postgres until 2026-12-29](/findings/waiver-exc-2026-0008-accepts-two-libcurl-criticals-in-postgres-until-2026-12-29--01a1838a6a7d.md): expires 2026-12-29.
 * [Waivers EXC-2026-0009 to 0015 accept grpc findings in Ory and dapr until 2026-12-29](/findings/waivers-exc-2026-0009-to-0015-accept-grpc-findings-in-ory-and-dapr-until-2026-12-29--01a1838a6af1.md): expires 2026-12-29. On 2026-10-28, the dapr waivers in this group matched no finding.
 * [Waiver EXC-2026-0016 accepts amqp091-go findings in daprd until 2026-12-29](/findings/waiver-exc-2026-0016-accepts-amqp091-go-findings-in-daprd-until-2026-12-29--01a1838a6b8d.md): expires 2026-12-29. On 2026-10-28, it matched no finding.
+* [The first postgresql17 scan found no Critical and 14 krb5-libs Highs on 2026-11-14](/findings/the-first-postgresql17-scan-found-no-critical-and-14-krb5-libs-highs-on-2026-11-14--01a1dd2247cf.md): `EXC-2026-0041`, expires 2026-12-14. It also gives the scan counts of the first postgresql17 build.
 
 ### Measurements
 

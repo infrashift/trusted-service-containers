@@ -1,0 +1,3 @@
+;; Empty on purpose: with the default /etc/pgbouncer/pgbouncer.ini nobody can
+;; log in. Mount your own auth file. PgBouncer reads every double-quoted pair
+;; in this file as a user and a password, so this comment holds no quotes.

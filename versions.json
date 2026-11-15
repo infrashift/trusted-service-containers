@@ -99,14 +99,14 @@
     "go1.26": {
       "image": "docker.io/library/golang",
       "tag": "1.26-trixie",
-      "goVersion": "1.26.10",
+      "goVersion": "1.26.11",
       "amd64": {
-        "digest": "sha256:4ddd76d158c062213aaf055513809cdac05a445b2db3a0f12dbb624ed2e577d9"
+        "digest": "sha256:6327cb290853a5d13091c436b88259b4f35ff70e49b1f8d9e5d1dd1757e9c6ba"
       },
       "arm64": {
-        "digest": "sha256:220fc85e089da8f6ebdb609cfe9c952e4c0784d525679419ca2bbd53f5a6cdfe"
+        "digest": "sha256:3df77c8477bb2de6bea4e835b6d422a65ed88463a248fb2590467732af2f6f7d"
       },
-      "note": "Also the donor for /usr/share/zoneinfo, which ubi9-micro does not ship. goVersion is the image's own GOLANG_VERSION, recorded so a reviewer can see the compiler patch without pulling the image; scripts/drift-upstream.sh re-pins the digests when the rolling tag moves and rewrites goVersion from the new image's config. 1.26.9 (2026-10-13) clears GO-2026-6603/6605/6607/6608/6610/6611/6612/6613, the net/http, crypto/tls and net/textproto advisories published 2026-10-08 that 1.26.6 carried. 1.26.10 re-pinned 2026-10-28 with the ubi9-minimal base refresh, so the full rebuild that base change triggers does not compile on a superseded patch release."
+      "note": "Also the donor for /usr/share/zoneinfo, which ubi9-micro does not ship. goVersion is the image's own GOLANG_VERSION, recorded so a reviewer can see the compiler patch without pulling the image; scripts/drift-upstream.sh re-pins the digests when the rolling tag moves and rewrites goVersion from the new image's config. 1.26.9 (2026-10-13) clears GO-2026-6603/6605/6607/6608/6610/6611/6612/6613, the net/http, crypto/tls and net/textproto advisories published 2026-10-08 that 1.26.6 carried. 1.26.10 re-pinned 2026-10-28 with the ubi9-minimal base refresh, so the full rebuild that base change triggers does not compile on a superseded patch release. 1.26.11 (released 2026-11-10, re-pinned 2026-11-14) carries security fixes to cgo, the go command, the compiler, the linker and net/http (GO-2026-6859, which govulncheck reported in Chit's CI on 1.26.10)."
     }
   },
   "bases": {

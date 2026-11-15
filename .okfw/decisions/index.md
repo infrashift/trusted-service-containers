@@ -13,6 +13,7 @@
 * [ADR-007: The wiki is the tracker of record](adr-007-the-wiki-is-the-tracker-of-record--01a18382f505.md) - ADR-007 makes the .okfw/ wiki the place for issues, plans and findings; GitHub issues and the old .ai/ files point to it.
 * [ADR-008: A first-party build declares that no vendor binary exists](adr-008-a-first-party-build-declares-that-no-vendor-binary-exists--01a1dbc581d4.md) - A build entry for our own infrashift service declares firstParty with a reason in place of crosscheck; absence never means first-party.
 * [ADR-009: A package build installs signed RPMs at pinned NEVRAs](adr-009-a-package-build-installs-signed-rpms-at-pinned-nevras--01a1dd2247a6.md) - Non-Go software that a vendor ships as signed RPMs is built as kind package: exact NEVRAs from one pinned repository and key, verified with rpm -q.
+* [ADR-010: Valkey builds from source on UBI, LiteLLM and Ollama mirror DHI](adr-010-valkey-builds-from-source-on-ubi-litellm-and-ollama-mirror-dhi--01a1dee688b9.md) - HALO's non-Go images: Valkey compiles from pinned source on UBI as the new kind native; LiteLLM and Ollama (CUDA) mirror their DHI images in observe.
 * [Decisions overview](decisions-overview--01a1837da541.md) - The decisions that shape this project, one ADR concept each, and the defects of the reference repo that we guard against.
 * [Defects of the reference repo and their guards](defects-of-the-reference-repo-and-their-guards--01a18382f526.md) - The nine defects of trusted-base-oci-images that this repository did not repeat, and the mechanical guard for each one.
 

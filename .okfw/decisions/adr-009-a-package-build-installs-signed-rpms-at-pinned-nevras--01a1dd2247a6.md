@@ -8,7 +8,7 @@ tags:
   - "package"
   - "p-tsc-4"
 created: "2026-11-14T20:56:13-06:00"
-timestamp: "2026-11-14T20:56:13-06:00"
+timestamp: "2026-11-15T05:14:02-06:00"
 description: "Non-Go software that a vendor ships as signed RPMs is built as kind package: exact NEVRAs from one pinned repository and key, verified with rpm -q."
 status: "draft"
 resource: "https://github.com/infrashift/trusted-service-containers/blob/main/.github/pdp/policies.rego"
@@ -152,7 +152,7 @@ On 2026-11-14 we broke each check deliberately, one break at a time, and confirm
 * A fix that RHEL publishes can reach the UBI repositories days later. The first postgresql17 scan found exactly that for `krb5-libs`. See [The UBI repositories do not yet carry the krb5-libs fix for 14 Highs in postgresql17](/issues/the-ubi-repositories-do-not-yet-carry-the-krb5-libs-fix-for-14-highs-in-postgresql17--01a1dd21edb8.md).
 * A PGDG key rotation stops every build until a reviewed PR updates the key, `signerFileSha256` and `signerFingerprint`.
 * The build matrix carries a third kind. Any tool that reads the matrix must accept it.
-* P-TSC-4 also asks about LiteLLM (Python) and Ollama (CGO and CUDA). This ADR answers it only for software that a vendor ships as signed RPMs. The other two need their own decision.
+* P-TSC-4 also asks about LiteLLM (Python) and Ollama (CGO and CUDA). This ADR answers it only for software that a vendor ships as signed RPMs. [ADR-010: Valkey builds from source on UBI, LiteLLM and Ollama mirror DHI](/decisions/adr-010-valkey-builds-from-source-on-ubi-litellm-and-ollama-mirror-dhi--01a1dee688b9.md) answers it for LiteLLM, Ollama and Valkey.
 
 ## Related
 
@@ -164,4 +164,5 @@ On 2026-11-14 we broke each check deliberately, one break at a time, and confirm
 * [Fail-closed policy contract](/supply-chain/fail-closed-policy-contract--01a18383d851.md)
 * [Pinned upstream keyrings and identities](/architecture/pinned-upstream-keyrings-and-identities--01a18382f417.md)
 * [Add an upstream image](/operations/add-an-upstream-image--01a18383d9be.md)
+* [ADR-010: Valkey builds from source on UBI, LiteLLM and Ollama mirror DHI](/decisions/adr-010-valkey-builds-from-source-on-ubi-litellm-and-ollama-mirror-dhi--01a1dee688b9.md)
 * [Decisions overview](/decisions/decisions-overview--01a1837da541.md)

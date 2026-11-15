@@ -107,6 +107,19 @@
       "url": "https://github.com/nats-io/prometheus-nats-exporter",
       "commit": "efe75c93605a379af2abcb6f4490e95bce46c0b4",
       "note": "Initial pin, the newest release (2026-08-19). v0.20.2 is a lightweight tag on 6d32406b. No shortCommit: goreleaser passes -X main.commit={{.ShortCommit}}, but main.go declares only `version`, so the vendor binary stamps no commit and there is nothing to reproduce. Track is the 0.20 minor line."
+    },
+    "valkey": {
+      "track": "^9\\.1\\.[0-9]+$",
+      "ref": "9.1.3",
+      "url": "https://github.com/valkey-io/valkey",
+      "commit": "29173b67508b2de4c0f0ed551f3b47cf19fc3ca8",
+      "archive": {
+        "url": "https://github.com/valkey-io/valkey/archive/refs/tags/9.1.3.tar.gz",
+        "sha256": "184e34ed2d9b51879b682b5b15205e2b9d677c60280e3cb453be8f520d04e293",
+        "hashSource": "https://github.com/valkey-io/valkey-hashes/blob/cbac0d5b488497ac5928a0e1df8a6f0da7d5b948/README",
+        "note": "The sha256 is the `hash valkey-9.1.3.tar.gz sha256 ...` line of valkey-io/valkey-hashes (README at cbac0d5b, 2026-11-04), a repository separate from the source. Confirmed 2026-11-15: the downloaded archive has that sha256, and its file tree is identical to the tree of commit 29173b67 (diff -r, no .gitattributes export-ignore). Valkey does not sign its tags or archives, so this hash is the independent check on the commit."
+      },
+      "note": "Initial pin, the newest Valkey release (9.1.3, 2026-10-26; lightweight tag on 29173b67). Upgrade urgency SECURITY: it fixes GHSA-f4q9-j22m-xqq9, a heap buffer overflow in cluster Pub/Sub message construction (#5030). Track is the 9.1 minor line, like nats. Native build (ADR-010): compiled on UBI with TLS, no vendor binary comparison."
     }
   },
   "toolchains": {
@@ -1261,6 +1274,58 @@
       },
       "updated": "2026-11-14",
       "reason": "Replaces the DHI postgres mirror for PostgreSQL 17 (owner decision 2026-11-14). The DHI 17 legs had 144 blocking Debian base findings that only Docker can clear; this image is PGDG's signed RPMs on our own ubi9-minimal, so its CVE surface is Red Hat's UBI content. The key is postgresql17, not postgresql with a 17 variant: a build-kind entry has one implicit variant, and one repository per major makes a major upgrade -- a dump and restore, never an image swap -- impossible to receive from a tag move. It does not collide with the mirror key `postgres`, which stays until HALO and Chit move."
+    },
+    "valkey": {
+      "kind": "native",
+      "source": "valkey",
+      "upstreamTrust": "internal",
+      "builder": "ubi9-minimal",
+      "base": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/valkey.Containerfile",
+      "native": {
+        "language": "c",
+        "buildPackages": [
+          "gcc",
+          "make",
+          "openssl",
+          "openssl-devel",
+          "pkgconf-pkg-config"
+        ],
+        "binary": "valkey-server",
+        "installPath": "/usr/bin/valkey-server",
+        "extraBinaries": [
+          "/usr/bin/valkey-cli",
+          "/usr/bin/valkey-benchmark"
+        ],
+        "makeFlags": [
+          "BUILD_TLS=yes",
+          "USE_SYSTEMD=no",
+          "MALLOC=jemalloc"
+        ],
+        "note": "gcc, make and openssl-devel come from the Red Hat signed UBI repositories in the builder; openssl (the CLI) only signs the throwaway certificate of the TLS smoke test, and pkgconf-pkg-config lets the Makefile find libssl. BUILD_TLS=yes links the UBI OpenSSL dynamically (HALO needs TLS); jemalloc and Lua come from Valkey's own deps/ tree. USE_SYSTEMD=no: a container has no systemd to notify. The binaries are stripped of debug data (--strip-debug keeps the symbol table for the crash report). valkey-check-aof, valkey-check-rdb and valkey-sentinel are symlinks to valkey-server, as in Valkey's own install; USE_REDIS_SYMLINKS=no, so no redis-* names."
+      },
+      "runtime": {
+        "ports": [
+          6379
+        ],
+        "volumes": [
+          "/data"
+        ],
+        "entrypoint": [
+          "valkey-server",
+          "/etc/valkey/valkey.conf"
+        ],
+        "user": 1001,
+        "configFile": "rootfs/valkey/etc/valkey/valkey.conf",
+        "note": "Ours, not upstream's. Arguments passed to the container are appended to the config and override it: `--save \"\" --appendonly no` turns persistence off, `--requirepass` or an ACL file opens the network. Protected mode stays on, so with no password Valkey refuses every non-loopback client. The data directory is /data, owned by 1001:0 with g=u."
+      },
+      "updated": "2026-11-15",
+      "reason": "Initial pin for HALO (P-TSC-6): Valkey is HALO's shared cache and state store, and LiteLLM's router and rate-limit store. Built in this repository (ADR-010): no free signed EL9 package exists, the vendor image is unsigned, and DHI Valkey had two Debian Criticals with no fix. Onboarded in observe."
     }
   }
 }

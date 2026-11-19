@@ -49,6 +49,11 @@ package tsc.pdp
 #             oryd/kratos:v26.2.0` yields Cert:false, Chain:false -- a keyed
 #             signature whose public key the vendor does not publish. Records
 #             "not-applicable"; carries no CVE relief whatsoever.
+#   sigstore  A keyless Sigstore signature (Fulcio certificate, Rekor entry),
+#             e.g. openbao-ubi. MUST verify OFFLINE against the committed,
+#             TUF-pinned copy of the Sigstore public-good trusted root, with the
+#             OIDC issuer from a closed set and an anchored identity regex from
+#             versions.json. The live root is compared only to surface rotation.
 #
 # Grep for `trust_class` before merging any change to this file and confirm it
 # appears in no CVE rule.
@@ -119,7 +124,7 @@ compiles_source if {
 # `track in built_tracks` holds.
 built_field(field, fallback) := object.get(input, [track, field], fallback)
 
-trust_classes := {"dhi", "none", "internal", "notation"}
+trust_classes := {"dhi", "none", "internal", "notation", "sigstore"}
 
 # Three distinct states. Never collapse to a boolean.
 #   verified        verification ran and succeeded, against the correct key
@@ -134,7 +139,7 @@ attestation_states := {"present", "absent", "not-applicable"}
 
 enforcement_modes := {"enforce", "observe"}
 
-class_requires_signature := {"dhi": true, "internal": true, "none": false, "notation": true}
+class_requires_signature := {"dhi": true, "internal": true, "none": false, "notation": true, "sigstore": true}
 
 # The exact key material each class must have verified against. An image that
 # verified against the wrong key is not verified. `none` has no entry, so
@@ -160,10 +165,26 @@ expected_keyring := k if {
 	k := object.get(input, ["image", "keyring"], "<keyring-absent>")
 }
 
+# `sigstore` is keyless: the "key" is the Sigstore trusted root (Fulcio CAs,
+# Rekor and CT log keys). Each image names the committed root it verified
+# against in versions.json (`keyring`), a .json under the keyring directory.
+# The same sentinel model as notation applies.
+sigstore_keyring_pattern := `^\.github/pdp/keyring/[A-Za-z0-9._-]+\.json$`
+
+# A closed set. Each new OIDC issuer is a policy decision with its own PR.
+sigstore_issuers := {"https://token.actions.githubusercontent.com"}
+
+expected_keyring := k if {
+	trust_class == "sigstore"
+	k := object.get(input, ["image", "keyring"], "<keyring-absent>")
+}
+
 # `notation` (Notary Project, used by mssql) verifies the vendor's x509 signature
 # chain to a vendored root; Microsoft publishes no SBOM or provenance referrer,
 # so attestations are not required of it.
-class_requires_attestations := {"dhi": true, "internal": true, "none": false, "notation": false}
+# `sigstore` (openbao-ubi) publishes a signature referrer and no SBOM or
+# provenance referrer, so attestations are not required of it either.
+class_requires_attestations := {"dhi": true, "internal": true, "none": false, "notation": false, "sigstore": false}
 
 required_attestation_kinds := {"sbom", "provenance"}
 
@@ -569,6 +590,26 @@ violations contains v if {
 	pinned := object.get(input, ["upstream", "keyring_pinned_sha256"], "<pinned-absent>")
 	fetched != pinned
 	v := {"code": "NOTATION_ROOT_DRIFT", "fetched": fetched, "pinned": pinned, "message": sprintf("Live Notary root CA digest %v does not match the committed copy %v. The vendor may have rotated its root. Review and update the root certificate under .github/pdp/keyring/ in a PR. Denying.", [fetched, pinned])}
+}
+
+# A sigstore image must verify against a committed root under the keyring
+# directory; the leg-side check closes the gap if the repo gate was bypassed.
+violations contains v if {
+	trust_class == "sigstore"
+	not regex.match(sigstore_keyring_pattern, expected_keyring)
+	v := {"code": "SIGSTORE_KEYRING_PATH_INVALID", "keyring": expected_keyring, "message": sprintf("Trust class sigstore must verify against a committed trusted root under .github/pdp/keyring/ (*.json); versions.json declares %q. Denying.", [expected_keyring])}
+}
+
+# The workflow reads the sha256 of the live trusted root from the Sigstore TUF
+# metadata and compares it with the committed copy, so a root rotation (new
+# Fulcio CA, new log key) arrives as a reviewed PR. Different sentinels on
+# each side so "both absent" denies.
+violations contains v if {
+	trust_class == "sigstore"
+	fetched := object.get(input, ["upstream", "keyring_fetched_sha256"], "<fetched-absent>")
+	pinned := object.get(input, ["upstream", "keyring_pinned_sha256"], "<pinned-absent>")
+	fetched != pinned
+	v := {"code": "SIGSTORE_ROOT_DRIFT", "fetched": fetched, "pinned": pinned, "message": sprintf("Live Sigstore trusted root digest %v does not match the committed copy %v. Sigstore may have rotated a CA or a log key. Fetch the root with a TUF client, review it, and update the root under .github/pdp/keyring/ in a PR. Denying.", [fetched, pinned])}
 }
 
 # ===========================================================================
@@ -1856,6 +1897,52 @@ repo_violations contains v if {
 	object.get(img, "upstreamTrust", missing) == "notation"
 	not notation_identity_pinned(object.get(img, ["notation", "trustedIdentity"], missing))
 	v := {"code": "VERSIONS_NOTATION_IDENTITY_MISSING", "image": key, "message": sprintf("images.%v declares trust class notation without an x509.subject trusted identity carrying both CN and O. A root CA alone trusts every certificate it ever issued, and a CN-less subject matches every leaf. Denying.", [key])}
+}
+
+repo_violations contains v if {
+	some key, img in versions_images
+	object.get(img, "upstreamTrust", missing) == "sigstore"
+	not regex.match(sigstore_keyring_pattern, object.get(img, "keyring", missing))
+	v := {"code": "VERSIONS_SIGSTORE_KEYRING_INVALID", "image": key, "message": sprintf("images.%v declares trust class sigstore but keyring is %q, not a committed trusted root (*.json) under .github/pdp/keyring/. Denying.", [key, object.get(img, "keyring", missing)])}
+}
+
+repo_violations contains v if {
+	some key, img in versions_images
+	object.get(img, "upstreamTrust", missing) == "sigstore"
+	not object.get(img, ["sigstore", "certificateOidcIssuer"], missing) in sigstore_issuers
+	v := {"code": "VERSIONS_SIGSTORE_ISSUER_INVALID", "image": key, "message": sprintf("images.%v declares trust class sigstore with OIDC issuer %q, not one of %v. A new issuer is a policy change. Denying.", [key, object.get(img, ["sigstore", "certificateOidcIssuer"], missing), sigstore_issuers])}
+}
+
+# Keyless trust is only as narrow as the identity. The regex must name one
+# GitHub repository and one workflow file (plain names, every dot escaped) at
+# a release tag. The tag part may use literals, escaped dots and character
+# classes with quantifiers, but no alternation, no group and no unescaped `.`
+# before a quantifier: `^https://github\.com/.*$` would trust every workflow
+# on GitHub that Fulcio ever certified, and `v2\..+` every tag.
+sigstore_identity_shape := `^\^https://github\\\.com/[A-Za-z0-9_-]+(\\\.[A-Za-z0-9_-]+)*/[A-Za-z0-9_-]+(\\\.[A-Za-z0-9_-]+)*/\\\.github/workflows/[A-Za-z0-9_-]+(\\\.[A-Za-z0-9_-]+)*@refs/tags/[A-Za-z0-9_\\.\[\]+?{},-]+\$$`
+
+sigstore_identity_wildcard := `(^|[^\\])\.[*+?{]`
+
+sigstore_identity_pinned(re) if {
+	is_string(re)
+	regex.is_valid(re)
+	regex.match(sigstore_identity_shape, re)
+	not regex.match(sigstore_identity_wildcard, re)
+}
+
+repo_violations contains v if {
+	some key, img in versions_images
+	object.get(img, "upstreamTrust", missing) == "sigstore"
+	not sigstore_identity_pinned(object.get(img, ["sigstore", "certificateIdentityRegexp"], missing))
+	v := {"code": "VERSIONS_SIGSTORE_IDENTITY_INVALID", "image": key, "message": sprintf("images.%v declares trust class sigstore without an anchored identity regex that names one GitHub repository, one workflow and a release tag, with no wildcard span or alternation. Denying.", [key])}
+}
+
+# Keyless verification exists only on the mirror track (scripts/mirror-leg.sh).
+repo_violations contains v if {
+	some key, img in versions_images
+	object.get(img, "upstreamTrust", missing) == "sigstore"
+	object.get(img, "kind", missing) != "mirror"
+	v := {"code": "VERSIONS_SIGSTORE_KIND_INVALID", "image": key, "message": sprintf("images.%v declares trust class sigstore on kind %q; only mirror entries verify a keyless signature. Denying.", [key, object.get(img, "kind", missing)])}
 }
 
 repo_violations contains v if {

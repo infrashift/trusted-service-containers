@@ -55,6 +55,22 @@ echo "leg=${LEG} src=${SRC_REPO}:${SRC_TAG} pin=${PIN} dest=${DEST_REPO}:${DEST_
 # it, and the image lands in quarantine WITH a permanent signed record of why.
 # Exiting here would give a red X and no artifact at all.
 # ---------------------------------------------------------------------------
+# The sha256 of the live Sigstore trusted root, from the public-good TUF
+# repository's metadata. Prints the digest; returns non-zero on any failure.
+sigstore_live_root_sha() {
+  local base=https://tuf-repo-cdn.sigstore.dev ts sn tg sv tv sha
+  ts=$(curl -sSfL --retry 3 --retry-delay 2 --retry-connrefused --max-time 30 "$base/timestamp.json") || return 1
+  sv=$(jq -er '.signed.meta["snapshot.json"].version' <<<"$ts") || return 1
+  [[ "$sv" =~ ^[0-9]+$ ]] || return 1
+  sn=$(curl -sSfL --retry 3 --retry-delay 2 --retry-connrefused --max-time 30 "$base/${sv}.snapshot.json") || return 1
+  tv=$(jq -er '.signed.meta["targets.json"].version' <<<"$sn") || return 1
+  [[ "$tv" =~ ^[0-9]+$ ]] || return 1
+  tg=$(curl -sSfL --retry 3 --retry-delay 2 --retry-connrefused --max-time 30 "$base/${tv}.targets.json") || return 1
+  sha=$(jq -er '.signed.targets["trusted_root.json"].hashes.sha256' <<<"$tg") || return 1
+  [[ "$sha" =~ ^[a-f0-9]{64}$ ]] || return 1
+  printf '%s\n' "$sha"
+}
+
 RESULT=failed; REASON=UNSET; VERIFIED=0; PRED_TYPES='[]'
 KEYRING_PINNED_SHA=""; KEYRING_FETCHED_SHA=""
 
@@ -242,6 +258,67 @@ case "$TRUST_CLASS" in
         '{result:$res, trustedIdentity:$id, notation:$ver, output:$out}' > "$EVIDENCE/notation-verify.json"
       rm -rf "$NOTATION_HOME"
     }
+    ;;
+
+  sigstore)
+    # Keyless Sigstore signature (openbao-ubi): a Fulcio certificate for the
+    # vendor's release workflow and a Rekor entry. Verified OFFLINE against the
+    # COMMITTED Sigstore trusted root, with the OIDC issuer and an anchored
+    # identity regex from versions.json. TUF_ROOT points at an empty throwaway
+    # directory, so cosign cannot fall back to a cached or fetched root. The
+    # live root is compared only to surface a rotation, as the DHI keyring is.
+    [[ -n "$KEYRING" && -f "$KEYRING" ]] || { echo "::error::trust_class=sigstore but keyring $KEYRING is missing"; exit 1; }
+    SIGSTORE_ISSUER=$(jq -r '.sigstore.certificateOidcIssuer // ""' <<<"$IMG")
+    SIGSTORE_IDENTITY=$(jq -r '.sigstore.certificateIdentityRegexp // ""' <<<"$IMG")
+    [[ -n "$SIGSTORE_ISSUER" ]] || { echo "::error::trust_class=sigstore needs sigstore.certificateOidcIssuer"; exit 1; }
+    [[ "$SIGSTORE_IDENTITY" == '^https://'*'$' ]] \
+      || { echo "::error::trust_class=sigstore needs an anchored sigstore.certificateIdentityRegexp"; exit 1; }
+    KEYRING_PINNED_SHA=$(sha256sum "$KEYRING" | cut -d' ' -f1)
+
+    regctl artifact list --format '{{jsonPretty .}}' "${SRC_REPO}@${PIN}" \
+      > "$EVIDENCE/upstream-referrers.json" 2>/dev/null || echo '{}' > "$EVIDENCE/upstream-referrers.json"
+
+    # The live root digest is the sha256 that the Sigstore TUF targets
+    # metadata lists for trusted_root.json (timestamp -> snapshot -> targets).
+    # This fetch is not a trust decision, so it needs no TUF signature check:
+    # trust rests on the committed root, and SIGSTORE_ROOT_DRIFT denies on a
+    # mismatch. A fetch failure is named as such, as in the notation branch.
+    DRIFT=""
+    if KEYRING_FETCHED_SHA=$(sigstore_live_root_sha); then
+      [[ "$KEYRING_PINNED_SHA" == "$KEYRING_FETCHED_SHA" ]] || DRIFT=KEYRING_ROTATED
+    else
+      KEYRING_FETCHED_SHA="<fetch-failed>"
+      DRIFT=ROOT_FETCH_FAILED
+    fi
+    [[ -z "$DRIFT" ]] || echo "::warning::${DRIFT}: pinned=${KEYRING_PINNED_SHA} fetched=${KEYRING_FETCHED_SHA}"
+
+    SIGSTORE_OK=0
+    for attempt in 1 2 3; do
+      TUF_EMPTY=$(mktemp -d)
+      # cosign v2.6.1 (ADR-005) reads the signature from a Sigstore bundle
+      # referrer only with --new-bundle-format, and --trusted-root requires it.
+      # Without it, v2.6.1 looks for legacy .sig tags and finds nothing. This
+      # flag changes what cosign READS; the layout we WRITE is not affected.
+      if TUF_ROOT="$TUF_EMPTY" cosign verify --new-bundle-format --trusted-root "$KEYRING" \
+           --certificate-oidc-issuer "$SIGSTORE_ISSUER" \
+           --certificate-identity-regexp "$SIGSTORE_IDENTITY" \
+           "${SRC_REPO}@${PIN}" > /tmp/sigstore.out 2>&1; then
+        SIGSTORE_OK=1; rm -rf "$TUF_EMPTY"; break
+      fi
+      rm -rf "$TUF_EMPTY"
+      echo "cosign verify attempt ${attempt} failed: $(tail -c 200 /tmp/sigstore.out | tr '\n' ' ')"
+      sleep 2
+    done
+    if [[ "$SIGSTORE_OK" -eq 1 ]]; then
+      RESULT=verified; REASON="OK${DRIFT:+; $DRIFT}"; VERIFIED=1
+    else
+      RESULT=failed; REASON="SIGSTORE_VERIFY_FAILED${DRIFT:+ ($DRIFT)}: $(tail -c 300 /tmp/sigstore.out | tr '\n' ' ')"
+    fi
+    jq -n --arg out "$(cat /tmp/sigstore.out)" --arg res "$RESULT" --arg iss "$SIGSTORE_ISSUER" \
+          --arg id "$SIGSTORE_IDENTITY" --arg root "$KEYRING" \
+          --arg ver "$(cosign version 2>/dev/null | awk '/GitVersion/ { print $2 }')" \
+      '{result:$res, certificateOidcIssuer:$iss, certificateIdentityRegexp:$id, trustedRoot:$root,
+        cosign:$ver, output:$out}' > "$EVIDENCE/sigstore-verify.json"
     ;;
 
   *)

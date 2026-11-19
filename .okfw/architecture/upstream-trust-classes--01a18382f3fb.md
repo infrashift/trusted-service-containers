@@ -22,7 +22,7 @@ sources:
 
 The trust class of an image decides only how we verify its upstream signature. It never changes a CVE threshold.
 
-## The four classes
+## The five classes
 
 The field `upstreamTrust` in `versions.json` sets the trust class.
 
@@ -32,6 +32,7 @@ The field `upstreamTrust` in `versions.json` sets the trust class.
 | `internal` | `.github/pdp/public-keys/upstream/trusted-base-images-release.pub`, the release key of the sibling repository | our `ubi9-micro` base, and thus each built image |
 | `notation` | `.github/pdp/keyring/microsoft-supply-chain-rsa-root-ca-2022.crt` (TOFU-pinned), plus the leaf subject in `notation.trustedIdentity` | [mssql](/images/mssql--01a183832d44.md) |
 | `none` | Nothing. The evidence records "not applicable". | [nexus3](/images/nexus3--01a183832d26.md), [whoami](/images/whoami--01a183832d61.md), and the vendor images of the binary cross-check |
+| `sigstore` | `.github/pdp/keyring/sigstore-public-good-trusted-root.json`, a TUF-pinned copy of the Sigstore trusted root, plus the OIDC issuer and the identity regex in `sigstore` | No image yet. The first is OpenBao. |
 
 ## Signature verification only
 

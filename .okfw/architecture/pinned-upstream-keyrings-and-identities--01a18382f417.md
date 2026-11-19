@@ -49,6 +49,25 @@ Thus `versions.json` also holds `notation.trustedIdentity`: the exact `x509.subj
 
 `tools.lock` pins the `notation` tool. The installer checks the published checksum of the tool.
 
+## `sigstore` pins a trusted root, an issuer and an identity
+
+A keyless Sigstore signature has no vendor key. A Fulcio certificate binds the signature to the OIDC identity of the signing workflow, and Rekor records it. The Sigstore trusted root holds the Fulcio CAs and the log keys. Fulcio certifies every workflow on GitHub, so the root alone trusts too much.
+
+Thus `versions.json` also holds the `sigstore` block:
+
+* `certificateOidcIssuer`: one issuer from a closed set in the policy. Today the set holds only GitHub Actions.
+* `certificateIdentityRegexp`: an anchored regex for one repository and one workflow file at a release tag. The repository gate refuses a wildcard span, an alternation, a group and a branch (`VERSIONS_SIGSTORE_IDENTITY_INVALID`).
+
+`scripts/mirror-leg.sh` verifies a `sigstore` image with these steps:
+
+1. Read the sha256 of the live trusted root from the TUF metadata of the Sigstore public-good repository.
+2. Compare it with the committed root. A difference gives `SIGSTORE_ROOT_DRIFT`.
+3. Verify the signature with `cosign verify --new-bundle-format --trusted-root` against the committed root. `TUF_ROOT` is an empty directory, so cosign cannot use another root. Cosign v2.6.1 needs `--new-bundle-format` to read the bundle referrer.
+
+`scripts/review-leg.sh` verifies the copy on GHCR again, from the checked-out `versions.json` and the committed root.
+
+To update the root after a rotation, get it with a TUF client, for example `cosign initialize`. Compare its sha256 with the TUF metadata. Then change the root and its `.sha256` sidecar in one PR.
+
 ## Related
 
 * [Upstream trust classes](/architecture/upstream-trust-classes--01a18382f3fb.md)

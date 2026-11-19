@@ -116,7 +116,7 @@ check-keyring:
 	# sidecar in `sha256sum -c` format. The sidecar is what a reviewer reads
 	# as the pin; this makes it load-bearing rather than decorative.
 	(cd .github/pdp/keyring && for s in *.sha256; do sha256sum -c --quiet "$$s" || { echo "error: keyring sidecar $$s does not match its file" >&2; exit 1; }; done)
-	for f in .github/pdp/keyring/*.pub .github/pdp/keyring/*.crt .github/pdp/keyring/*.asc; do [ -f "$$f" ] || continue; [ -f "$$f.sha256" ] || { echo "error: $$f has no .sha256 sidecar" >&2; exit 1; }; done
+	for f in .github/pdp/keyring/*.pub .github/pdp/keyring/*.crt .github/pdp/keyring/*.asc .github/pdp/keyring/*.json; do [ -f "$$f" ] || continue; [ -f "$$f.sha256" ] || { echo "error: $$f has no .sha256 sidecar" >&2; exit 1; }; done
 	# A package repository key (ADR-009) is pinned three times: the sidecar,
 	# packageRepos.<r>.<arch>.signerFileSha256, and signerFingerprint. All three must
 	# describe the committed file, which must hold exactly one primary key.

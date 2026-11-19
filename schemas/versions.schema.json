@@ -178,7 +178,7 @@
         "required": ["kind", "upstreamTrust", "enforcement", "updated", "reason"],
         "properties": {
           "kind": { "enum": ["mirror", "build", "package", "native"] },
-          "upstreamTrust": { "enum": ["dhi", "none", "internal", "notation"] },
+          "upstreamTrust": { "enum": ["dhi", "none", "internal", "notation", "sigstore"] },
           "enforcement": { "enum": ["enforce", "observe"] },
           "updated": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
           "reason": { "type": "string", "minLength": 10 }
@@ -189,6 +189,16 @@
             "then": {
               "required": ["keyring", "notation"],
               "properties": { "keyring": { "type": "string", "pattern": "^\\.github/pdp/keyring/.*\\.crt$" } }
+            }
+          },
+          {
+            "if": { "properties": { "upstreamTrust": { "const": "sigstore" } }, "required": ["upstreamTrust"] },
+            "then": {
+              "required": ["keyring", "sigstore"],
+              "properties": {
+                "kind": { "const": "mirror" },
+                "keyring": { "type": "string", "pattern": "^\\.github/pdp/keyring/[A-Za-z0-9._-]+\\.json$" }
+              }
             }
           },
           {
@@ -206,6 +216,17 @@
                     "trustedIdentity": { "type": "string", "pattern": "^x509\\.subject: (?=(.*,)?CN=[^,]+)(?=(.*,)?O=[^,]+).*$",
                       "description": "Notary matches x509.subject as an attribute subset with only C/ST/O mandatory, so CN is required here: without it every leaf the vendor CA issues would verify." },
                     "rootUrl": { "type": "string", "pattern": "^https://" }
+                  }
+                },
+                "sigstore": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["certificateOidcIssuer", "certificateIdentityRegexp"],
+                  "properties": {
+                    "certificateOidcIssuer": { "enum": ["https://token.actions.githubusercontent.com"],
+                      "description": "A closed set. Each new OIDC issuer is a policy decision and needs its own reviewed PR." },
+                    "certificateIdentityRegexp": { "type": "string", "pattern": "^\\^https://.*\\$$",
+                      "description": "An anchored regex for the Fulcio certificate identity (the SAN of the signing workflow). The repo gate requires a GitHub release-tag workflow and no wildcard span." }
                   }
                 },
                 "platforms": { "type": "array", "items": { "type": "string" }, "minItems": 1 },

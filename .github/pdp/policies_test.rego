@@ -351,6 +351,77 @@ test_notation_root_shas_absent_denies if {
 	"NOTATION_ROOT_DRIFT" in codes(d)
 }
 
+# --- sigstore (keyless) class: openbao-ubi -----------------------------------
+# Verified offline against the committed Sigstore trusted root; no attestations.
+sigstore_root := ".github/pdp/keyring/sigstore-public-good-trusted-root.json"
+
+sigstore_verified := patch(single_platform_mirror, [
+	{"op": "replace", "path": "/upstream/trust_class", "value": "sigstore"},
+	{"op": "add", "path": "/image/keyring", "value": sigstore_root},
+	{"op": "replace", "path": "/upstream/signature", "value": "verified"},
+	{"op": "replace", "path": "/upstream/verified_with", "value": sigstore_root},
+	{"op": "add", "path": "/upstream/keyring_fetched_sha256", "value": "6494e21e"},
+	{"op": "add", "path": "/upstream/keyring_pinned_sha256", "value": "6494e21e"},
+])
+
+test_sigstore_verified_allows if {
+	d := pdp.decision with input as sigstore_verified
+	d.allow
+	d.namespace == "trusted"
+	not "UPSTREAM_ATTESTATION_MISSING" in codes(d)
+}
+
+test_sigstore_cannot_claim_not_applicable if {
+	i := patch(sigstore_verified, [{"op": "replace", "path": "/upstream/signature", "value": "not-applicable"}])
+	d := pdp.decision with input as i
+	"UPSTREAM_SIGNATURE_REQUIRED" in codes(d)
+}
+
+test_sigstore_failed_denies if {
+	i := patch(sigstore_verified, [{"op": "replace", "path": "/upstream/signature", "value": "failed"}])
+	d := pdp.decision with input as i
+	"UPSTREAM_SIGNATURE_FAILED" in codes(d)
+}
+
+# Verified against another root (or the cosign default TUF cache) is not verified.
+test_sigstore_wrong_root_denies if {
+	i := patch(sigstore_verified, [{"op": "replace", "path": "/upstream/verified_with", "value": "~/.sigstore/root/trusted_root.json"}])
+	d := pdp.decision with input as i
+	"UPSTREAM_KEYRING_MISMATCH" in codes(d)
+}
+
+test_sigstore_without_declared_keyring_denies if {
+	i := patch(sigstore_verified, [{"op": "remove", "path": "/image/keyring"}])
+	d := pdp.decision with input as i
+	"UPSTREAM_KEYRING_MISMATCH" in codes(d)
+	"SIGSTORE_KEYRING_PATH_INVALID" in codes(d)
+}
+
+test_sigstore_keyring_outside_dir_denies if {
+	i := patch(sigstore_verified, [
+		{"op": "replace", "path": "/image/keyring", "value": "/tmp/attacker-root.json"},
+		{"op": "replace", "path": "/upstream/verified_with", "value": "/tmp/attacker-root.json"},
+	])
+	d := pdp.decision with input as i
+	"SIGSTORE_KEYRING_PATH_INVALID" in codes(d)
+}
+
+test_sigstore_root_drift_denies if {
+	i := patch(sigstore_verified, [{"op": "replace", "path": "/upstream/keyring_fetched_sha256", "value": "ROTATED"}])
+	d := pdp.decision with input as i
+	"SIGSTORE_ROOT_DRIFT" in codes(d)
+}
+
+# Different sentinels: both digests absent must compare UNEQUAL and deny.
+test_sigstore_root_shas_absent_denies if {
+	i := patch(sigstore_verified, [
+		{"op": "remove", "path": "/upstream/keyring_fetched_sha256"},
+		{"op": "remove", "path": "/upstream/keyring_pinned_sha256"},
+	])
+	d := pdp.decision with input as i
+	"SIGSTORE_ROOT_DRIFT" in codes(d)
+}
+
 test_dhi_missing_attestation_denies if {
 	i := patch(base_mirror, [
 		{"op": "replace", "path": "/upstream/trust_class", "value": "dhi"},
@@ -1067,6 +1138,76 @@ test_notation_entry_cnless_identity_denies if {
 	i := patch(base_repo, [{"op": "replace", "path": "/versions/images/mssql/notation/trustedIdentity", "value": "x509.subject: O=Microsoft Corporation,ST=Washington,C=US"}])
 	d := pdp.repo_decision with input as i with data.exceptions as []
 	"VERSIONS_NOTATION_IDENTITY_MISSING" in repo_codes(d)
+}
+
+base_repo_sigstore := patch(base_repo, [{"op": "add", "path": "/versions/images/openbao", "value": {
+	"kind": "mirror", "upstreamTrust": "sigstore", "upstreamRepo": "ghcr.io/openbao/openbao-ubi",
+	"keyring": ".github/pdp/keyring/sigstore-public-good-trusted-root.json", "requiredPredicates": [],
+	"sigstore": {
+		"certificateOidcIssuer": "https://token.actions.githubusercontent.com",
+		"certificateIdentityRegexp": `^https://github\.com/openbao/openbao/\.github/workflows/release-images\.yml@refs/tags/v2\.7\.[0-9]+$`,
+	},
+	"enforcement": "observe", "platforms": ["linux/amd64", "linux/arm64"],
+	"variants": {"runtime": {"tag": "2.7.2", "track": `^2\.7\.[0-9]+$`, "digest": "sha256:822755226a0796a2ec18a395083c92e5ad57f49bf3ce4180a413b2361fac5c22"}},
+	"updated": "2026-11-18", "reason": "Policy test fixture for the sigstore trust class.",
+}}])
+
+sigstore_repo_codes := {"VERSIONS_SIGSTORE_KEYRING_INVALID", "VERSIONS_SIGSTORE_ISSUER_INVALID", "VERSIONS_SIGSTORE_IDENTITY_INVALID", "VERSIONS_SIGSTORE_KIND_INVALID", "VERSIONS_TRUST_CLASS_INVALID"}
+
+test_sigstore_entry_valid if {
+	d := pdp.repo_decision with input as base_repo_sigstore with data.exceptions as []
+	count(sigstore_repo_codes & repo_codes(d)) == 0
+}
+
+test_sigstore_entry_wrong_keyring_denies if {
+	i := patch(base_repo_sigstore, [{"op": "replace", "path": "/versions/images/openbao/keyring", "value": ".github/pdp/keyring/dhi-latest.pub"}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_SIGSTORE_KEYRING_INVALID" in repo_codes(d)
+}
+
+test_sigstore_entry_other_issuer_denies if {
+	i := patch(base_repo_sigstore, [{"op": "replace", "path": "/versions/images/openbao/sigstore/certificateOidcIssuer", "value": "https://accounts.google.com"}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_SIGSTORE_ISSUER_INVALID" in repo_codes(d)
+}
+
+test_sigstore_entry_without_block_denies if {
+	i := patch(base_repo_sigstore, [{"op": "remove", "path": "/versions/images/openbao/sigstore"}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_SIGSTORE_ISSUER_INVALID" in repo_codes(d)
+	"VERSIONS_SIGSTORE_IDENTITY_INVALID" in repo_codes(d)
+}
+
+# Each identity below would widen keyless trust beyond one workflow at a tag.
+sigstore_bad_identities := [
+	`^https://github\.com/.*$`,
+	`^https://github\.com/openbao/openbao/\.github/workflows/release-images\.yml@refs/tags/.*$`,
+	`^https://github\.com/openbao/openbao/\.github/workflows/release-images\.yml@refs/tags/v2\..+$`,
+	`^https://github\.com/openbao/openbao/\.github/workflows/release-images\.yml@refs/heads/main$`,
+	`^https://github\.com/openbao/(openbao|evil)/\.github/workflows/release-images\.yml@refs/tags/v2\.7\.2$`,
+	`^https://github\.com/openbao/openbao/\.github/workflows/release-images.yml@refs/tags/v2\.7\.2$`,
+	`https://github\.com/openbao/openbao/\.github/workflows/release-images\.yml@refs/tags/v2\.7\.2`,
+	`^https://github\.com/openbao/openbao/\.github/workflows/release-images\.yml@refs/tags/v2\.7\.[0-9]+|.*$`,
+]
+
+test_sigstore_entry_wide_identity_denies if {
+	every re in sigstore_bad_identities {
+		i := patch(base_repo_sigstore, [{"op": "replace", "path": "/versions/images/openbao/sigstore/certificateIdentityRegexp", "value": re}])
+		d := pdp.repo_decision with input as i with data.exceptions as []
+		"VERSIONS_SIGSTORE_IDENTITY_INVALID" in repo_codes(d)
+	}
+}
+
+test_sigstore_entry_exact_tag_identity_allows if {
+	i := patch(base_repo_sigstore, [{"op": "replace", "path": "/versions/images/openbao/sigstore/certificateIdentityRegexp", "value": `^https://github\.com/openbao/openbao/\.github/workflows/release-images\.yml@refs/tags/v2\.7\.2$`}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	not "VERSIONS_SIGSTORE_IDENTITY_INVALID" in repo_codes(d)
+}
+
+test_sigstore_entry_on_build_kind_denies if {
+	i := patch(base_repo_sigstore, [{"op": "replace", "path": "/versions/images/openbao/kind", "value": "build"}])
+	d := pdp.repo_decision with input as i with data.exceptions as []
+	"VERSIONS_SIGSTORE_KIND_INVALID" in repo_codes(d)
 }
 
 test_dhi_class_on_non_dhi_repo_denies if {

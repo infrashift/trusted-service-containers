@@ -142,6 +142,24 @@ if [[ "$REPO_TRUST" == "notation" ]]; then
     || fail "no application/vnd.cncf.notary.signature referrer on ${DEST_REPO}@${LIVE_DIGEST}; the vendor signature did not survive the mirror"
   check "notary signature referrer present on GHCR" "OK"
 fi
+# A keyless image is re-verified HERE, on the GHCR copy, from the checked-out
+# versions.json and keyring -- never from the evidence. The build actor's
+# `verified` therefore cannot stand without a signature that really holds for
+# the mirrored digest, the pinned root, the issuer and the identity regex.
+if [[ "$REPO_TRUST" == "sigstore" ]]; then
+  SIG_ISS=$(jq -r '.sigstore.certificateOidcIssuer // ""' <<<"$IMG")
+  SIG_ID=$(jq -r '.sigstore.certificateIdentityRegexp // ""' <<<"$IMG")
+  [[ -n "$IMG_KEYRING" && -n "$SIG_ISS" && "$SIG_ID" == '^https://'*'$' ]] \
+    || fail "trust class sigstore needs keyring, sigstore.certificateOidcIssuer and an anchored sigstore.certificateIdentityRegexp in versions.json"
+  TUF_EMPTY=$(mktemp -d)
+  # --new-bundle-format: see the sigstore branch of scripts/mirror-leg.sh.
+  TUF_ROOT="$TUF_EMPTY" cosign verify --new-bundle-format --trusted-root "$IMG_KEYRING" \
+      --certificate-oidc-issuer "$SIG_ISS" --certificate-identity-regexp "$SIG_ID" \
+      "${DEST_REPO}@${LIVE_DIGEST}" > /tmp/review-sigstore.out 2>&1 \
+    || { rm -rf "$TUF_EMPTY"; fail "the keyless signature does not verify on ${DEST_REPO}@${LIVE_DIGEST}: $(tail -c 300 /tmp/review-sigstore.out | tr '\n' ' ')"; }
+  rm -rf "$TUF_EMPTY"
+  check "sigstore signature verifies on GHCR" "OK"
+fi
 ATT_SBOM=$(jq -r '.attestations.sbom // "not-applicable"' "$UV")
 ATT_PROV=$(jq -r '.attestations.provenance // "not-applicable"' "$UV")
 ATT_VEX=$(jq -r '.attestations.vex // "not-applicable"' "$UV")

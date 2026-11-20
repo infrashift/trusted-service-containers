@@ -101,6 +101,7 @@ Language `python` has no git source. Its pinned input is a hash lock in `locks/<
 | Image | Language | Pinned input | Builder and base |
 |---|---|---|---|
 | [valkey](/images/valkey--01a1df5f8878.md) | `c` | `sources.valkey` (commit and release archive) | `ubi9-minimal` |
+| [pgbouncer](/images/pgbouncer--01a1e09bec5d.md) | `c` | `sources.pgbouncer` (commit and the GitHub archive of the tag) | `ubi9-minimal` |
 | [litellm](/images/litellm--01a1df710394.md) | `python` | `locks/litellm/requirements.txt` | `ubi9-minimal` |
 
 ## Source fetch

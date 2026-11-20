@@ -120,6 +120,18 @@
         "note": "The sha256 is the `hash valkey-9.1.3.tar.gz sha256 ...` line of valkey-io/valkey-hashes (README at cbac0d5b, 2026-11-04), a repository separate from the source. Confirmed 2026-11-15: the downloaded archive has that sha256, and its file tree is identical to the tree of commit 29173b67 (diff -r, no .gitattributes export-ignore). Valkey does not sign its tags or archives, so this hash is the independent check on the commit."
       },
       "note": "Initial pin, the newest Valkey release (9.1.3, 2026-10-26; lightweight tag on 29173b67). Upgrade urgency SECURITY: it fixes GHSA-f4q9-j22m-xqq9, a heap buffer overflow in cluster Pub/Sub message construction (#5030). Track is the 9.1 minor line, like nats. Native build (ADR-010): compiled on UBI with TLS, no vendor binary comparison."
+    },
+    "pgbouncer": {
+      "track": "^pgbouncer_1_26_[0-9]+$",
+      "ref": "pgbouncer_1_26_1",
+      "url": "https://github.com/pgbouncer/pgbouncer",
+      "commit": "f03e9bf263d7ccd5d1d152a61811bf3258dd6b87",
+      "archive": {
+        "url": "https://github.com/pgbouncer/pgbouncer/archive/refs/tags/pgbouncer_1_26_1.tar.gz",
+        "sha256": "2e659b1261329e06e64798cf4f7d20230d0083373c321124fff068a64ea6bc38",
+        "note": "NOT a vendor-published hash: PgBouncer publishes a sha256 only for its `make dist` tarball (https://www.pgbouncer.org/downloads/files/1.26.1/pgbouncer-1.26.1.tar.gz.sha256 = 00886a2994b4844cd37110970df777772cfc42a74c400522c82fba509a3f42d9), and that tarball is the commit tree plus five generated autotools files (configure, config.guess, config.sub, install-sh, lib/usual/config.h.in), so scripts/fetch-archive.sh, which requires identical trees, cannot use it. This sha256 is GitHub's tag archive, computed by us on 2026-11-15 (TOFU). Checked by hand on 2026-11-15: the vendor tarball has the published sha256, and its tree minus those five generated files is identical to the tree of commit f03e9bf2 (diff -r); the GitHub archive's tree is identical to the commit's. No hashSource: the vendor publishes none for this file. A drift bump moves the URL; take the new sha256 from the new GitHub archive and repeat the by-hand comparison with the vendor tarball before merging."
+      },
+      "note": "Initial pin, the newest PgBouncer release (1.26.1, 2026-10-14). The ref is the vendor's git tag, pgbouncer_1_26_1 (an annotated, unsigned tag on f03e9bf2), so scripts/fetch-source.sh can check that the tag names the pinned commit; it is also the image version and the release tag. libusual is vendored in lib/ as a plain tree (no .gitmodules). Track is the 1.26 minor line. Native build (ADR-010): compiled on UBI with OpenSSL, no vendor binary comparison."
     }
   },
   "toolchains": {
@@ -1405,6 +1417,52 @@
       },
       "updated": "2026-11-18",
       "reason": "Initial pin for HALO: LiteLLM is the OpenAI-compatible gateway to the model providers. Built in this repository by the owner's decision of 2026-11-15 (ADR-010), not mirrored from DHI: the DHI image's four blocking findings were all in its bundled Node.js, which this image does not carry. 1.109.1 is the newest LiteLLM release that is not a pre-release (2026-11-12). Onboarded in observe."
+    },
+    "pgbouncer": {
+      "kind": "native",
+      "source": "pgbouncer",
+      "upstreamTrust": "internal",
+      "builder": "ubi9-minimal",
+      "base": "ubi9-minimal",
+      "enforcement": "observe",
+      "arches": [
+        "amd64",
+        "arm64"
+      ],
+      "containerfile": "Containerfiles/pgbouncer.Containerfile",
+      "native": {
+        "language": "c",
+        "buildPackages": [
+          "autoconf",
+          "automake",
+          "gcc",
+          "libevent-devel",
+          "libtool",
+          "make",
+          "openssl",
+          "openssl-devel",
+          "pkgconf-pkg-config"
+        ],
+        "binary": "pgbouncer",
+        "installPath": "/usr/bin/pgbouncer",
+        "note": "Every build package comes from the Red Hat signed UBI repositories in the builder. The commit has no configure script, so autoconf, automake and libtool generate it (./autogen.sh, as the vendor's `make dist` does); openssl (the CLI) only makes the throwaway certificate of the TLS smoke test. ./configure --with-openssl --without-cares --without-pam --without-ldap --without-systemd: TLS links the UBI OpenSSL dynamically (client_tls_* and server_tls_* work); DNS goes through libevent's evdns, because no UBI or PGDG repository ships c-ares (the PGDG RPM needs it, so the package kind cannot install PgBouncer); no PAM (pam-devel is not in UBI), no LDAP and no systemd notify. CFLAGS and LDFLAGS add the arch-neutral part of the RHEL hardening set (_FORTIFY_SOURCE=2, stack protector, stack-clash protection, PIE, full RELRO); only the `pgbouncer` make target is built. The runtime needs only libevent and openssl-libs, which ubi9-minimal already carries. No man pages: pandoc is not in UBI. The binary is stripped of debug data (--strip-debug keeps the symbol table)."
+      },
+      "runtime": {
+        "ports": [
+          6432
+        ],
+        "entrypoint": [
+          "pgbouncer"
+        ],
+        "cmd": [
+          "/etc/pgbouncer/pgbouncer.ini"
+        ],
+        "user": 1001,
+        "configFile": "rootfs/pgbouncer/etc/pgbouncer/pgbouncer.ini",
+        "note": "Binary /usr/bin/pgbouncer; UID 1001 with primary GID 0 (PgBouncer refuses to run as root); entrypoint `pgbouncer`, default argument /etc/pgbouncer/pgbouncer.ini, so `docker run <img> /path/other.ini` uses another file. Ours, not upstream's: the default listens on *:6432, has no unix socket, no database, and an empty auth file (/etc/pgbouncer/userlist.txt), so it starts but nobody can log in. HALO mounts its own pgbouncer.ini, auth file and TLS files over /etc/pgbouncer (or elsewhere and passes the path). Logs go to stderr. No volume: PgBouncer keeps no state."
+      },
+      "updated": "2026-11-15",
+      "reason": "Initial pin for HALO: the PostgreSQL connection pooler in front of postgresql17 in production. Built in this repository (ADR-010) because the package kind cannot install it: the PGDG EL9 pgbouncer RPM requires c-ares, which no UBI 9 or PGDG repository ships (checked 2026-11-15 on both architectures). Onboarded in observe."
     }
   }
 }

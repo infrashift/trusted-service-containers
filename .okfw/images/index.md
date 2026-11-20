@@ -20,6 +20,7 @@
 * [nexus3](nexus3--01a183832d26.md) - The Sonatype Nexus 3 repository manager, mirrored from Docker Hub on the 3.90 patch line with no verifiable signature; trust class none.
 * [oathkeeper](oathkeeper--01a183832de0.md) - Ory Oathkeeper, the identity and access proxy, built from the pinned Ory source onto ubi9-micro in lockstep with the Ory images.
 * [ollama](ollama--01a1dfaa6878.md) - Ollama for the HALO NVIDIA GPU nodes, mirrored from the DHI Debian 13 CUDA image with its DHI signature and attestations; trust class dhi (ADR-011).
+* [pgbouncer](pgbouncer--01a1e09bec5d.md) - PgBouncer 1.26 compiled with OpenSSL from a pinned commit on UBI; native kind (ADR-010), UID 1001, port 6432, no c-ares.
 * [postgres](postgres--01a183832d06.md) - The PostgreSQL 16 database, mirrored from Docker Hardened Images in two variants for the hashistack collection; trust class dhi.
 * [postgresql17](postgresql17--01a1dd2247ba.md) - PostgreSQL 17 from signed PGDG RPMs at pinned NEVRAs on our ubi9-minimal; package track, UID 26, the postgres env contract of the DHI image.
 * [prometheus](prometheus--01a183832e94.md) - The Prometheus monitoring server with promtool and the prebuilt web UI of the vendor, built from source onto ubi9-micro.

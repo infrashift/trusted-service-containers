@@ -11,8 +11,9 @@ tags:
   - "litellm"
   - "cve"
   - "waiver"
+  - "pgbouncer"
 created: "2026-11-14T20:55:50-06:00"
-timestamp: "2026-11-15T08:35:00-06:00"
+timestamp: "2026-11-15T13:18:05-06:00"
 description: "RHEL fixed 14 krb5-libs Highs in 1.21.1-10.el9_9.2; the UBI repositories had only el9_8.1, so postgresql17 waives them until 2026-12-14, and valkey and litellm until 2026-12-15."
 x:
   waivers:
@@ -44,11 +45,14 @@ The [postgresql17](/images/postgresql17--01a1dd2247ba.md) image has 14 High find
 
 * On 2026-11-15 the owner decided: "Waive krb5-libs for Valkey and LiteLLM". `EXC-2026-0042` (valkey) and `EXC-2026-0043` (litellm) waive the same 14 CVEs in `krb5-libs` until 2026-12-15. See [Two waivers accept the krb5-libs Highs in valkey and litellm until 2026-12-15](/findings/two-waivers-accept-the-krb5-libs-highs-in-valkey-and-litellm-until-2026-12-15--01a1df9f1d8d.md).
 
+* On 2026-11-15 the first [pgbouncer](/images/pgbouncer--01a1e09bec5d.md) build had the same 14 findings. No waiver covers pgbouncer, so its legs go to `quarantine/`. See [The first pgbouncer scan found no Critical and 14 krb5-libs Highs on 2026-11-15](/findings/the-first-pgbouncer-scan-found-no-critical-and-14-krb5-libs-highs-on-2026-11-15--01a1e0a478c1.md).
+
 ## Acceptance criteria
 
 - [ ] `ubi-9-baseos` carries `krb5-libs-1.21.1-10.el9_9.2` or later.
 - [ ] A rebuild of postgresql17 shows 0 `krb5-libs` findings.
 - [ ] A rebuild of valkey shows 0 `krb5-libs` findings.
+- [ ] A rebuild of pgbouncer shows 0 `krb5-libs` findings.
 - [ ] A rebuild of litellm shows 0 `krb5-libs` findings.
 - [ ] A change removes `EXC-2026-0041`, `EXC-2026-0042` and `EXC-2026-0043` from `.github/pdp/exceptions.yaml`, and the `test_register_*` tests from `.github/pdp/policies_test.rego`.
 

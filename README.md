@@ -81,6 +81,7 @@ binary comparison; the binary hash is recorded as a change detector.
 | Image | Source | Track |
 |---|---|---|
 | `valkey` | `valkey-io/valkey`, archive sha256 from `valkey-io/valkey-hashes` | `9.1.x`, built with TLS |
+| `pgbouncer` | `pgbouncer/pgbouncer`, GitHub tag archive (PgBouncer publishes a hash only for its `make dist` tarball) | `1.26.x` (`pgbouncer_1_26_*` tags), built with OpenSSL, no c-ares |
 
 Python software is kind `native` with language `python`: a committed hash lock
 (`locks/<image>/requirements.txt`, sha256-pinned in `versions.json`) installed

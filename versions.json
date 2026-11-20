@@ -59,9 +59,9 @@
     },
     "dapr": {
       "track": "^v1\\.18\\.[0-9]+$",
-      "ref": "v1.18.10",
+      "ref": "v1.18.11",
       "url": "https://github.com/dapr/dapr",
-      "commit": "9afd6ada6bd9c8abaa2b38441946a34c9a18998c",
+      "commit": "4a0655d1b7775e691b5de6c4554bcc17968988d6",
       "lockstep": [
         "daprd",
         "dapr-placement",
@@ -110,11 +110,11 @@
     },
     "valkey": {
       "track": "^9\\.1\\.[0-9]+$",
-      "ref": "9.1.3",
+      "ref": "9.1.4",
       "url": "https://github.com/valkey-io/valkey",
-      "commit": "29173b67508b2de4c0f0ed551f3b47cf19fc3ca8",
+      "commit": "8efb5bb3dd3b69f707777352a105bbea911affd3",
       "archive": {
-        "url": "https://github.com/valkey-io/valkey/archive/refs/tags/9.1.3.tar.gz",
+        "url": "https://github.com/valkey-io/valkey/archive/refs/tags/9.1.4.tar.gz",
         "sha256": "184e34ed2d9b51879b682b5b15205e2b9d677c60280e3cb453be8f520d04e293",
         "hashSource": "https://github.com/valkey-io/valkey-hashes/blob/cbac0d5b488497ac5928a0e1df8a6f0da7d5b948/README",
         "note": "The sha256 is the `hash valkey-9.1.3.tar.gz sha256 ...` line of valkey-io/valkey-hashes (README at cbac0d5b, 2026-11-04), a repository separate from the source. Confirmed 2026-11-15: the downloaded archive has that sha256, and its file tree is identical to the tree of commit 29173b67 (diff -r, no .gitattributes export-ignore). Valkey does not sign its tags or archives, so this hash is the independent check on the commit."
@@ -210,10 +210,10 @@
         "dev": {
           "tag": "3-debian13-dev",
           "track": "^3-debian13-dev$",
-          "digest": "sha256:060a0cafff3814190264a88061bcbfd7a1ec5a8e5d6e220352af27d0d1b5b5a1"
+          "digest": "sha256:8eff1b9713e876decf856f9fe95782ec1617fac0a8a70d9a7d670c080e94ea45"
         }
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Placeholder digests resolved 2026-08-24 with an authenticated dhi.io login (regctl manifest head, index digest). DHI repoints 3-debian13 itself, so the tag string never changes and only the digest moves; track is therefore an exact match."
     },
     "postgres": {
@@ -234,15 +234,15 @@
         "runtime": {
           "tag": "16-debian",
           "track": "^16-debian$",
-          "digest": "sha256:b5dde2a748199e346e7d59456b59931dbeef5a6b7c856e3f3586e17fff9b9239"
+          "digest": "sha256:925d0dff7e9d2713e49323cbab21f3d255278c0f4313c13b6e5f1f8e09ef19d2"
         },
         "dev": {
           "tag": "16-debian-dev",
           "track": "^16-debian-dev$",
-          "digest": "sha256:f0e1dd8819a3ea877cf57fea9c41c1205534374e97f9d8286cb24342242203df"
+          "digest": "sha256:c68d79da513e984ef81c9fb94ed95052d2f799f817eb92fa58e084a6f09be27d"
         }
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin, runtime + dev, PostgreSQL 16. Exact tags rather than a regex range: DHI repoints the tag itself, so only the digest moves, and drift-upstream proposes it. The PostgreSQL 17 pair (runtime17/dev17, tags 17-debian and 17-debian-dev, added 2026-09-15) was removed 2026-11-14: HALO and Chit, its only consumers, moved to the postgresql17 package-track image (PR #55), which replaces it. The 16 pair stays because ansible-collection-infrashift-hashistack still pins trusted/postgres 16 by digest; remove this entry, and waiver EXC-2026-0034 with it, once that consumer moves. Removing the variants does not delete the images already published to GHCR."
     },
     "nexus3": {
@@ -258,12 +258,12 @@
       ],
       "variants": {
         "runtime": {
-          "tag": "3.90.6-ubi",
+          "tag": "3.90.7-ubi",
           "track": "^3\\.90\\.[0-9]+-ubi$",
-          "digest": "sha256:d4c4931c3e6402401c3945283be9468215f02c684b188dfbb8288fa243b5cf1d"
+          "digest": "sha256:52c9c8ee924275c53de3ae740ee30f3bfe4c8ec0991c120af5ac5e4bed41bff7"
         }
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Tracks the 3.90 patch line only; 3.91.0-ubi and 3.91.1-ubi already exist upstream, so a naive newest-tag check would jump a minor on its first run. Trust class none: public Docker Hub image with unsigned BuildKit attestations only. Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml -- a ~700MB JVM image will very likely quarantine."
     },
     "mssql": {
@@ -288,7 +288,7 @@
           "digest": "sha256:9e7e6119ffe39c635365ec380937f37e4c27e16d07deea763d138fb4d5cfd650"
         }
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Pin moved 2026-09-15 from 2025-CU8-GDR1-rhel-10 (17.0.4085.5, sha256:54b58c3a) to 2025-CU9-rhel-10 (17.0.5005.3), the manifest 2025-latest now resolves to. Same repository, same RHEL 10 base, same bare amd64 manifest shape, Notary signature still present as an OCI referrer. This is the FIRST observed move of this rolling tag and it confirms the shape the initial pin predicted. Initial pin was SQL Server 2025 on the RHEL 10 base (mcr.microsoft.com/mssql/rhel/server, not the Ubuntu mssql/server repo) to match the repo's UBI posture. Rolling tag: Microsoft repoints 2025-latest on every CU and GDR, and a CU regex track would be a trap because `sort -V` orders 2025-CU8-GDR1-rhel-10 BEFORE 2025-CU8-rhel-10, so drift-upstream.sh would never propose a GDR security release. Track is therefore the exact tag and only the digest moves. Note this move goes GDR -> CU, which a CU-ordered track would also have mishandled. Trust class notation: the image carries a Notary Project signature as an OCI referrer, chained to Microsoft Supply Chain RSA Root CA 2022, which we vendor and verify against with the signing identity pinned. There is no cosign signature and no SBOM or provenance referrer, so no attestations are required of this class. Still `observe` until the day-one CVE triage lands in exceptions.yaml; CU9 is newer than the CU8-GDR1 it replaces, so the finding count should not rise.",
       "note": "amd64 ONLY, and a BARE manifest: the tag resolves to a single application/vnd.docker.distribution.manifest.v2+json with no index. Microsoft supports x86-64 hosts only and states emulation is untested. scripts/manifest-platforms.sh derives the platform set from the config os/arch for this shape. Runtime config: user mssql, port 1433, entrypoint /opt/mssql/bin/launch_sqlservr.sh, no declared volumes (data lives under /var/opt/mssql; mount it). The container starts only with ACCEPT_EULA=Y and a password supplied via the MSSQL_SA_PASSWORD environment variable at run time; MSSQL_PID defaults to developer and selecting a production edition asserts that the consumer holds a licence. The SQL build number is not in the tag; read the com.microsoft.version label from the evidence. The notation signature is an OCI referrer in the image's own repository; the mirror copies it with --referrers, and the first run's upstream-referrers.json should list artifactType application/vnd.cncf.notary.signature."
     },
@@ -311,7 +311,7 @@
           "digest": "sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44"
         }
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Traefik's whoami echo server, the test backend infrashift/ansible-collection-infrashift-hashistack's sm-ingress runs behind the edge; it ran docker.io/traefik/whoami:latest. Pinned to v1.12.0, the release :latest resolves to on 2026-09-30 (same index digest). Track is the v1 release line: whoami is a stateless test fixture with no data or config contract, so a minor bump carries nothing a patch-only track would protect, and the regex excludes the per-arch (-amd64/-arm64/-armv7) and two-part rolling (v1.12) tags. Three platforms, not two: the upstream index carries linux/arm/v7, and a mirror copies the whole index, so the declared set must include it or PLATFORM_SET_MISMATCH denies. Trust class none: no cosign signature and no OCI referrers, only unsigned BuildKit attestation manifests inside the index. A scratch image holding one static Go binary with no USER, so it reports root (RUNTIME_RUNS_AS_ROOT, a warning); the binary needs no privilege except a port below 1024, so consumers run it as a non-root uid on an unprivileged port (--user 65532:65532 --port=8080, proven 2026-09-30). Onboarded in `observe` until the day-one CVE triage lands in exceptions.yaml; expect Go standard-library findings from the toolchain it was built with."
     },
     "ollama": {
@@ -335,7 +335,7 @@
           "digest": "sha256:25047db279f059d87c62607f351e7f2d4dec77c581adad34556b4ee13f4ffb7a"
         }
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin for HALO's NVIDIA GPU nodes (ADR-011, accepted 2026-11-15): the DHI Debian 13 CUDA variant, verified with the DHI key, UID 65532, CUDA 13.2 or later on the host driver. The owner accepted the Debian base, the lag behind upstream (DHI 0.40.13, Ollama 0.40.16 on 2026-11-15) and NVIDIA only; AMD (ROCm) needs a new decision. The track allows only 0.40 patch releases of the debian13-cuda variant (not -dev, -fips or the Alpine CPU variant); a new Ollama minor is a reviewed track change. Onboarded in observe."
     },
     "kratos": {
@@ -400,7 +400,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. No official UBI-based Ory image exists; built from source onto ubi9-micro."
     },
     "hydra": {
@@ -463,7 +463,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. Note the module path carries /v2. Hydra has no .docker/Dockerfile-build (it has Dockerfile-local-build); the ldflags paths come from .goreleaser.yml."
     },
     "keto": {
@@ -526,7 +526,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin."
     },
     "keto-cue": {
@@ -579,7 +579,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin for HALO (P-TSC-2): keto-cue replaces Ory Keto as the relation store. Onboarded in observe."
     },
     "chit": {
@@ -629,7 +629,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Bump for HALO to Chit main 5b026fa9 (PR #10 merge, P-CHIT-8): rate limits per principal for on-behalf-of requests and an aggregate bucket per allowlisted client, set by CHIT_RATE_LIMIT_USER_PER_SECOND/_BURST and CHIT_RATE_LIMIT_CLIENT_PER_SECOND/_BURST, with Retry-After on 429; no go.mod, migration, port or file change. Previous bump to 1af19e66 (PR #9 merge): file attachments stored in S3-compatible SeaweedFS (P-CHIT-5, migration 000009) and the membership policy hook (P-CHIT-2), plus scoped tags (migration 000008). Initial pin for HALO (P-TSC-3): Chit holds HALO's Channels and Messages. Onboarded in observe."
     },
     "oathkeeper": {
@@ -692,7 +692,7 @@
         "user": 1001,
         "tzdata": true
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. Upstream's .docker/Dockerfile-build has a bug (COPY oryx/go.sum proto/go.sum); we do not use it."
     },
     "nats": {
@@ -765,7 +765,7 @@
         "configFile": "rootfs/nats/etc/nats/nats-server.conf",
         "configNote": "Ours, not upstream's. nats-docker ships a cluster block with hardcoded credentials ruser/T0pS3cr3t. All three ports are >1024 so non-root binding is fine."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin on the 2.14 line, moved up from the 2.11-alpine image previously in use."
     },
     "daprd": {
@@ -802,12 +802,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.10-linux-amd64",
-          "digest": "sha256:c649a0b5ea9d1ee43e97c6f65b6cc812f43657908a2ac06f7d18495e411b1586"
+          "tag": "1.18.11-linux-amd64",
+          "digest": "sha256:67e17ef1114abd206b69155be213f8aad254eaf7517c0646497a482de5ffacfd"
         },
         "arm64": {
-          "tag": "1.18.10-linux-arm64",
-          "digest": "sha256:b29e561832595ffbc94075a6442d918cc8e183fdf0427737fe115ec6c74022f6"
+          "tag": "1.18.11-linux-arm64",
+          "digest": "sha256:9c9db377c7e98f39e4c1ee93dc5d28e06f309964d9adc13c7197e7c4949d39fc"
         }
       },
       "runtime": {
@@ -827,7 +827,7 @@
         "userNote": "Upstream runs 65532:65532 and the Dapr Helm chart pins runAsUser: 65532. We use 1001 per repo convention, so a Helm deployment needs an override. The /daprd compat symlink exists because the injector may emit command: [\"/daprd\"].",
         "portNote": "Ports are from documentation, not from the pinned source. VERIFY against cmd/daprd options before relying on them."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. Moved up from 1.14.4, which is outside Dapr's N-2 support window."
     },
     "dapr-placement": {
@@ -863,12 +863,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.10-linux-amd64",
-          "digest": "sha256:7b87036d05cbf31870c49ced728f5d7cf18ee35bc88d9691238e579690eef0d6"
+          "tag": "1.18.11-linux-amd64",
+          "digest": "sha256:3833e6a518236a5911b656fb580edccb4857e112c7bc076589050b2e3d3bafca"
         },
         "arm64": {
-          "tag": "1.18.10-linux-arm64",
-          "digest": "sha256:a7cb4382f1b1bd8fe3a6d3436f53725d59584f015f2de55c186a8ee46be81481"
+          "tag": "1.18.11-linux-arm64",
+          "digest": "sha256:6c67a46b126c91febbec093a381e88ef6a83e65055b8ccd0ebc7a0564cee2a15"
         },
         "note": "daprio/placement is the dedicated single-binary image. daprio/dapr is the kitchen-sink image carrying all six control-plane binaries and is the wrong cross-check source."
       },
@@ -888,7 +888,7 @@
         "tzdata": true,
         "portNote": "From documentation. VERIFY against cmd/placement options."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. Built from the same source checkout as daprd and dapr-scheduler; sources.dapr.lockstep prevents drift."
     },
     "dapr-scheduler": {
@@ -924,12 +924,12 @@
         "trustClass": "none",
         "reproducibilityTier": "best-effort",
         "amd64": {
-          "tag": "1.18.10-linux-amd64",
-          "digest": "sha256:24aca8e88ba165adc2ed58a99bcc6815ccea4705f9b0bde2c4a346cc415038b6"
+          "tag": "1.18.11-linux-amd64",
+          "digest": "sha256:63224e9a72d4fffb0dba94037c29f587a404a12c8ff4a6fe96e28d5444e31d67"
         },
         "arm64": {
-          "tag": "1.18.10-linux-arm64",
-          "digest": "sha256:8b769609e63289f9dce2ab5a34bd9a15c18e86cdc44e637c4c92042a3cebb688"
+          "tag": "1.18.11-linux-arm64",
+          "digest": "sha256:9b7bb949b363ff5993b1102e39431f93406617ebf69ccdc5bf951508ea3024f7"
         }
       },
       "runtime": {
@@ -950,7 +950,7 @@
         "portNote": "From documentation. VERIFY against cmd/scheduler options.",
         "volumeNote": "The scheduler keeps an embedded etcd store; confirm the default data dir at the pinned tag before relying on this path."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. Required from Dapr 1.15+ for actor reminders and workflows; the user is migrating from 1.14 where it did not exist."
     },
     "prometheus": {
@@ -1029,7 +1029,7 @@
         "tzdata": true,
         "configNote": "CMD and /etc/prometheus/prometheus.yml are upstream's (documentation/examples/prometheus.yml, from the pinned source tree), so the image runs standalone exactly as quay.io/prometheus/prometheus does. Real deployments mount their own config, and a web config for TLS."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. No usable UBI-based Prometheus exists: Red Hat's registry.redhat.io/openshift4/ose-prometheus-rhel9 needs an entitled, authenticated pull and ships OpenShift's fork on the OCP release train (v4.22), not upstream; DHI's is Debian-based. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; moved to enforce 2026-10-01 after the first review (PR #25) came back clean on both arches: allow=true, blocking=0, waived=0, 6 recorded (non-blocking), so no exception was needed. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/prometheus."
     },
     "loki": {
@@ -1106,7 +1106,7 @@
         "tzdata": true,
         "configNote": "CMD and /etc/loki/local-config.yaml are upstream's (cmd/loki/loki-docker-config.yaml, from the pinned source tree), so the image runs standalone exactly as docker.io/grafana/loki does. Real deployments mount their own config."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. No usable UBI-based Loki exists: Red Hat's logging-loki-rhel9 is an entitled, authenticated pull on the OpenShift Logging release train; the vendor image is distroless/static (Debian). Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md. Licence AGPL-3.0-only (LICENSING.md; pkg/ subfolders Apache-2.0); unmodified and run internally. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/loki (PLAN-Logging.md Part A)."
     },
     "seaweedfs": {
@@ -1179,7 +1179,7 @@
         "tzdata": true,
         "configNote": "CMD is ours, not upstream's `mini` (which also opens an admin UI and WebDAV): a single-node master + volume + filer + S3 gateway, so the image runs standalone. Real deployments pass their own flags and an -s3.config identity file; without one the S3 gateway is open to anonymous requests."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. Replaces MinIO, whose public images (quay.io/minio/minio, docker.io/minio/minio) answer 401 since 2026-10-07, as the S3 blob store of Sonatype Nexus. The vendor image is Alpine and unsigned; no UBI-based SeaweedFS exists. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md. Licence Apache-2.0; unmodified and run internally. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/nexus-uar (PLAN-SeaweedFS.md Part A)."
     },
     "prometheus-nats-exporter": {
@@ -1238,7 +1238,7 @@
         "tzdata": true,
         "configNote": "Stateless; no config file. CMD is upstream's `--help`, so the image runs standalone and exits. Deployments pass the endpoint flags and the NATS monitoring URL as the positional argument (e.g. `-varz -connz -subz -healthz -jsz=all http://127.0.0.1:8222`)."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin. No UBI-based exporter exists: the vendor image is Alpine and unsigned. Built from source onto ubi9-micro. Onboarded in observe per adding-an-upstream.md; moved to enforce 2026-10-14 after its first review on a pcre2-patched ubi9-micro (PR #32) came back clean on both arches: allow=true, blocking=0, waived=0, recorded=0, namespace trusted, so no exception was needed. Licence Apache-2.0. Consumer: infrashift/ansible-collection-infrashift-hashistack terraform/live/nats (a sidecar behind an mTLS metrics door; PLAN-SSHadowForge-Dashboards-20261012.md Part A/B, the deferred E5 of PLAN-SSHadowForge-Review-20261012.md)."
     },
     "postgresql17": {
@@ -1296,7 +1296,7 @@
         ],
         "note": "The environment contract of the Docker official and DHI postgres images, which HALO and Chit use today. UID 26 is the RHEL postgres user; its primary group is GID 0. The volume is mounted at /var/lib/pgsql/data and the cluster is in its userdata/ subdirectory, as in the Red Hat images. See images/postgresql17 in the wiki for what each consumer changes."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Replaces the DHI postgres mirror for PostgreSQL 17 (owner decision 2026-11-14). The DHI 17 legs had 144 blocking Debian base findings that only Docker can clear; this image is PGDG's signed RPMs on our own ubi9-minimal, so its CVE surface is Red Hat's UBI content. The key is postgresql17, not postgresql with a 17 variant: a build-kind entry has one implicit variant, and one repository per major makes a major upgrade -- a dump and restore, never an image swap -- impossible to receive from a tag move. It does not collide with the mirror key `postgres`, which stays until HALO and Chit move."
     },
     "valkey": {
@@ -1348,7 +1348,7 @@
         "configFile": "rootfs/valkey/etc/valkey/valkey.conf",
         "note": "Ours, not upstream's. Arguments passed to the container are appended to the config and override it: `--save \"\" --appendonly no` turns persistence off, `--requirepass` or an ACL file opens the network. Protected mode stays on, so with no password Valkey refuses every non-loopback client. The data directory is /data, owned by 1001:0 with g=u."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin for HALO (P-TSC-6): Valkey is HALO's shared cache and state store, and LiteLLM's router and rate-limit store. Built in this repository (ADR-010): no free signed EL9 package exists, the vendor image is unsigned, and DHI Valkey had two Debian Criticals with no fix. Onboarded in observe."
     },
     "litellm": {
@@ -1403,7 +1403,7 @@
         "configFile": "rootfs/litellm/etc/litellm/config.yaml",
         "note": "Ours. The default config has no model and takes the master key from LITELLM_MASTER_KEY; mount a config to add models and the Redis (Valkey) router settings. LITELLM_LOCAL_MODEL_COST_MAP=True: the model cost map comes from the wheel, not from GitHub at start. The health endpoints /health/liveliness and /health/liveness need no key. The entrypoint (rootfs/litellm/usr/local/bin/litellm-entrypoint.sh) refuses to start when LITELLM_MASTER_KEY is unset or empty (owner's decision, 2026-11-15), then runs `litellm` with the arguments unchanged."
       },
-      "updated": "2026-11-18",
+      "updated": "2026-11-20",
       "reason": "Initial pin for HALO: LiteLLM is the OpenAI-compatible gateway to the model providers. Built in this repository by the owner's decision of 2026-11-15 (ADR-010), not mirrored from DHI: the DHI image's four blocking findings were all in its bundled Node.js, which this image does not carry. 1.109.1 is the newest LiteLLM release that is not a pre-release (2026-11-12). Onboarded in observe."
     }
   }
